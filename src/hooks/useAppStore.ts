@@ -23,6 +23,7 @@ interface AppState {
   loadAgents: () => Promise<void>;
   toggleAgent: (id: string) => Promise<void>;
   updateAgent: (id: string, data: Partial<Agent>) => Promise<void>;
+  deleteAgent: (id: string) => Promise<void>;
 
   // Tool actions
   loadTools: () => Promise<void>;
@@ -85,6 +86,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const agents = get().agents.map((a) => (a.id === id ? agent : a));
     set({ agents });
     get().addToast('Alterações salvas', 'green');
+  },
+
+  deleteAgent: async (id) => {
+    await agentsApi.delete(id);
+    set({ agents: get().agents.filter((a) => a.id !== id) });
+    get().addToast('Colaborador removido', 'amber');
   },
 
   loadTools: async () => {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -25,7 +26,8 @@ export function AgentDetailModal({ agent, onClose }: Props) {
   const [tools, setTools] = useState<string[]>(agent.tools);
 
   const [saving, setSaving] = useState(false);
-  const { updateAgent, addToast } = useAppStore();
+  const [deleting, setDeleting] = useState(false);
+  const { updateAgent, deleteAgent, addToast } = useAppStore();
 
   const dirty =
     name !== agent.name ||
@@ -62,6 +64,22 @@ export function AgentDetailModal({ agent, onClose }: Props) {
     }
   };
 
+  const handleDelete = async () => {
+    const confirmed = confirm(
+      `Deletar o colaborador "${agent.name}"?\n\nEsta ação é PERMANENTE — todas as conversas, mensagens, execuções e escalações vinculadas a este colaborador também serão removidas.`,
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await deleteAgent(agent.id);
+      onClose();
+    } catch {
+      addToast('Erro ao remover colaborador', 'red');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const stats = [
     { label: 'Hoje', value: String(agent.stats.today) },
     { label: 'Resolução', value: `${agent.stats.resolution}%` },
@@ -77,8 +95,15 @@ export function AgentDetailModal({ agent, onClose }: Props) {
       maxWidth="780px"
       footer={
         <>
+          <button
+            className="btn btn-danger mr-auto"
+            onClick={handleDelete}
+            disabled={deleting || saving}
+          >
+            <Trash2 size={13} /> {deleting ? 'Removendo...' : 'Deletar'}
+          </button>
           <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
-          <button className="btn btn-accent" onClick={handleSave} disabled={saving || !dirty}>
+          <button className="btn btn-accent" onClick={handleSave} disabled={saving || deleting || !dirty}>
             {saving ? 'Salvando...' : dirty ? 'Salvar Alterações' : 'Sem alterações'}
           </button>
         </>
