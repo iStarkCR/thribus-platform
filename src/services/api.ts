@@ -193,16 +193,19 @@ export const dashboardApi = {
   async getMetrics(): Promise<DashboardMetrics> {
     // TODO: return request<DashboardMetrics>('/dashboard/metrics');
     const agents = await agentsApi.list();
+    const totalToday = agents.reduce((sum, a) => sum + a.stats.today, 0);
+    const totalEscalated = agents.reduce((sum, a) => sum + a.stats.escalated, 0);
+    const resolved = totalToday - totalEscalated;
     return {
       activeAgents: agents.filter((a) => a.status === 'online').length,
-      totalToday: agents.reduce((sum, a) => sum + a.stats.today, 0),
-      resolutionRate: 91,
-      escalationsToday: agents.reduce((sum, a) => sum + a.stats.escalated, 0),
+      totalToday,
+      resolutionRate: totalToday > 0 ? Math.round((resolved / totalToday) * 100) : 0,
+      escalationsToday: totalEscalated,
       trends: {
-        agents: 1,
-        conversations: 18,
-        resolution: 4,
-        escalations: -9,
+        agents: 0,
+        conversations: 0,
+        resolution: 0,
+        escalations: 0,
       },
     };
   },

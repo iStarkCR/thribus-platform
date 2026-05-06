@@ -69,11 +69,23 @@ export function DashboardPage() {
               Ver todos <ChevronRight size={12} />
             </button>
           </div>
-          <div className="flex flex-col gap-2.5">
-            {agents.map((a) => (
-              <AgentCard key={a.id} agent={a} onClick={() => setSelectedAgent(a)} />
-            ))}
-          </div>
+          {agents.length === 0 ? (
+            <div className="bg-surface-2 border border-default rounded-[10px] px-8 py-12 text-center">
+              <div className="w-12 h-12 rounded-xl bg-surface-3 border border-default flex items-center justify-center mx-auto mb-3">
+                <Bot size={20} className="text-creme-faint" />
+              </div>
+              <p className="text-[13.5px] text-creme-mute mb-3">Ainda não há colaboradores digitais</p>
+              <button onClick={() => navigate('/agents')} className="text-[13px] text-brand-bright font-semibold hover:underline">
+                Criar primeiro colaborador →
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {agents.map((a) => (
+                <AgentCard key={a.id} agent={a} onClick={() => setSelectedAgent(a)} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Escalations */}
@@ -90,6 +102,11 @@ export function DashboardPage() {
               </span>
               <span className="chip chip-amber">{escalations.length} pendentes</span>
             </div>
+            {escalations.length === 0 && (
+              <div className="px-6 py-10 text-center">
+                <p className="text-[13px] text-creme-faint">Nenhum escalonamento pendente</p>
+              </div>
+            )}
             {escalations.map((e) => (
               <div key={e.id} className="px-4 py-3 border-b border-default last:border-b-0 flex items-start gap-2.5 hover:bg-surface-hover transition-colors cursor-pointer">
                 <div className="w-7 h-7 rounded-md bg-semantic-amber/10 text-semantic-amber flex items-center justify-center shrink-0">
@@ -126,6 +143,12 @@ export function DashboardPage() {
               <div key={h} className="text-[12px] font-bold uppercase tracking-wider text-creme-faint">{h}</div>
             ))}
           </div>
+          {executions.length === 0 && (
+            <div className="px-5 py-12 text-center">
+              <p className="text-[13.5px] text-creme-mute">Nenhuma execução registrada ainda</p>
+              <p className="text-[12.5px] text-creme-faint mt-1">As execuções vão aparecer aqui quando o worker começar a processar mensagens</p>
+            </div>
+          )}
           {executions.map((e) => {
             const sc = STATUS_CONFIG[e.status];
             const StatusIcon = sc.icon;

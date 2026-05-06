@@ -64,6 +64,22 @@ export function ToolsPage() {
         })}
       </div>
 
+      {/* Empty state */}
+      {tools.length === 0 && (
+        <div className="bg-surface-2 border border-default rounded-[10px] px-12 py-16 text-center">
+          <div className="w-14 h-14 rounded-xl bg-surface-3 border border-default flex items-center justify-center mx-auto mb-4">
+            <Wrench size={22} className="text-creme-faint" />
+          </div>
+          <p className="text-sm text-creme font-semibold mb-1">Nenhuma ferramenta cadastrada</p>
+          <p className="text-[13.5px] text-creme-mute mb-5">
+            Cadastre os endpoints HTTP que seus colaboradores poderão invocar (CRM, ERP, APIs internas).
+          </p>
+          <button className="btn btn-accent mx-auto" onClick={() => setShowNew(true)}>
+            <Plus size={13} /> Criar primeira ferramenta
+          </button>
+        </div>
+      )}
+
       {/* Grid */}
       <div className="grid grid-cols-4 gap-2.5">
         {filtered.map((t) => {
