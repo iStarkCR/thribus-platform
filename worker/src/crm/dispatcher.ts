@@ -141,7 +141,7 @@ export async function escalateToHuman(channel: string, leadId: string): Promise<
     await talki.conversations.setStatus(Number(leadId), 'pending');
     await talki.messages.send(
       Number(leadId),
-      'Vou te transferir para um atendente humano. Um momento por favor! 👤',
+      'Vou passar você para o time responsável agora mesmo. Já já alguém vai te direcionar para concluir o atendimento! 🙌',
     );
     return;
   }

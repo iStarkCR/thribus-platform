@@ -241,8 +241,8 @@ export async function escalateToHuman(leadId: string, channel: string): Promise<
   // 4. Avisa o cliente
   await messages.send(leadId,
     agent
-      ? `Vou te transferir para um atendente humano. Um momento por favor! 👤`
-      : `Nossa equipe será notificada em breve. Aguarde! 👤`
+      ? `Vou passar você para o time responsável agora mesmo. Já já alguém vai te direcionar para concluir o atendimento! 🙌`
+      : `Nossa equipe será notificada em instantes para te dar continuidade no atendimento! 🙌`
   );
 
   console.log(`[crm] lead ${leadId} escalado para humano. agente: ${agent?.name ?? 'nenhum online'}`);
