@@ -23,6 +23,38 @@ import type { AgentJob } from '../queue/index.js';
 
 const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 10);
 
+/**
+ * Extrai mensagens do output do agente.
+ * Suporta:
+ *   - { "mensagem": "texto" } → ["texto"]
+ *   - { "mensagens": ["a", "b"] } → ["a", "b"]
+ *   - texto puro → [texto puro]
+ *   - JSON em bloco markdown ```json ... ``` → extrai e parseia
+ */
+function extractMessages(raw: string): string[] {
+  const trimmed = raw.trim();
+
+  // Tenta extrair JSON de bloco markdown
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const candidate = fenceMatch ? fenceMatch[1] : trimmed;
+
+  try {
+    const parsed = JSON.parse(candidate);
+    if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.mensagens) && parsed.mensagens.every((m: unknown) => typeof m === 'string')) {
+        return parsed.mensagens;
+      }
+      if (typeof parsed.mensagem === 'string') {
+        return [parsed.mensagem];
+      }
+    }
+  } catch {
+    // não era JSON, segue para fallback
+  }
+
+  return [trimmed];
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export async function runAgentLoop(job: AgentJob): Promise<void> {
@@ -174,7 +206,16 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         break;
       }
 
-      await crm.messages.send(job.leadId, finalText);
+      // Suporte a output JSON: { "mensagem": "..." } ou { "mensagens": ["...", "..."] }
+      const messagesToSend = extractMessages(finalText);
+
+      for (let i = 0; i < messagesToSend.length; i++) {
+        await crm.messages.send(job.leadId, messagesToSend[i]);
+        // Pequeno delay entre mensagens para chegar em ordem
+        if (i < messagesToSend.length - 1) {
+          await new Promise((r) => setTimeout(r, 600));
+        }
+      }
       exitReason = 'resolved';
 
       await db.messages.save({
