@@ -16,6 +16,12 @@
 import express, { Router, type Request, type Response } from 'express';
 import { enqueue } from '../queue/index.js';
 import { db } from '../db/index.js';
+import * as talki from './client.js';
+
+// ⚠️ SAFETY: só processa conversas que tenham essa label aplicada no Talki.
+// Configurar no Coolify:
+//   TALKI_REQUIRED_LABEL=testando-agente   (default vazio = sem requisito de label)
+const REQUIRED_LABEL = (process.env.TALKI_REQUIRED_LABEL ?? '').trim();
 
 interface ChatwootAttachment {
   id?: number;
@@ -38,6 +44,7 @@ interface ChatwootWebhookPayload {
     id: number;
     inbox_id: number;
     status: string;
+    labels?: string[];   // labels aplicadas na conversa
     contact_inbox?: {
       contact_id: number;
     };
@@ -131,6 +138,24 @@ export function createTalkiWebhookRouter(): Router {
       if (!agent) {
         console.warn(`[talki-webhook] nenhum agent para channel=${channelKey}`);
         return;
+      }
+
+      // ⚠️ SAFETY: checa label obrigatória, se configurada
+      if (REQUIRED_LABEL) {
+        let labels = conv.labels ?? [];
+        // Se webhook não trouxe labels, busca via API
+        if (labels.length === 0) {
+          labels = await talki.conversations.listLabels(conv.id);
+        }
+        const hasLabel = labels.some(
+          (l) => l.toLowerCase() === REQUIRED_LABEL.toLowerCase(),
+        );
+        if (!hasLabel) {
+          console.log(
+            `[talki-webhook] conv ${conv.id} sem label "${REQUIRED_LABEL}" (tem: ${labels.join(',') || 'nenhuma'}) — ignorando`,
+          );
+          return;
+        }
       }
 
       // Dedup

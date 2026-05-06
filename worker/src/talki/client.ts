@@ -87,6 +87,20 @@ export const conversations = {
     return req<TalkiConversation>('GET', `/conversations/${id}`);
   },
 
+  /**
+   * Lista as labels (etiquetas) aplicadas a uma conversa.
+   * Endpoint: GET /conversations/:id/labels → { payload: ["label1", "label2"] }
+   */
+  async listLabels(id: number): Promise<string[]> {
+    try {
+      const res = await req<{ payload: string[] } | string[]>('GET', `/conversations/${id}/labels`);
+      if (Array.isArray(res)) return res;
+      return res.payload ?? [];
+    } catch {
+      return [];
+    }
+  },
+
   async listByInbox(inboxId: number, status: 'open' | 'all' = 'open'): Promise<{ data: { payload: TalkiConversation[] } }> {
     return req('GET', `/conversations?inbox_id=${inboxId}&status=${status}&assignee_type=me&page=1`);
   },
