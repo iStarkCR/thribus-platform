@@ -53,17 +53,20 @@ export function ToolsPage() {
     );
   }, [tools, search]);
 
-  // Agrupa em "pastas" por escopo. global vem primeiro, depois alfabético.
+  // Agrupa em "pastas" por escopo (case-insensitive). Global pinado no topo.
   const grouped = useMemo(() => {
-    const map = new Map<string, Tool[]>();
+    const map = new Map<string, { name: string; tools: Tool[] }>();
     for (const t of filtered) {
-      const key = t.scope || 'global';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(t);
+      const raw = t.scope || 'global';
+      const key = raw.toLowerCase().trim();
+      if (!map.has(key)) {
+        map.set(key, { name: raw, tools: [] });
+      }
+      map.get(key)!.tools.push(t);
     }
     return Array.from(map.entries()).sort(([a], [b]) => {
-      if (a.toLowerCase() === 'global') return -1;
-      if (b.toLowerCase() === 'global') return 1;
+      if (a === 'global') return -1;
+      if (b === 'global') return 1;
       return a.localeCompare(b);
     });
   }, [filtered]);
@@ -116,15 +119,15 @@ export function ToolsPage() {
 
           {/* Pastas por escopo */}
           <div className="space-y-3">
-            {grouped.map(([scope, list]) => {
-              const isOpen = !collapsed.has(scope);
-              const isGlobal = scope.toLowerCase() === 'global';
+            {grouped.map(([scopeKey, { name: scopeName, tools: list }]) => {
+              const isOpen = !collapsed.has(scopeKey);
+              const isGlobal = scopeKey === 'global';
               const FolderIcon = isOpen ? FolderOpen : Folder;
               return (
-                <div key={scope} className="bg-surface-1 border border-default rounded-[10px] overflow-hidden">
+                <div key={scopeKey} className="bg-surface-1 border border-default rounded-[10px] overflow-hidden">
                   {/* Header — toggle */}
                   <button
-                    onClick={() => toggleCollapse(scope)}
+                    onClick={() => toggleCollapse(scopeKey)}
                     className="w-full px-4 py-2.5 flex items-center gap-2.5 hover:bg-surface-hover transition-colors"
                   >
                     <ChevronRight
@@ -140,7 +143,7 @@ export function ToolsPage() {
                       <FolderIcon size={15} className="text-creme-dim shrink-0" />
                     )}
                     <span className="text-[14px] font-bold text-creme">
-                      {isGlobal ? 'Global' : scope}
+                      {isGlobal ? 'Global' : scopeName}
                     </span>
                     <span className="chip chip-muted text-[11.5px]">{list.length}</span>
                     <span className="text-[12px] text-creme-faint ml-auto">

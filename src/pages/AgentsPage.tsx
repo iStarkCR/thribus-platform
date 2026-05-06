@@ -25,15 +25,19 @@ export function AgentsPage() {
     );
   }, [agents, search]);
 
-  // Agrupa por cliente
+  // Agrupa por cliente (case-insensitive — Texnet e TexNet caem no mesmo grupo)
   const grouped = useMemo(() => {
-    const map = new Map<string, Agent[]>();
+    // mapeia a chave normalizada → { displayName, agents[] }
+    const map = new Map<string, { name: string; agents: Agent[] }>();
     for (const a of filtered) {
-      const key = a.client || '— sem cliente —';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(a);
+      const raw = a.client || '— sem cliente —';
+      const key = raw.toLowerCase().trim();
+      if (!map.has(key)) {
+        map.set(key, { name: raw, agents: [] });
+      }
+      map.get(key)!.agents.push(a);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [filtered]);
 
   return (
@@ -81,12 +85,12 @@ export function AgentsPage() {
         </div>
       ) : (
         <div className="space-y-5">
-          {grouped.map(([client, list]) => (
-            <div key={client}>
+          {grouped.map(({ name, agents: list }) => (
+            <div key={name.toLowerCase()}>
               <div className="flex items-center gap-2 mb-2.5">
                 <Building2 size={14} className="text-creme-faint" />
                 <span className="text-[13px] font-bold uppercase tracking-wider text-creme-mute">
-                  {client}
+                  {name}
                 </span>
                 <span className="chip chip-muted text-[11.5px]">{list.length}</span>
                 <div className="flex-1 h-px bg-default ml-2" />
