@@ -118,7 +118,7 @@ export function ToolModal({ tool, onClose }: Props) {
         {/* Nome + Ativo */}
         <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
           <div>
-            <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
               Nome (identificador)
             </label>
             <input
@@ -130,7 +130,7 @@ export function ToolModal({ tool, onClose }: Props) {
             />
           </div>
           <div className="flex items-center gap-2 pb-2">
-            <span className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute">
+            <span className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute">
               Ativo
             </span>
             <button
@@ -152,11 +152,11 @@ export function ToolModal({ tool, onClose }: Props) {
         </div>
 
         <div>
-          <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+          <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
             Descrição
           </label>
           <textarea
-            className="textarea text-[12px] min-h-[64px]"
+            className="textarea text-[14px] min-h-[64px]"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="O que esta ferramenta faz? O agente usa essa descrição para decidir quando invocá-la."
@@ -166,7 +166,7 @@ export function ToolModal({ tool, onClose }: Props) {
         {/* Endpoint + método */}
         <div className="grid grid-cols-[120px_1fr] gap-3">
           <div>
-            <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
               Método
             </label>
             <select
@@ -182,7 +182,7 @@ export function ToolModal({ tool, onClose }: Props) {
             </select>
           </div>
           <div>
-            <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
               Endpoint
             </label>
             <input
@@ -195,7 +195,7 @@ export function ToolModal({ tool, onClose }: Props) {
         </div>
 
         <div>
-          <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+          <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
             Escopo
           </label>
           <input
@@ -210,7 +210,7 @@ export function ToolModal({ tool, onClose }: Props) {
               <option key={s} value={s} />
             ))}
           </datalist>
-          <p className="text-[10.5px] text-creme-faint mt-1">
+          <p className="text-[12.5px] text-creme-faint mt-1">
             Use <span className="font-mono">global</span> para disponibilizar a todos, ou um cliente para restringir.
           </p>
         </div>
@@ -218,7 +218,7 @@ export function ToolModal({ tool, onClose }: Props) {
         {/* Parâmetros */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute">
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute">
               Parâmetros
             </label>
             <button type="button" className="btn btn-ghost btn-sm" onClick={addParam}>
@@ -226,7 +226,7 @@ export function ToolModal({ tool, onClose }: Props) {
             </button>
           </div>
           {parameters.length === 0 ? (
-            <div className="text-[11px] text-creme-faint italic px-3 py-2 bg-surface-2 border border-default rounded-lg">
+            <div className="text-[13px] text-creme-faint italic px-3 py-2 bg-surface-2 border border-default rounded-lg">
               Nenhum parâmetro definido.
             </div>
           ) : (
@@ -237,13 +237,13 @@ export function ToolModal({ tool, onClose }: Props) {
                   className="grid grid-cols-[1fr_110px_90px_auto] gap-2 items-center bg-surface-2 border border-default rounded-lg p-2"
                 >
                   <input
-                    className="input font-mono text-[11px]"
+                    className="input font-mono text-[13px]"
                     value={p.name}
                     onChange={(e) => updateParam(i, { name: e.target.value })}
                     placeholder="nome_param"
                   />
                   <select
-                    className="input font-mono text-[11px]"
+                    className="input font-mono text-[13px]"
                     value={p.type}
                     onChange={(e) => updateParam(i, { type: e.target.value as ParamType })}
                   >
@@ -251,7 +251,7 @@ export function ToolModal({ tool, onClose }: Props) {
                     <option value="number">number</option>
                     <option value="boolean">boolean</option>
                   </select>
-                  <label className="flex items-center gap-1.5 text-[11px] text-creme-mute">
+                  <label className="flex items-center gap-1.5 text-[13px] text-creme-mute">
                     <input
                       type="checkbox"
                       checked={p.required}
@@ -267,7 +267,7 @@ export function ToolModal({ tool, onClose }: Props) {
                     <Trash2 size={13} />
                   </button>
                   <input
-                    className="input text-[11px] col-span-4"
+                    className="input text-[13px] col-span-4"
                     value={p.description}
                     onChange={(e) => updateParam(i, { description: e.target.value })}
                     placeholder="Descrição do parâmetro"

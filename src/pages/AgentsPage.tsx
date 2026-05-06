@@ -14,7 +14,7 @@ export function AgentsPage() {
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2 text-[13px] font-bold text-creme">
+        <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
           <Bot size={16} className="text-creme-mute" /> Todos os Colaboradores Digitais
         </div>
         <button className="btn btn-accent" onClick={() => setShowNew(true)}>

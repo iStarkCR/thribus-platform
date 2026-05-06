@@ -43,7 +43,7 @@ export function DashboardPage() {
                   <Icon size={16} />
                 </div>
                 <span className={clsx(
-                  'text-[11px] font-mono font-medium px-1.5 py-0.5 rounded-full',
+                  'text-[13px] font-mono font-medium px-1.5 py-0.5 rounded-full',
                   m.label === 'Escalamentos Hoje'
                     ? (isNeg ? 'bg-semantic-green/10 text-semantic-green' : 'bg-semantic-red/10 text-semantic-red')
                     : (isNeg ? 'bg-semantic-red/10 text-semantic-red' : 'bg-semantic-green/10 text-semantic-green'),
@@ -52,7 +52,7 @@ export function DashboardPage() {
                 </span>
               </div>
               <div className="text-[28px] font-extrabold text-creme tracking-tight leading-none mb-1">{m.value}</div>
-              <div className="text-[11.5px] text-creme-mute font-medium">{m.label}</div>
+              <div className="text-[13.5px] text-creme-mute font-medium">{m.label}</div>
             </div>
           );
         })}
@@ -62,10 +62,10 @@ export function DashboardPage() {
       <div className="grid grid-cols-[1fr_360px] gap-4 mb-6">
         <div>
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-[13px] font-bold text-creme">
+            <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
               <Bot size={16} className="text-creme-mute" /> Colaboradores Digitais
             </div>
-            <button onClick={() => navigate('/agents')} className="text-[11px] text-creme-mute font-semibold hover:text-brand-bright transition-colors flex items-center gap-1">
+            <button onClick={() => navigate('/agents')} className="text-[13px] text-creme-mute font-semibold hover:text-brand-bright transition-colors flex items-center gap-1">
               Ver todos <ChevronRight size={12} />
             </button>
           </div>
@@ -79,7 +79,7 @@ export function DashboardPage() {
         {/* Escalations */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-[13px] font-bold text-creme">
+            <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
               <AlertTriangle size={16} className="text-creme-mute" /> Escalamentos Pendentes
             </div>
           </div>
@@ -97,10 +97,10 @@ export function DashboardPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold text-creme">{e.customerName}</div>
-                  <div className="text-[11px] text-creme-mute truncate">{e.reason}</div>
+                  <div className="text-[13px] text-creme-mute truncate">{e.reason}</div>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className="text-[10px] font-mono text-creme-faint">{e.waitTime < 60 ? `${e.waitTime} min` : `${Math.floor(e.waitTime / 60)}h ${e.waitTime % 60}m`}</span>
+                  <span className="text-[12px] font-mono text-creme-faint">{e.waitTime < 60 ? `${e.waitTime} min` : `${Math.floor(e.waitTime / 60)}h ${e.waitTime % 60}m`}</span>
                   <span className="chip chip-amber">{e.agentName.includes('Suporte') ? 'N1' : 'Agend'}</span>
                 </div>
               </div>
@@ -112,10 +112,10 @@ export function DashboardPage() {
       {/* Executions table */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2 text-[13px] font-bold text-creme">
+          <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
             <Activity size={16} className="text-creme-mute" /> Execuções Recentes
           </div>
-          <button onClick={() => navigate('/logs')} className="text-[11px] text-creme-mute font-semibold hover:text-brand-bright transition-colors flex items-center gap-1">
+          <button onClick={() => navigate('/logs')} className="text-[13px] text-creme-mute font-semibold hover:text-brand-bright transition-colors flex items-center gap-1">
             Ver todas <ChevronRight size={12} />
           </button>
         </div>
@@ -123,7 +123,7 @@ export function DashboardPage() {
         <div className="bg-surface-2 border border-default rounded-[10px] overflow-hidden">
           <div className="grid grid-cols-[2.2fr_1.2fr_.8fr_.7fr_.7fr_.6fr] px-5 py-2.5 bg-surface-1 border-b border-default">
             {['Colaborador', 'Status', 'Tools', 'Tempo', 'Tokens', 'Há'].map((h) => (
-              <div key={h} className="text-[10px] font-bold uppercase tracking-wider text-creme-faint">{h}</div>
+              <div key={h} className="text-[12px] font-bold uppercase tracking-wider text-creme-faint">{h}</div>
             ))}
           </div>
           {executions.map((e) => {
@@ -140,17 +140,17 @@ export function DashboardPage() {
                     {isSupport ? <Shield size={13} /> : <Calendar size={13} />}
                   </div>
                   <div>
-                    <div className="text-[12.5px] font-semibold text-creme">{e.agentName}</div>
-                    <div className="text-[10.5px] text-creme-faint">{e.clientName} · {e.customerName}</div>
+                    <div className="text-[14.5px] font-semibold text-creme">{e.agentName}</div>
+                    <div className="text-[12.5px] text-creme-faint">{e.clientName} · {e.customerName}</div>
                   </div>
                 </div>
-                <div className={clsx('flex items-center gap-1.5 text-[11.5px] font-semibold', sc.color)}>
+                <div className={clsx('flex items-center gap-1.5 text-[13.5px] font-semibold', sc.color)}>
                   <StatusIcon size={13} /> {sc.label}
                 </div>
                 <div className="text-xs font-mono text-brand">{e.toolsUsed.length} tools</div>
                 <div className="text-xs font-mono text-creme-dim">{e.responseTime}s</div>
                 <div className="text-xs font-mono text-creme-dim">{e.tokensUsed.toLocaleString()}</div>
-                <div className="text-[11px] font-mono text-creme-faint">
+                <div className="text-[13px] font-mono text-creme-faint">
                   {Math.round((Date.now() - new Date(e.timestamp).getTime()) / 60000)} min
                 </div>
               </div>

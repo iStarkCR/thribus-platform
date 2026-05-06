@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    font-size: 17px;
+  }
   ::-webkit-scrollbar {
     width: 4px;
   }
@@ -30,7 +33,7 @@
   }
 
   .chip {
-    @apply text-[10px] font-semibold font-mono px-2 py-0.5 rounded-full;
+    @apply text-[12px] font-semibold font-mono px-2 py-0.5 rounded-full;
   }
   .chip-green {
     @apply bg-semantic-green/10 text-semantic-green;
@@ -49,7 +52,7 @@
   }
 
   .tag {
-    @apply text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-brand/[0.06] border border-brand/[0.12] text-brand;
+    @apply text-[12px] font-mono font-medium px-1.5 py-0.5 rounded bg-brand/[0.06] border border-brand/[0.12] text-brand;
   }
   .tag-off {
     @apply bg-white/[0.02] border-default text-creme-faint;

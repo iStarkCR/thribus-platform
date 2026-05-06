@@ -50,10 +50,10 @@ export function AgentCard({ agent, showFullInfo, onClick }: AgentCardProps) {
             <Icon size={16} />
           </div>
           <div>
-            <div className={clsx('text-[13.5px] font-bold tracking-tight', off ? 'text-creme-faint' : 'text-creme')}>
+            <div className={clsx('text-[15.5px] font-bold tracking-tight', off ? 'text-creme-faint' : 'text-creme')}>
               {agent.name}{showFullInfo ? ` — ${agent.client}` : ''}
             </div>
-            <div className="text-[11px] text-creme-mute mt-px">
+            <div className="text-[13px] text-creme-mute mt-px">
               {showFullInfo ? `Colaborador Digital ${agent.type.charAt(0).toUpperCase() + agent.type.slice(1)} · ${agent.sector}` : `${agent.client} · ${agent.sector}`}
             </div>
           </div>
@@ -61,7 +61,7 @@ export function AgentCard({ agent, showFullInfo, onClick }: AgentCardProps) {
 
         <div className="flex items-center gap-3">
           {/* Status */}
-          <div className={clsx('flex items-center gap-1.5 text-[11px] font-semibold', {
+          <div className={clsx('flex items-center gap-1.5 text-[13px] font-semibold', {
             'text-semantic-green': agent.status === 'online',
             'text-semantic-amber': agent.status === 'standby',
             'text-creme-faint': agent.status === 'offline',
@@ -116,7 +116,7 @@ export function AgentCard({ agent, showFullInfo, onClick }: AgentCardProps) {
             <div className={clsx('font-mono text-sm font-semibold', off ? 'text-creme-faint' : 'text-creme')}>
               {stat.value}
             </div>
-            <div className="text-[9.5px] text-creme-faint uppercase tracking-wider font-semibold mt-0.5">
+            <div className="text-[11.5px] text-creme-faint uppercase tracking-wider font-semibold mt-0.5">
               {stat.label}
             </div>
           </div>

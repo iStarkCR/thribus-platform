@@ -37,7 +37,7 @@ export function ToolsPage() {
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2 text-[13px] font-bold text-creme">
+        <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
           <Wrench size={16} className="text-creme-mute" /> Ferramentas Disponíveis
         </div>
         <button className="btn btn-accent" onClick={() => setShowNew(true)}>
@@ -113,8 +113,8 @@ export function ToolsPage() {
               >
                 {t.name}
               </div>
-              <div className="text-[11px] text-creme-mute leading-relaxed mb-2.5">{t.description}</div>
-              <div className="flex items-center justify-between text-[10px] font-mono text-creme-faint">
+              <div className="text-[13px] text-creme-mute leading-relaxed mb-2.5">{t.description}</div>
+              <div className="flex items-center justify-between text-[12px] font-mono text-creme-faint">
                 <span>{t.endpoint}</span>
                 <span className="chip chip-muted">{t.scope}</span>
               </div>

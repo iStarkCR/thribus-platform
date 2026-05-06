@@ -21,7 +21,7 @@ export function PlaceholderPage({ title, description, icon }: Props) {
 
   return (
     <>
-      <div className="flex items-center gap-2 text-[13px] font-bold text-creme mb-4">
+      <div className="flex items-center gap-2 text-[15px] font-bold text-creme mb-4">
         <Icon size={16} className="text-creme-mute" /> {title}
       </div>
       <div className="bg-surface-2 border border-default rounded-[10px] px-12 py-16 text-center">

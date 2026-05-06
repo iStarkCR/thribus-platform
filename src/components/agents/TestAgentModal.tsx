@@ -56,7 +56,7 @@ export function TestAgentModal({ onClose }: Props) {
     >
       <div className="space-y-4">
         <div>
-          <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Colaborador</label>
+          <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Colaborador</label>
           <select className="input" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
             {agents.map((a) => (
               <option key={a.id} value={a.id}>{a.name} — {a.client}</option>
@@ -65,12 +65,12 @@ export function TestAgentModal({ onClose }: Props) {
         </div>
 
         <div>
-          <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">WhatsApp (simulado)</label>
+          <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">WhatsApp (simulado)</label>
           <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} />
         </div>
 
         <div>
-          <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Mensagem do Cliente</label>
+          <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Mensagem do Cliente</label>
           <textarea
             className="textarea"
             value={message}
@@ -81,8 +81,8 @@ export function TestAgentModal({ onClose }: Props) {
 
         {result && (
           <div className="mt-4">
-            <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Resposta</label>
-            <div className="bg-surface-2 border border-hover border-l-2 border-l-brand rounded-lg p-3.5 text-[13px] leading-relaxed text-creme-dim">
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Resposta</label>
+            <div className="bg-surface-2 border border-hover border-l-2 border-l-brand rounded-lg p-3.5 text-[15px] leading-relaxed text-creme-dim">
               {result.response}
             </div>
             <div className="flex flex-wrap gap-1 mt-2">
@@ -90,7 +90,7 @@ export function TestAgentModal({ onClose }: Props) {
                 <span key={t} className="tag">{t}</span>
               ))}
             </div>
-            <div className="flex gap-4 mt-3 text-[10px] font-mono text-creme-faint">
+            <div className="flex gap-4 mt-3 text-[12px] font-mono text-creme-faint">
               <span>{result.responseTime}s</span>
               <span>{result.tokensUsed} tokens</span>
               <span>{result.toolsUsed.length} tools</span>

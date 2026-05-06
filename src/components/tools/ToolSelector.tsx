@@ -30,7 +30,7 @@ export function ToolSelector({ client, selected, onChange }: Props) {
 
   if (available.length === 0) {
     return (
-      <div className="text-[11px] text-creme-faint italic px-3 py-3 bg-surface-2 border border-default rounded-lg">
+      <div className="text-[13px] text-creme-faint italic px-3 py-3 bg-surface-2 border border-default rounded-lg">
         Nenhuma ferramenta ativa disponível para "{client || '—'}". Cadastre ferramentas com escopo{' '}
         <span className="font-mono">global</span> ou <span className="font-mono">{client || 'cliente'}</span> em{' '}
         <span className="text-creme-mute">Ferramentas</span>.
@@ -60,10 +60,10 @@ export function ToolSelector({ client, selected, onChange }: Props) {
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-[11.5px] font-bold font-mono text-creme">{t.name}</span>
-                <span className="chip chip-muted text-[9.5px]">{t.scope}</span>
+                <span className="text-[13.5px] font-bold font-mono text-creme">{t.name}</span>
+                <span className="chip chip-muted text-[11.5px]">{t.scope}</span>
               </div>
-              <div className="text-[10.5px] text-creme-mute leading-snug truncate">{t.description}</div>
+              <div className="text-[12.5px] text-creme-mute leading-snug truncate">{t.description}</div>
             </div>
           </label>
         );

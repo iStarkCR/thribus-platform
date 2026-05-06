@@ -32,7 +32,7 @@ export function Modal({ title, subtitle, children, footer, onClose, maxWidth = '
         <div className="px-6 pt-5 pb-4 border-b border-default flex items-start justify-between gap-4">
           <div>
             <h2 className="text-base font-extrabold text-creme tracking-tight">{title}</h2>
-            {subtitle && <p className="text-[11.5px] text-creme-mute mt-0.5">{subtitle}</p>}
+            {subtitle && <p className="text-[13.5px] text-creme-mute mt-0.5">{subtitle}</p>}
           </div>
           <button
             onClick={onClose}

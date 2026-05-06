@@ -58,19 +58,19 @@ export function AgentDetailModal({ agent, onClose }: Props) {
       <div className="grid grid-cols-3 gap-2.5 mb-4">
         {stats.map((s) => (
           <div key={s.label} className="bg-surface-2 border border-default rounded-lg px-3 py-2.5">
-            <div className="text-[9.5px] uppercase tracking-wider text-creme-faint font-semibold mb-0.5">{s.label}</div>
-            <div className={`text-[13px] font-bold font-mono ${s.color || 'text-creme'}`}>{s.value}</div>
+            <div className="text-[11.5px] uppercase tracking-wider text-creme-faint font-semibold mb-0.5">{s.label}</div>
+            <div className={`text-[15px] font-bold font-mono ${s.color || 'text-creme'}`}>{s.value}</div>
           </div>
         ))}
       </div>
 
       {/* System Prompt */}
       <div className="mb-4">
-        <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+        <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
           System Prompt (treinamento)
         </label>
         <textarea
-          className="textarea font-mono text-[11.5px] min-h-[150px]"
+          className="textarea font-mono text-[13.5px] min-h-[150px]"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
         />
@@ -79,10 +79,10 @@ export function AgentDetailModal({ agent, onClose }: Props) {
       {/* Tools selector */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className="text-[10.5px] font-bold uppercase tracking-wider text-creme-mute">
+          <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute">
             Ferramentas
           </label>
-          <span className="text-[10.5px] text-creme-faint font-mono">
+          <span className="text-[12.5px] text-creme-faint font-mono">
             {tools.length} selecionada{tools.length === 1 ? '' : 's'}
           </span>
         </div>
