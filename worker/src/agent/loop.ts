@@ -25,33 +25,75 @@ const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 10);
 
 /**
  * Extrai mensagens do output do agente.
- * Suporta:
- *   - { "mensagem": "texto" } → ["texto"]
- *   - { "mensagens": ["a", "b"] } → ["a", "b"]
- *   - texto puro → [texto puro]
- *   - JSON em bloco markdown ```json ... ``` → extrai e parseia
+ * Suporta múltiplos formatos:
+ *   - JSON puro: { "mensagem": "texto" } → ["texto"]
+ *   - JSON puro: { "mensagens": ["a", "b"] } → ["a", "b"]
+ *   - JSON em bloco markdown ```json ... ```
+ *   - Texto + JSON misturados (extrai o JSON via balance counting)
+ *   - Texto puro (fallback)
  */
+
+function tryParseMessageJSON(s: string): string[] | null {
+  try {
+    const parsed = JSON.parse(s);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const obj = parsed as { mensagem?: unknown; mensagens?: unknown };
+    if (Array.isArray(obj.mensagens) && obj.mensagens.every((m) => typeof m === 'string')) {
+      return obj.mensagens as string[];
+    }
+    if (typeof obj.mensagem === 'string') {
+      return [obj.mensagem];
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/** Encontra um objeto JSON balanceado a partir do primeiro `{` no texto. */
+function extractBalancedJSON(text: string): string | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.substring(start, i + 1);
+    }
+  }
+  return null;
+}
+
 function extractMessages(raw: string): string[] {
   const trimmed = raw.trim();
 
-  // Tenta extrair JSON de bloco markdown
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const candidate = fenceMatch ? fenceMatch[1] : trimmed;
+  // 1) JSON puro
+  const direct = tryParseMessageJSON(trimmed);
+  if (direct) return direct;
 
-  try {
-    const parsed = JSON.parse(candidate);
-    if (parsed && typeof parsed === 'object') {
-      if (Array.isArray(parsed.mensagens) && parsed.mensagens.every((m: unknown) => typeof m === 'string')) {
-        return parsed.mensagens;
-      }
-      if (typeof parsed.mensagem === 'string') {
-        return [parsed.mensagem];
-      }
-    }
-  } catch {
-    // não era JSON, segue para fallback
+  // 2) Bloco markdown ```json ... ```
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenceMatch) {
+    const fenced = tryParseMessageJSON(fenceMatch[1]);
+    if (fenced) return fenced;
   }
 
+  // 3) Texto + JSON misturados — extrai JSON balanceado
+  const embedded = extractBalancedJSON(trimmed);
+  if (embedded) {
+    const parsed = tryParseMessageJSON(embedded);
+    if (parsed) return parsed;
+  }
+
+  // 4) Fallback — texto puro
   return [trimmed];
 }
 
