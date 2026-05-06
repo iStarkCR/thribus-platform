@@ -17,12 +17,23 @@ import express, { Router, type Request, type Response } from 'express';
 import { enqueue } from '../queue/index.js';
 import { db } from '../db/index.js';
 
+interface ChatwootAttachment {
+  id?: number;
+  message_id?: number;
+  file_type?: string; // 'image' | 'audio' | 'video' | 'file' | 'location' | 'fallback'
+  account_id?: number;
+  data_url?: string;
+  thumb_url?: string;
+  file_size?: number;
+}
+
 interface ChatwootWebhookPayload {
   event: string; // 'message_created', etc.
   id?: number;
   content?: string;
   message_type?: 'incoming' | 'outgoing' | 'activity' | 'template' | number;
   content_type?: string;
+  attachments?: ChatwootAttachment[];
   conversation?: {
     id: number;
     inbox_id: number;
@@ -78,7 +89,23 @@ export function createTalkiWebhookRouter(): Router {
       return;
     }
 
-    if (!payload.content?.trim()) {
+    // Extrai anexos (imagens, áudios, etc.) — adicionamos URL ao content
+    const attachments = payload.attachments ?? [];
+    const imageAttachment = attachments.find((a) => a.file_type === 'image' && a.data_url);
+    const audioAttachment = attachments.find((a) => a.file_type === 'audio' && a.data_url);
+
+    let content = payload.content?.trim() ?? '';
+
+    if (imageAttachment?.data_url) {
+      const imgTag = `[image_url: ${imageAttachment.data_url}]`;
+      content = content ? `${content}\n${imgTag}` : imgTag;
+    }
+    if (audioAttachment?.data_url) {
+      const audioTag = `[audio_url: ${audioAttachment.data_url}]`;
+      content = content ? `${content}\n${audioTag}` : audioTag;
+    }
+
+    if (!content.trim()) {
       res.json({ skipped: 'no_content' });
       return;
     }
@@ -121,8 +148,8 @@ export function createTalkiWebhookRouter(): Router {
         messageId: String(payload.id ?? `talki-${Date.now()}`),
         customerPhone: sender?.phone_number ?? '',
         customerName: sender?.name,
-        content: payload.content!,
-        messageType: payload.content_type ?? 'text',
+        content,
+        messageType: payload.content_type ?? (imageAttachment ? 'image' : 'text'),
         channel: channelKey,
         leadStage: conv.status,
       });
