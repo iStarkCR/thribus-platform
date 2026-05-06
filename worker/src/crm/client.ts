@@ -150,14 +150,38 @@ export const users = {
 // ─── Canais ───────────────────────────────────────────────────────────────────
 
 export const channels = {
-  async listWhatsApp(): Promise<Array<{ name: string; status: string }>> {
+  async listWhatsApp(): Promise<Array<{ name: string; status: string; slug?: string }>> {
     return req('GET', '/whatsapp/channels');
   },
 
   async isConnected(channelName: string): Promise<boolean> {
-    const list = await this.listWhatsApp();
-    const ch = list.find((c) => c.name === channelName);
-    return ch?.status === 'connected';
+    try {
+      const list = await this.listWhatsApp();
+      // Tenta achar pelo `name` ou `slug` (TexNet pode usar qualquer um)
+      const ch = list.find(
+        (c) => c.name === channelName || c.slug === channelName,
+      );
+
+      // Se não conseguir localizar, assume conectado (não bloqueia envio).
+      if (!ch) {
+        console.warn(`[crm] canal "${channelName}" não encontrado em /whatsapp/channels — assumindo conectado`);
+        return true;
+      }
+
+      // Status válidos pra conexão (TexNet retorna em PT-BR: "Ativo")
+      const ok = ['connected', 'active', 'ativo', 'online', 'ready'];
+      const status = (ch.status ?? '').toLowerCase();
+      const isOk = ok.includes(status);
+
+      if (!isOk) {
+        console.warn(`[crm] canal "${channelName}" status="${ch.status}" — não está em ${ok.join('|')}`);
+      }
+      return isOk;
+    } catch (err) {
+      // Se falhar a chamada (endpoint indisponível, etc.), não bloqueia
+      console.warn(`[crm] erro ao checar canal "${channelName}":`, (err as Error).message);
+      return true;
+    }
   },
 };
 
