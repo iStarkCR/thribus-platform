@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e2b1e;
+    border-radius: 99px;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer border;
+  }
+  .btn-ghost {
+    @apply bg-surface-3 border-default text-creme-dim hover:border-hover hover:text-creme;
+  }
+  .btn-accent {
+    @apply bg-brand-dim border-brand text-creme hover:bg-brand hover:shadow-[0_0_16px_rgba(107,143,94,0.25)];
+  }
+  .btn-danger {
+    @apply bg-semantic-red/10 border-semantic-red/30 text-semantic-red hover:bg-semantic-red/20;
+  }
+
+  .chip {
+    @apply text-[10px] font-semibold font-mono px-2 py-0.5 rounded-full;
+  }
+  .chip-green {
+    @apply bg-semantic-green/10 text-semantic-green;
+  }
+  .chip-amber {
+    @apply bg-semantic-amber/10 text-semantic-amber;
+  }
+  .chip-red {
+    @apply bg-semantic-red/10 text-semantic-red;
+  }
+  .chip-blue {
+    @apply bg-semantic-blue/10 text-semantic-blue;
+  }
+  .chip-muted {
+    @apply bg-white/[0.04] text-creme-mute;
+  }
+
+  .tag {
+    @apply text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-brand/[0.06] border border-brand/[0.12] text-brand;
+  }
+  .tag-off {
+    @apply bg-white/[0.02] border-default text-creme-faint;
+  }
+
+  .input {
+    @apply w-full bg-surface-2 border border-default rounded-lg px-3 py-2.5 text-creme text-sm outline-none transition-colors focus:border-brand;
+  }
+  .textarea {
+    @apply input min-h-[80px] resize-y leading-relaxed;
+  }
+}

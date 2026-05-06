@@ -1,0 +1,175 @@
+/**
+ * TexNet CRM API Client
+ *
+ * Base URL: https://texcrm.texnet.com.br/api/v1
+ * Auth: header x-api-key (formato txn_<32-64 chars>)
+ * Docs: TexNet API Reference v1
+ */
+
+const BASE = 'https://texcrm.texnet.com.br/api/v1';
+
+function headers(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'x-api-key': process.env.TEXNET_API_KEY ?? '',
+  };
+}
+
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: headers(),
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (res.status === 204) return null as T;
+
+  const json = await res.json() as T;
+
+  if (!res.ok) {
+    const err = json as { error?: string };
+    throw new Error(`TexNet CRM ${res.status}: ${err.error ?? res.statusText}`);
+  }
+
+  return json;
+}
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+export interface Lead {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  source: string | null;
+  stage: string;
+  value: number;
+  tags: string | null;
+  channel: string | null;
+  botMode: boolean;
+  botModeAt: string | null;
+  notes: string | null;
+  responsibleId: string | null;
+  responsible: { id: string; name: string; email: string; status: string } | null;
+  messages: LeadMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LeadMessage {
+  id: string;
+  content: string;
+  type: string;
+  direction: 'inbound' | 'outbound';
+  status: string;
+  createdAt: string;
+  sender: { id: string; name: string } | null;
+}
+
+export interface CrmUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: 'online' | 'busy' | 'away' | 'offline';
+  teamId: string | null;
+}
+
+export type LeadStage =
+  | 'aguardando'
+  | 'em_atendimento'
+  | 'sem_contato'
+  | 'parou_responder'
+  | 'sem_disponibilidade'
+  | 'convertido'
+  | 'perdido';
+
+// ─── Leads ────────────────────────────────────────────────────────────────────
+
+export const leads = {
+  async get(id: string): Promise<Lead> {
+    return req<Lead>('GET', `/leads/${id}`);
+  },
+
+  async update(id: string, data: Partial<{
+    name: string; email: string; value: number;
+    notes: string; tags: string[]; stage: LeadStage;
+  }>): Promise<Lead> {
+    return req<Lead>('PATCH', `/leads/${id}`, data);
+  },
+
+  async moveStage(id: string, stage: LeadStage): Promise<Lead> {
+    return req<Lead>('PATCH', `/leads/${id}/stage`, { stage });
+  },
+
+  async assign(id: string, responsibleId: string): Promise<Lead> {
+    return req<Lead>('PATCH', `/leads/${id}/assign`, { responsibleId });
+  },
+
+  async setBotMode(id: string, enabled: boolean): Promise<{ id: string; botMode: boolean }> {
+    return req('PATCH', `/leads/${id}/bot-mode`, { enabled });
+  },
+};
+
+// ─── Mensagens ────────────────────────────────────────────────────────────────
+
+export const messages = {
+  async send(leadId: string, content: string): Promise<LeadMessage> {
+    return req<LeadMessage>('POST', `/leads/${leadId}/messages`, { content, type: 'text' });
+  },
+
+  async list(leadId: string, limit = 20): Promise<{ data: LeadMessage[] }> {
+    return req('GET', `/leads/${leadId}/messages?limit=${limit}`);
+  },
+};
+
+// ─── Usuários ─────────────────────────────────────────────────────────────────
+
+export const users = {
+  async list(): Promise<CrmUser[]> {
+    return req<CrmUser[]>('GET', '/users');
+  },
+
+  async findOnlineAgent(): Promise<CrmUser | null> {
+    const all = await this.list();
+    return all.find((u) => u.role === 'agent' && u.status === 'online') ?? null;
+  },
+};
+
+// ─── Canais ───────────────────────────────────────────────────────────────────
+
+export const channels = {
+  async listWhatsApp(): Promise<Array<{ name: string; status: string }>> {
+    return req('GET', '/whatsapp/channels');
+  },
+
+  async isConnected(channelName: string): Promise<boolean> {
+    const list = await this.listWhatsApp();
+    const ch = list.find((c) => c.name === channelName);
+    return ch?.status === 'connected';
+  },
+};
+
+// ─── Escalação para humano (padrão recomendado pela API doc) ──────────────────
+
+export async function escalateToHuman(leadId: string, channel: string): Promise<void> {
+  // 1. Verifica agente disponível
+  const agent = await users.findOnlineAgent();
+
+  // 2. Desativa bot
+  await leads.setBotMode(leadId, false);
+
+  // 3. Atribui ao agente (se disponível)
+  if (agent) {
+    await leads.assign(leadId, agent.id);
+  }
+
+  // 4. Avisa o cliente
+  await messages.send(leadId,
+    agent
+      ? `Vou te transferir para um atendente humano. Um momento por favor! 👤`
+      : `Nossa equipe será notificada em breve. Aguarde! 👤`
+  );
+
+  console.log(`[crm] lead ${leadId} escalado para humano. agente: ${agent?.name ?? 'nenhum online'}`);
+}
