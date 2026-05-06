@@ -12,6 +12,7 @@
 import express from 'express';
 import { createWebhookRouter } from './crm/webhook.js';
 import { startWorker } from './queue/index.js';
+import { startPolling } from './agent/poll.js';
 
 const PORT = Number(process.env.PORT ?? 3200);
 
@@ -41,6 +42,9 @@ app.use('/webhook', createWebhookRouter());
 
 // Start async worker loop
 startWorker();
+
+// Start polling (workaround enquanto webhook do TexNet está bugado)
+startPolling();
 
 app.listen(PORT, () => {
   console.log(`[worker] listening on :${PORT}`);

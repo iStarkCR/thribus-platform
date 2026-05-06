@@ -91,6 +91,17 @@ export const leads = {
     return req<Lead>('GET', `/leads/${id}`);
   },
 
+  async list(opts: { channel?: string; limit?: number } = {}): Promise<Lead[]> {
+    const params = new URLSearchParams();
+    if (opts.channel) params.set('channel', opts.channel);
+    if (opts.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    const path = qs ? `/leads?${qs}` : '/leads';
+    // TexNet pode retornar { data: Lead[] } ou Lead[] direto
+    const result = await req<Lead[] | { data: Lead[] }>('GET', path);
+    return Array.isArray(result) ? result : (result.data ?? []);
+  },
+
   async update(id: string, data: Partial<{
     name: string; email: string; value: number;
     notes: string; tags: string[]; stage: LeadStage;

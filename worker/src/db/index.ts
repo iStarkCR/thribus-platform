@@ -103,6 +103,24 @@ export const db = {
         channel: data.channel ?? undefined,
       };
     },
+
+    async listWithChannel(): Promise<AgentRecord[]> {
+      if (!supabase) return [];
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name, client, model, system_prompt, tools, channel')
+        .not('channel', 'is', null);
+      if (error) throw error;
+      return (data ?? []).map((a) => ({
+        id: a.id,
+        name: a.name,
+        client: a.client,
+        model: a.model,
+        systemPrompt: a.system_prompt,
+        tools: a.tools ?? [],
+        channel: a.channel ?? undefined,
+      }));
+    },
   },
 
   tools: {
