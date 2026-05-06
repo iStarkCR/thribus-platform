@@ -11,6 +11,7 @@
 
 import express from 'express';
 import { createWebhookRouter } from './crm/webhook.js';
+import { createTalkiWebhookRouter } from './talki/webhook.js';
 import { startWorker } from './queue/index.js';
 import { startPolling } from './agent/poll.js';
 
@@ -26,7 +27,8 @@ app.get('/', (_req, res) => {
     status: 'running',
     endpoints: {
       health: 'GET /health',
-      webhook: 'POST /webhook/texnet',
+      texnet_webhook: 'POST /webhook/texnet',
+      talki_webhook: 'POST /webhook/talki',
     },
     ts: new Date().toISOString(),
   });
@@ -39,6 +41,7 @@ app.get('/health', (_req, res) => {
 
 // Webhook routes
 app.use('/webhook', createWebhookRouter());
+app.use('/webhook', createTalkiWebhookRouter());
 
 // Start async worker loop
 startWorker();

@@ -15,6 +15,7 @@
 
 import { db } from '../db/index.js';
 import * as crm from '../crm/client.js';
+import * as crmDispatcher from '../crm/dispatcher.js';
 import { enqueue } from '../queue/index.js';
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 15000);
@@ -66,6 +67,9 @@ async function runOnce(): Promise<void> {
   }
 
   for (const [channel, agent] of channelToAgent) {
+    // Polling só é necessário para TexNet (Talki usa webhook)
+    if (crmDispatcher.detectProvider(channel) !== 'texnet') continue;
+
     let leadsList: crm.Lead[] = [];
     try {
       leadsList = await crm.leads.list({ channel, limit: 50 });

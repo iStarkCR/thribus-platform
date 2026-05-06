@@ -17,7 +17,7 @@
 import type { MessageParam } from '../llm/client.js';
 import { callLLM, type ToolDefinition } from '../llm/client.js';
 import { executeTool } from '../tools/dispatcher.js';
-import * as crm from '../crm/client.js';
+import * as crm from '../crm/dispatcher.js';
 import { db } from '../db/index.js';
 import type { AgentJob } from '../queue/index.js';
 
@@ -65,15 +65,12 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   const agent = await db.agents.findById(job.agentId);
   if (!agent) throw new Error(`Agent ${job.agentId} não encontrado no banco`);
 
-  // 2. Busca lead completo no TexNet CRM (inclui histórico)
-  const lead = await crm.leads.get(job.leadId);
+  // 2. Busca lead completo no CRM (TexNet ou Talki — dispatcher decide)
+  const lead = await crm.getLead(job.channel, job.leadId);
 
   // 3. ⚠️ SAFETY: só processa se botMode JÁ está true. Não ativa automaticamente!
-  //    Ativação precisa ser manual no painel TexNet (botão "Bot") ou via setBotMode
-  //    explícito por outro caminho. Isso evita o bot tomar conta de todas as
-  //    conversas existentes do número quando o canal compartilha conversas.
   if (lead.botMode !== true) {
-    console.log(`[loop] lead ${job.leadId} sem botMode ativo — ignorando (ative manualmente no painel se quiser bot)`);
+    console.log(`[loop] lead ${job.leadId} sem botMode ativo — ignorando`);
     return;
   }
 
@@ -130,7 +127,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     // Re-verifica botMode a cada iteração (humano pode assumir no meio)
     if (iter > 0) {
-      const refreshed = await crm.leads.get(job.leadId);
+      const refreshed = await crm.getLead(job.channel, job.leadId);
       if (refreshed.botMode === false) {
         console.log(`[loop] humano assumiu durante loop iter=${iter} — cancelando`);
         return;
@@ -183,7 +180,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       // Escalonamento via tool
       const escalation = results.find((r) => r.toolName === 'escalar_humano');
       if (escalation) {
-        await crm.escalateToHuman(job.leadId, job.channel);
+        await crm.escalateToHuman(job.channel, job.leadId);
         exitReason = 'escalated';
         break;
       }
@@ -196,7 +193,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       finalText = response.text;
 
       // Verifica canal conectado antes de enviar
-      const connected = await crm.channels.isConnected(job.channel);
+      const connected = await crm.isChannelConnected(job.channel);
       if (!connected) {
         console.warn(`[loop] canal ${job.channel} desconectado — não enviando`);
         exitReason = 'failed';
@@ -207,7 +204,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       const messagesToSend = extractMessages(finalText);
 
       for (let i = 0; i < messagesToSend.length; i++) {
-        await crm.messages.send(job.leadId, messagesToSend[i]);
+        await crm.sendMessage(job.channel, job.leadId, messagesToSend[i]);
         // Pequeno delay entre mensagens para chegar em ordem
         if (i < messagesToSend.length - 1) {
           await new Promise((r) => setTimeout(r, 600));
@@ -234,7 +231,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   // Estorou iterações sem resposta → escalar
   if (!finalText && exitReason === 'failed') {
     console.error(`[loop] MAX_TOOL_ITERATIONS atingido — escalando leadId=${job.leadId}`);
-    await crm.escalateToHuman(job.leadId, job.channel);
+    await crm.escalateToHuman(job.channel, job.leadId);
     exitReason = 'escalated';
   }
 
