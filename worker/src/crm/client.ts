@@ -124,9 +124,48 @@ export const leads = {
 
 // ─── Mensagens ────────────────────────────────────────────────────────────────
 
+// Cache do senderId (uma busca por execução do worker)
+let cachedSenderId: string | null = null;
+
+async function resolveSenderId(): Promise<string | null> {
+  if (cachedSenderId) return cachedSenderId;
+
+  // 1. Override via env var
+  if (process.env.TEXNET_BOT_SENDER_ID) {
+    cachedSenderId = process.env.TEXNET_BOT_SENDER_ID;
+    console.log(`[crm] senderId via env: ${cachedSenderId}`);
+    return cachedSenderId;
+  }
+
+  // 2. Pega o primeiro user do CRM (preferencialmente admin/agent online)
+  try {
+    const users = await req<CrmUser[]>('GET', '/users');
+    if (Array.isArray(users) && users.length > 0) {
+      // Prioridade: admin online > agent online > qualquer
+      const sorted = [...users].sort((a, b) => {
+        const score = (u: CrmUser) =>
+          (u.role === 'admin' && u.status === 'online' ? 100 : 0) +
+          (u.role === 'agent' && u.status === 'online' ? 50 : 0) +
+          (u.status === 'online' ? 10 : 0);
+        return score(b) - score(a);
+      });
+      cachedSenderId = sorted[0].id;
+      console.log(`[crm] senderId resolvido: ${sorted[0].name} (${sorted[0].id})`);
+      return cachedSenderId;
+    }
+  } catch (err) {
+    console.warn(`[crm] falha ao buscar users pra senderId:`, (err as Error).message);
+  }
+
+  return null;
+}
+
 export const messages = {
   async send(leadId: string, content: string): Promise<LeadMessage> {
-    return req<LeadMessage>('POST', `/leads/${leadId}/messages`, { content, type: 'text' });
+    const senderId = await resolveSenderId();
+    const body: Record<string, unknown> = { content, type: 'text' };
+    if (senderId) body.senderId = senderId;
+    return req<LeadMessage>('POST', `/leads/${leadId}/messages`, body);
   },
 
   async list(leadId: string, limit = 20): Promise<{ data: LeadMessage[] }> {
