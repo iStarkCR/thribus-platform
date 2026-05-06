@@ -16,7 +16,7 @@
 import { db } from '../db/index.js';
 import * as crm from '../crm/client.js';
 import * as crmDispatcher from '../crm/dispatcher.js';
-import { enqueue } from '../queue/index.js';
+import { bufferEnqueue } from './buffer.js';
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 15000);
 const POLL_ENABLED = (process.env.POLL_ENABLED ?? 'true').toLowerCase() !== 'false';
@@ -117,7 +117,7 @@ async function runOnce(): Promise<void> {
       // Mensagem nova — enfileira
       console.log(`[poll] nova msg lead=${fullLead.id} msgId=${latest.id} content="${latest.content.slice(0, 60)}..."`);
 
-      enqueue({
+      bufferEnqueue({
         agentId: agent.id,
         leadId: fullLead.id,
         messageId: latest.id,

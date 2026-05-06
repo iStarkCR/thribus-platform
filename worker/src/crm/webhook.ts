@@ -14,7 +14,7 @@
  */
 
 import express, { Router, type Request, type Response } from 'express';
-import { enqueue } from '../queue/index.js';
+import { bufferEnqueue } from '../agent/buffer.js';
 import { db } from '../db/index.js';
 
 // ─── Tipos do payload TexNet ──────────────────────────────────────────────────
@@ -119,7 +119,7 @@ export function createWebhookRouter(): Router {
         return;
       }
 
-      enqueue({
+      bufferEnqueue({
         agentId: agent.id,
         leadId: lead.id,
         messageId: message.id,

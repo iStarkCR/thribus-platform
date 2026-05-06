@@ -14,7 +14,7 @@
  */
 
 import express, { Router, type Request, type Response } from 'express';
-import { enqueue } from '../queue/index.js';
+import { bufferEnqueue } from '../agent/buffer.js';
 import { db } from '../db/index.js';
 import * as talki from './client.js';
 
@@ -167,7 +167,7 @@ export function createTalkiWebhookRouter(): Router {
         }
       }
 
-      enqueue({
+      bufferEnqueue({
         agentId: agent.id,
         leadId: String(conv.id), // conversation_id no Chatwoot
         messageId: String(payload.id ?? `talki-${Date.now()}`),
