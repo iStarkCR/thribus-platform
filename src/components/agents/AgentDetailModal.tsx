@@ -10,7 +10,11 @@ interface Props {
   onClose: () => void;
 }
 
+type Tab = 'config' | 'prompt' | 'tools';
+
 export function AgentDetailModal({ agent, onClose }: Props) {
+  const [tab, setTab] = useState<Tab>('config');
+
   // Campos editáveis
   const [name, setName] = useState(agent.name);
   const [client, setClient] = useState(agent.client);
@@ -86,7 +90,7 @@ export function AgentDetailModal({ agent, onClose }: Props) {
   return (
     <Modal
       title={`${agent.name} — ${agent.client}`}
-      subtitle="Edite qualquer campo abaixo e clique em Salvar"
+      subtitle={`Editar configuração, prompt e ferramentas do colaborador`}
       onClose={onClose}
       maxWidth="780px"
       footer={
@@ -106,7 +110,7 @@ export function AgentDetailModal({ agent, onClose }: Props) {
       }
     >
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-2.5 mb-5">
+      <div className="grid grid-cols-4 gap-2.5 mb-4">
         {stats.map((s) => (
           <div key={s.label} className="bg-surface-2 border border-default rounded-lg px-3 py-2.5">
             <div className="text-[11.5px] uppercase tracking-wider text-creme-faint font-semibold mb-0.5">
@@ -117,11 +121,29 @@ export function AgentDetailModal({ agent, onClose }: Props) {
         ))}
       </div>
 
-      {/* Configuração */}
-      <div className="mb-5">
-        <div className="text-[12px] font-bold uppercase tracking-widest text-brand-bright mb-2.5">
-          Configuração
-        </div>
+      {/* Tabs */}
+      <div className="flex gap-0.5 bg-surface-1 border border-default rounded-lg p-0.5 mb-4 w-fit">
+        {(
+          [
+            { id: 'config', label: 'Configuração' },
+            { id: 'prompt', label: 'System Prompt' },
+            { id: 'tools', label: `Ferramentas (${tools.length})` },
+          ] as Array<{ id: Tab; label: string }>
+        ).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              tab === t.id ? 'bg-surface-3 text-creme' : 'text-creme-mute hover:text-creme-dim'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      {tab === 'config' && (
         <div className="space-y-3.5">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -157,66 +179,65 @@ export function AgentDetailModal({ agent, onClose }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
-                Modelo de IA
-              </label>
-              <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
-                <option value="claude-sonnet-4-20250514">claude-sonnet-4 (recomendado)</option>
-                <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (rápido/barato)</option>
-                <option value="claude-opus-4-6">claude-opus-4-6 (premium)</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
-                Canal (slug)
-              </label>
-              <input
-                className="input font-mono"
-                value={channel}
-                onChange={(e) => setChannel(e.target.value)}
-                placeholder="texnet-duall"
-              />
-            </div>
+          <div>
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+              Modelo de IA
+            </label>
+            <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
+              <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514 (recomendado)</option>
+              <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001 (rápido/barato)</option>
+              <option value="claude-opus-4-6">claude-opus-4-6 (premium)</option>
+            </select>
           </div>
-          <p className="text-[12px] text-creme-faint -mt-1">
-            Slug do canal no CRM (ex: <code className="font-mono text-brand">texnet-duall</code>). É como o webhook
-            roteia mensagens deste canal para este colaborador.
+
+          <div>
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+              Canal (slug do WhatsApp / inbox)
+            </label>
+            <input
+              className="input font-mono"
+              value={channel}
+              onChange={(e) => setChannel(e.target.value)}
+              placeholder="texnet-duall"
+            />
+            <p className="text-[12px] text-creme-faint mt-1.5">
+              Slug do canal no CRM (ex: <code className="font-mono text-brand">texnet-duall</code>). É como o webhook
+              roteia mensagens deste canal para este colaborador.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {tab === 'prompt' && (
+        <div>
+          <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+            System Prompt (treinamento)
+          </label>
+          <textarea
+            className="textarea font-mono text-[13.5px] min-h-[420px] leading-relaxed"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Identidade, comportamento, fluxo padrão, regras de escalonamento..."
+          />
+          <p className="text-[12px] text-creme-faint mt-1.5">
+            {prompt.length.toLocaleString()} caracteres
           </p>
         </div>
-      </div>
+      )}
 
-      {/* System Prompt */}
-      <div className="mb-5">
-        <div className="flex items-center justify-between mb-2.5">
-          <div className="text-[12px] font-bold uppercase tracking-widest text-brand-bright">
-            System Prompt (treinamento)
+      {tab === 'tools' && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute">
+              Ferramentas disponíveis para {client || 'este cliente'}
+            </label>
+            <span className="text-[12.5px] text-creme-faint font-mono">
+              {tools.length} selecionada{tools.length === 1 ? '' : 's'}
+            </span>
           </div>
-          <span className="text-[12px] text-creme-faint font-mono">
-            {prompt.length.toLocaleString()} caracteres
-          </span>
+          <ToolSelector client={client} selected={tools} onChange={setTools} />
         </div>
-        <textarea
-          className="textarea font-mono text-[13.5px] min-h-[360px] leading-relaxed"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Identidade, comportamento, fluxo padrão, regras de escalonamento..."
-        />
-      </div>
-
-      {/* Tools */}
-      <div>
-        <div className="flex items-center justify-between mb-2.5">
-          <div className="text-[12px] font-bold uppercase tracking-widest text-brand-bright">
-            Ferramentas disponíveis
-          </div>
-          <span className="text-[12.5px] text-creme-faint font-mono">
-            {tools.length} selecionada{tools.length === 1 ? '' : 's'}
-          </span>
-        </div>
-        <ToolSelector client={client} selected={tools} onChange={setTools} />
-      </div>
+      )}
     </Modal>
   );
 }
