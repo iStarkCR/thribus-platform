@@ -20,6 +20,17 @@ import { enqueue } from '../queue/index.js';
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 15000);
 const POLL_ENABLED = (process.env.POLL_ENABLED ?? 'true').toLowerCase() !== 'false';
 
+// ⚠️ SAFETY: só processar leads cujo telefone está nessa lista (separar por vírgula).
+// Se vazio/não definido = TODOS os leads do canal são considerados (modo permissivo —
+// USE COM CUIDADO em canais que compartilham conversas pessoais!).
+//
+// Exemplo:
+//   POLL_PHONE_WHITELIST=558534572290,5511999999999
+const POLL_PHONE_WHITELIST = (process.env.POLL_PHONE_WHITELIST ?? '')
+  .split(',')
+  .map((p) => p.trim())
+  .filter(Boolean);
+
 let polling = false;
 
 export function startPolling(): void {
@@ -70,8 +81,14 @@ async function runOnce(): Promise<void> {
     }
 
     for (const lead of leadsList) {
-      // Pula se humano assumiu
-      if (lead.botMode === false && lead.responsibleId) continue;
+      // Whitelist opcional por telefone
+      if (POLL_PHONE_WHITELIST.length > 0 && !POLL_PHONE_WHITELIST.includes(lead.phone)) {
+        continue;
+      }
+
+      // ⚠️ SAFETY: só processa leads que JÁ têm botMode=true (ativação manual)
+      // Isso evita pegar conversas existentes que não deveriam ser respondidas pelo bot.
+      if (lead.botMode !== true) continue;
 
       // Busca lead completo com mensagens
       let fullLead: crm.Lead;

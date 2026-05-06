@@ -68,16 +68,13 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   // 2. Busca lead completo no TexNet CRM (inclui histórico)
   const lead = await crm.leads.get(job.leadId);
 
-  // 3. Verifica se humano não assumiu enquanto job estava na fila
-  if (lead.botMode === false && lead.responsibleId) {
-    console.log(`[loop] lead ${job.leadId} sob controle humano — cancelando`);
+  // 3. ⚠️ SAFETY: só processa se botMode JÁ está true. Não ativa automaticamente!
+  //    Ativação precisa ser manual no painel TexNet (botão "Bot") ou via setBotMode
+  //    explícito por outro caminho. Isso evita o bot tomar conta de todas as
+  //    conversas existentes do número quando o canal compartilha conversas.
+  if (lead.botMode !== true) {
+    console.log(`[loop] lead ${job.leadId} sem botMode ativo — ignorando (ative manualmente no painel se quiser bot)`);
     return;
-  }
-
-  // 4. Ativa botMode se não estiver ativo
-  if (!lead.botMode) {
-    await crm.leads.setBotMode(job.leadId, true);
-    console.log(`[loop] botMode ativado para lead ${job.leadId}`);
   }
 
   // 5. Garante conversation no banco e persiste mensagem recebida (dedup)
