@@ -61,21 +61,32 @@ export function createWebhookRouter(): Router {
   const router = Router();
 
   router.post('/texnet', express.json({ limit: '10mb' }), async (req: Request, res: Response) => {
+    console.log(`[webhook] received event=${req.body?.event} from ${req.ip}`);
+
     // 1. Validar assinatura
     if (!verifySignature(req.headers['x-texnet-signature'] as string)) {
-      console.warn('[webhook] assinatura inválida');
+      console.warn('[webhook] assinatura inválida — rejeitando 401');
       res.status(401).json({ error: 'invalid signature' });
       return;
     }
 
     const payload = req.body as TexNetWebhookPayload;
 
-    // 2. Só processar mensagens recebidas do cliente
+    // 2. Só processar mensagens INBOUND com conteúdo de texto.
+    //    O TexNet às vezes classifica eventos inbound como "message.sent"
+    //    mesmo quando direction=inbound — então confiamos no `direction`,
+    //    que é o campo de fato definitivo.
+    const isMessageEvent =
+      payload.event === 'message.received' || payload.event === 'message.sent';
+
     if (
-      payload.event !== 'message.received' ||
+      !isMessageEvent ||
       payload.data?.message?.direction !== 'inbound' ||
       !payload.data?.message?.content?.trim()
     ) {
+      console.log(
+        `[webhook] skip event=${payload.event} direction=${payload.data?.message?.direction}`,
+      );
       res.json({ skipped: true });
       return;
     }
