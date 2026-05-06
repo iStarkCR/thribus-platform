@@ -58,12 +58,23 @@ export function createTalkiWebhookRouter(): Router {
 
     console.log(`[talki-webhook] event=${payload.event} message_type=${payload.message_type}`);
 
-    // Só queremos mensagens recebidas do cliente (incoming)
-    const isIncoming =
-      payload.message_type === 'incoming' || payload.message_type === 0;
+    // Eventos válidos: message_incoming (já filtrado) ou message_created (precisa filtrar)
+    const isMessageEvent =
+      payload.event === 'message_incoming' || payload.event === 'message_created';
 
-    if (payload.event !== 'message_created' || !isIncoming) {
-      res.json({ skipped: true });
+    if (!isMessageEvent) {
+      res.json({ skipped: 'wrong_event' });
+      return;
+    }
+
+    // Garantir que é incoming (cliente → empresa)
+    const isIncoming =
+      payload.event === 'message_incoming' ||
+      payload.message_type === 'incoming' ||
+      payload.message_type === 0;
+
+    if (!isIncoming) {
+      res.json({ skipped: 'not_incoming' });
       return;
     }
 
