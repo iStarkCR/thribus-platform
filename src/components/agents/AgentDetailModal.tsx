@@ -184,9 +184,18 @@ export function AgentDetailModal({ agent, onClose }: Props) {
               Modelo de IA
             </label>
             <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
-              <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514 (recomendado)</option>
-              <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001 (rápido/barato)</option>
-              <option value="claude-opus-4-6">claude-opus-4-6 (premium)</option>
+              <optgroup label="Anthropic Claude">
+                <option value="claude-sonnet-4-20250514">claude-sonnet-4 (recomendado)</option>
+                <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (rápido)</option>
+                <option value="claude-opus-4-6">claude-opus-4-6 (premium)</option>
+              </optgroup>
+              <optgroup label="OpenAI GPT">
+                <option value="gpt-5">gpt-5</option>
+                <option value="gpt-5-mini">gpt-5-mini (rápido)</option>
+                <option value="gpt-5-nano">gpt-5-nano (mais barato)</option>
+                <option value="gpt-4o">gpt-4o</option>
+                <option value="gpt-4o-mini">gpt-4o-mini</option>
+              </optgroup>
             </select>
           </div>
 

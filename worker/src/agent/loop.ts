@@ -14,8 +14,8 @@
  *   - botMode == false no momento do processamento → humano assumiu → cancela
  */
 
-import type { MessageParam } from '../claude/client.js';
-import { callClaude, type ToolDefinition } from '../claude/client.js';
+import type { MessageParam } from '../llm/client.js';
+import { callLLM, type ToolDefinition } from '../llm/client.js';
 import { executeTool } from '../tools/dispatcher.js';
 import * as crm from '../crm/client.js';
 import { db } from '../db/index.js';
@@ -142,7 +142,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
 
     console.log(`[loop] iter=${iter} agentId=${job.agentId} leadId=${job.leadId}`);
 
-    const response = await callClaude({
+    const response = await callLLM({
       model: agent.model,
       systemPrompt: agent.systemPrompt,
       tools: toolDefs,

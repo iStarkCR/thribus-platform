@@ -4,7 +4,17 @@
 
 export type AgentStatus = 'online' | 'standby' | 'offline';
 export type AgentType = 'modular' | 'operacional' | 'enterprise';
-export type AIModel = 'claude-sonnet-4-20250514' | 'claude-haiku-4-5-20251001' | 'claude-opus-4-6';
+export type AIModel =
+  // Anthropic
+  | 'claude-sonnet-4-20250514'
+  | 'claude-haiku-4-5-20251001'
+  | 'claude-opus-4-6'
+  // OpenAI
+  | 'gpt-5'
+  | 'gpt-5-mini'
+  | 'gpt-5-nano'
+  | 'gpt-4o'
+  | 'gpt-4o-mini';
 
 export interface AgentStats {
   today: number;

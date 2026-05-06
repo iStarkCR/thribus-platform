@@ -1,57 +1,24 @@
 /**
- * Anthropic client com prompt caching
- *
- * Usa o endpoint beta.promptCaching do SDK que tem suporte nativo
- * a cache_control nos blocos de system prompt, tools e histórico.
+ * Anthropic provider — usa beta.promptCaching.
  *
  * Estratégia de cache:
- *   1. System prompt do agent       → imutável entre turnos → sempre cacheado
- *   2. Definições de tools          → muda só quando editadas → cacheado na última tool
- *   3. Histórico de mensagens       → os mais antigos ficam cacheados (HISTORY_CACHE_WINDOW)
- *
- * Economia típica: 70–90% do custo de tokens em conversas longas.
+ *   1. System prompt — sempre cacheado
+ *   2. Tools — cache na última definição
+ *   3. Histórico — cache até HISTORY_CACHE_WINDOW
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import type {
-  PromptCachingBetaMessageParam,
   PromptCachingBetaTextBlockParam,
+  PromptCachingBetaTool,
 } from '@anthropic-ai/sdk/resources/beta/prompt-caching/messages.js';
-import type { PromptCachingBetaTool } from '@anthropic-ai/sdk/resources/beta/prompt-caching/messages.js';
-
-export type MessageParam = PromptCachingBetaMessageParam;
+import type { CallOpts, LLMResponse, MessageParam, ToolDefinition } from './types.js';
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  input_schema: {
-    type: 'object';
-    properties: Record<string, { type: string; description?: string }>;
-    required?: string[];
-  };
-}
-
-export interface ClaudeResponse {
-  stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | string;
-  text: string | null;
-  toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }>;
-  usage: {
-    inputTokens: number;
-    outputTokens: number;
-    cacheCreationTokens: number;
-    cacheReadTokens: number;
-  };
-}
-
-// ─── Histórico: cache nos turnos mais antigos ─────────────────────────────────
-
-const HISTORY_CACHE_WINDOW = 4; // últimas N mensagens NÃO são cacheadas
+const HISTORY_CACHE_WINDOW = 4;
 
 function applyHistoryCache(messages: MessageParam[]): MessageParam[] {
   if (messages.length <= HISTORY_CACHE_WINDOW) return messages;
@@ -61,7 +28,6 @@ function applyHistoryCache(messages: MessageParam[]): MessageParam[] {
   return messages.map((msg, idx) => {
     if (idx !== cutoffIdx) return msg;
 
-    // Marca cache_control no último bloco de conteúdo da mensagem de corte
     if (typeof msg.content === 'string') {
       const block: PromptCachingBetaTextBlockParam = {
         type: 'text',
@@ -84,8 +50,6 @@ function applyHistoryCache(messages: MessageParam[]): MessageParam[] {
   });
 }
 
-// ─── Tools com cache na última definição ──────────────────────────────────────
-
 function buildCachedTools(defs: ToolDefinition[]): PromptCachingBetaTool[] {
   return defs.map((d, idx): PromptCachingBetaTool => ({
     name: d.name,
@@ -95,19 +59,12 @@ function buildCachedTools(defs: ToolDefinition[]): PromptCachingBetaTool[] {
   }));
 }
 
-// ─── Chamada principal ────────────────────────────────────────────────────────
-
-export async function callClaude(opts: {
-  model: string;
-  systemPrompt: string;
-  tools: ToolDefinition[];
-  messages: MessageParam[];
-}): Promise<ClaudeResponse> {
+export async function callAnthropic(opts: CallOpts): Promise<LLMResponse> {
   const system: PromptCachingBetaTextBlockParam[] = [
     {
       type: 'text',
       text: opts.systemPrompt,
-      cache_control: { type: 'ephemeral' }, // system prompt sempre cacheado
+      cache_control: { type: 'ephemeral' },
     },
   ];
 
