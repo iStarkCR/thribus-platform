@@ -47,7 +47,7 @@ export interface Tool {
   name: string;
   description: string;
   endpoint: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   scope: string;        // client name or "global"
   active: boolean;
   parameters?: ToolParameter[];
