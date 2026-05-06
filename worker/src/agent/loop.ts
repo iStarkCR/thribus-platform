@@ -160,6 +160,8 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
 
   // 8. Loop agêntico
   const toolsUsed: string[] = [];
+  const toolFailures: Record<string, number> = {}; // circuit breaker
+  const MAX_TOOL_FAILURES = 3;
   let totalTokensIn = 0;
   let totalTokensOut = 0;
   let cacheReadTokens = 0;
@@ -201,12 +203,31 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         })),
       });
 
+      // Circuit breaker: substitui chamadas a tools que já falharam MAX vezes
       const results = await Promise.all(
-        response.toolCalls.map((tc) => executeTool(tc.id, tc.name, tc.input, job.agentId)),
+        response.toolCalls.map(async (tc) => {
+          const fails = toolFailures[tc.name] ?? 0;
+          if (fails >= MAX_TOOL_FAILURES) {
+            console.warn(`[loop] tool="${tc.name}" circuit-breaker tripped (${fails} failures) — short-circuiting`);
+            return {
+              toolCallId: tc.id,
+              toolName: tc.name,
+              output: JSON.stringify({
+                error: `Tool "${tc.name}" indisponível no momento (falhou ${fails} vezes nesta conversa). NÃO TENTE NOVAMENTE. Informe o cliente que houve um problema técnico e que a equipe foi notificada, ou peça os dados de outra forma.`,
+              }),
+              error: 'circuit_breaker_open',
+              durationMs: 0,
+            };
+          }
+          return executeTool(tc.id, tc.name, tc.input, job.agentId);
+        }),
       );
 
       for (const r of results) {
         toolsUsed.push(r.toolName);
+        if (r.error) {
+          toolFailures[r.toolName] = (toolFailures[r.toolName] ?? 0) + 1;
+        }
         console.log(`[loop] tool="${r.toolName}" durationMs=${r.durationMs} ${r.error ? `error=${r.error}` : 'ok'}`);
       }
 
