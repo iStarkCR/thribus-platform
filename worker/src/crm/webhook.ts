@@ -62,6 +62,7 @@ export function createWebhookRouter(): Router {
 
   router.post('/texnet', express.json({ limit: '10mb' }), async (req: Request, res: Response) => {
     console.log(`[webhook] received event=${req.body?.event} from ${req.ip}`);
+    console.log(`[webhook] PAYLOAD:`, JSON.stringify(req.body, null, 2));
 
     // 1. Validar assinatura
     if (!verifySignature(req.headers['x-texnet-signature'] as string)) {
