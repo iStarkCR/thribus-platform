@@ -1,0 +1,29 @@
+# Repo root .dockerignore — ignora frontend e tudo que não vai pro worker
+node_modules
+dist
+src
+public
+index.html
+vite.config.ts
+postcss.config.js
+tailwind.config.js
+.next
+.vercel
+
+# Worker artifacts
+worker/node_modules
+worker/dist
+
+# Comum
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+README.md
+*.md
+.DS_Store
+.vscode
+.idea
+coverage
+*.log
