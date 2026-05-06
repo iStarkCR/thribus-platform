@@ -18,6 +18,19 @@ const PORT = Number(process.env.PORT ?? 3200);
 const app = express();
 app.use(express.json());
 
+// Root — informativo
+app.get('/', (_req, res) => {
+  res.json({
+    service: 'thribus-worker',
+    status: 'running',
+    endpoints: {
+      health: 'GET /health',
+      webhook: 'POST /webhook/texnet',
+    },
+    ts: new Date().toISOString(),
+  });
+});
+
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
