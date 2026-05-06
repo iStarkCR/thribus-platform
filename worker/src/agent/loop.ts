@@ -48,9 +48,16 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     console.log(`[loop] botMode ativado para lead ${job.leadId}`);
   }
 
-  // 5. Persiste mensagem recebida (dedup local)
+  // 5. Garante conversation no banco e persiste mensagem recebida (dedup)
+  const conversation = await db.conversations.findOrCreate({
+    externalId: job.leadId,
+    agentId: job.agentId,
+    customerPhone: job.customerPhone,
+    customerName: job.customerName,
+  });
+
   await db.messages.save({
-    conversationId: job.leadId,
+    conversationId: conversation.id,
     role: 'user',
     content: job.content,
     externalId: job.messageId,
@@ -171,7 +178,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       exitReason = 'resolved';
 
       await db.messages.save({
-        conversationId: job.leadId,
+        conversationId: conversation.id,
         role: 'assistant',
         content: finalText,
         tokensIn: totalTokensIn,
@@ -200,12 +207,25 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
 
   await db.executions.save({
     agentId: job.agentId,
-    conversationId: job.leadId,
+    conversationId: conversation.id,
     customerPhone: job.customerPhone,
+    customerName: job.customerName,
     status: exitReason,
     toolsUsed: [...new Set(toolsUsed)],
     responseTimeMs: durationMs,
     totalTokens: totalTokensIn + totalTokensOut,
     cacheReadTokens,
   });
+
+  // Se escalou, registra na tabela escalations
+  if (exitReason === 'escalated') {
+    await db.escalations.create({
+      agentId: job.agentId,
+      conversationId: conversation.id,
+      customerPhone: job.customerPhone,
+      customerName: job.customerName,
+      reason: 'Bot transferiu para humano',
+      priority: 'medium',
+    }).catch((err) => console.warn('[loop] falha ao registrar escalation', err));
+  }
 }

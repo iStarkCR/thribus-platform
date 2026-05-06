@@ -1,22 +1,18 @@
 /**
- * DB layer — abstração sobre Postgres (Supabase)
+ * DB layer — Supabase Postgres
  *
- * Status: STUB — todos os métodos retornam dados fake ou no-op.
+ * Cada método tem dois caminhos:
+ *  1. Supabase configurado → query real
+ *  2. Sem Supabase → stub (para dev sem backend)
  *
- * Para conectar ao Supabase:
- *   1. Instale: npm i pg
- *   2. Defina DATABASE_URL no .env
- *   3. Substitua cada // TODO pelo query real usando o pool abaixo
- *   4. Crie as tabelas com o SQL em db/schema.sql
- *
- * Alternativa: usar o Supabase JS client diretamente.
- *   npm i @supabase/supabase-js
+ * Configure em worker/.env:
+ *   SUPABASE_URL=https://xxxxx.supabase.co
+ *   SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...   (bypass RLS)
  */
 
-// import pg from 'pg';
-// const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+import { supabase, isSupabaseConfigured } from './supabase.js';
 
-// ─── Tipos espelho dos types do frontend ─────────────────────────────────────
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface AgentRecord {
   id: string;
@@ -25,7 +21,7 @@ interface AgentRecord {
   model: string;
   systemPrompt: string;
   tools: string[];
-  channel?: string;  // Slug do canal TexNet CRM — mapeado na tabela agents
+  channel?: string;
 }
 
 interface ToolRecord {
@@ -46,40 +42,118 @@ interface ConversationRecord {
   status: string;
 }
 
-// ─── Namespace DB ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function notConfigured(method: string): never {
+  throw new Error(
+    `[db.${method}] Supabase não configurado. Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY em worker/.env`,
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API
+// ═══════════════════════════════════════════════════════════════════════════
 
 export const db = {
+  isConfigured: isSupabaseConfigured,
 
   agents: {
     async findById(id: string): Promise<AgentRecord | null> {
-      // TODO: return pool.query('SELECT * FROM agents WHERE id=$1', [id]).then(r => r.rows[0] ?? null);
-      console.warn(`[db.agents.findById] stub id=${id}`);
-      return null;
+      if (!supabase) {
+        console.warn(`[db.agents.findById] stub id=${id}`);
+        return null;
+      }
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name, client, model, system_prompt, tools, channel')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return {
+        id: data.id,
+        name: data.name,
+        client: data.client,
+        model: data.model,
+        systemPrompt: data.system_prompt,
+        tools: data.tools ?? [],
+        channel: data.channel ?? undefined,
+      };
     },
 
     async findByChannel(channel: string): Promise<AgentRecord | null> {
-      // TODO: return pool.query('SELECT * FROM agents WHERE channel=$1 LIMIT 1', [channel]).then(r => r.rows[0] ?? null);
-      console.warn(`[db.agents.findByChannel] stub channel=${channel}`);
-      return null;
+      if (!supabase) {
+        console.warn(`[db.agents.findByChannel] stub channel=${channel}`);
+        return null;
+      }
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name, client, model, system_prompt, tools, channel')
+        .eq('channel', channel)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return {
+        id: data.id,
+        name: data.name,
+        client: data.client,
+        model: data.model,
+        systemPrompt: data.system_prompt,
+        tools: data.tools ?? [],
+        channel: data.channel ?? undefined,
+      };
     },
   },
 
   tools: {
     async listByAgent(agentId: string): Promise<ToolRecord[]> {
-      // TODO:
-      // const agent = await db.agents.findById(agentId);
-      // return pool.query(
-      //   "SELECT * FROM tools WHERE (scope='global' OR scope=agent.client) AND active=true",
-      //   []
-      // ).then(r => r.rows);
-      console.warn(`[db.tools.listByAgent] stub agentId=${agentId}`);
-      return [];
+      if (!supabase) {
+        console.warn(`[db.tools.listByAgent] stub agentId=${agentId}`);
+        return [];
+      }
+      // Busca o agent pra saber o client (escopo)
+      const { data: agentRow } = await supabase
+        .from('agents')
+        .select('client, tools')
+        .eq('id', agentId)
+        .maybeSingle();
+      if (!agentRow) return [];
+
+      // Tools cujo nome está em agent.tools E (scope=global OU scope=client)
+      const allowedNames: string[] = agentRow.tools ?? [];
+      if (allowedNames.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from('tools')
+        .select('id, name, description, endpoint, method, scope, active')
+        .in('name', allowedNames)
+        .eq('active', true)
+        .or(`scope.eq.global,scope.eq.${agentRow.client}`);
+      if (error) throw error;
+      return (data ?? []) as ToolRecord[];
     },
 
     async findByName(name: string, agentId: string): Promise<ToolRecord | null> {
-      // TODO: busca tool pelo nome, filtrando por escopo do agent
-      console.warn(`[db.tools.findByName] stub name=${name} agentId=${agentId}`);
-      return null;
+      if (!supabase) {
+        console.warn(`[db.tools.findByName] stub name=${name} agentId=${agentId}`);
+        return null;
+      }
+      const { data: agentRow } = await supabase
+        .from('agents')
+        .select('client')
+        .eq('id', agentId)
+        .maybeSingle();
+      const client = agentRow?.client ?? '';
+
+      const { data, error } = await supabase
+        .from('tools')
+        .select('id, name, description, endpoint, method, scope, active')
+        .eq('name', name)
+        .eq('active', true)
+        .or(`scope.eq.global,scope.eq.${client}`)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as ToolRecord) ?? null;
     },
   },
 
@@ -88,44 +162,83 @@ export const db = {
       externalId: string;
       agentId: string;
       customerPhone: string;
+      customerName?: string;
     }): Promise<ConversationRecord> {
-      // TODO:
-      // const existing = await pool.query(
-      //   'SELECT * FROM conversations WHERE external_id=$1 LIMIT 1',
-      //   [opts.externalId]
-      // ).then(r => r.rows[0]);
-      // if (existing) return existing;
-      // return pool.query(
-      //   'INSERT INTO conversations (id, agent_id, external_id, customer_phone, status) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      //   [crypto.randomUUID(), opts.agentId, opts.externalId, opts.customerPhone, 'active']
-      // ).then(r => r.rows[0]);
+      if (!supabase) notConfigured('conversations.findOrCreate');
+
+      // Tenta buscar
+      const { data: existing } = await supabase
+        .from('conversations')
+        .select('id, agent_id, external_id, customer_phone, status')
+        .eq('external_id', opts.externalId)
+        .maybeSingle();
+      if (existing) {
+        return {
+          id: existing.id,
+          agentId: existing.agent_id,
+          externalId: existing.external_id,
+          customerPhone: existing.customer_phone,
+          status: existing.status,
+        };
+      }
+
+      // Cria
+      const { data, error } = await supabase
+        .from('conversations')
+        .insert({
+          agent_id: opts.agentId,
+          external_id: opts.externalId,
+          customer_phone: opts.customerPhone,
+          customer_name: opts.customerName ?? null,
+          status: 'active',
+        })
+        .select()
+        .single();
+      if (error) throw error;
       return {
-        id: `conv-stub-${opts.externalId}`,
-        agentId: opts.agentId,
-        externalId: opts.externalId,
-        customerPhone: opts.customerPhone,
-        status: 'active',
+        id: data.id,
+        agentId: data.agent_id,
+        externalId: data.external_id,
+        customerPhone: data.customer_phone,
+        status: data.status,
       };
     },
 
     async close(id: string): Promise<void> {
-      // TODO: pool.query("UPDATE conversations SET status='closed' WHERE id=$1", [id]);
-      console.warn(`[db.conversations.close] stub id=${id}`);
+      if (!supabase) {
+        console.warn(`[db.conversations.close] stub id=${id}`);
+        return;
+      }
+      const { error } = await supabase
+        .from('conversations')
+        .update({ status: 'closed' })
+        .eq('id', id);
+      if (error) throw error;
     },
   },
 
   messages: {
     async exists(externalMessageId: string): Promise<boolean> {
-      // TODO: return pool.query('SELECT 1 FROM messages WHERE external_id=$1', [externalMessageId]).then(r => r.rowCount > 0);
-      return false;
+      if (!supabase) return false;
+      const { count, error } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('external_id', externalMessageId);
+      if (error) throw error;
+      return (count ?? 0) > 0;
     },
 
-    async listByConversation(conversationId: string): Promise<Array<{ role: string; content: string }>> {
-      // TODO: return pool.query(
-      //   'SELECT role, content FROM messages WHERE conversation_id=$1 ORDER BY created_at ASC',
-      //   [conversationId]
-      // ).then(r => r.rows);
-      return [];
+    async listByConversation(
+      conversationId: string,
+    ): Promise<Array<{ role: string; content: string }>> {
+      if (!supabase) return [];
+      const { data, error } = await supabase
+        .from('messages')
+        .select('role, content')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return data ?? [];
     },
 
     async save(msg: {
@@ -139,11 +252,23 @@ export const db = {
       tokensOut?: number;
       cacheHit?: boolean;
     }): Promise<void> {
-      // TODO: pool.query(
-      //   'INSERT INTO messages (id, conversation_id, role, content, external_id, tool_call_id, tool_name, tokens_in, tokens_out, cache_hit, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())',
-      //   [crypto.randomUUID(), msg.conversationId, msg.role, msg.content, msg.externalId ?? null, ...]
-      // );
-      console.debug(`[db.messages.save] stub role=${msg.role} conv=${msg.conversationId}`);
+      if (!supabase) {
+        console.debug(`[db.messages.save] stub role=${msg.role}`);
+        return;
+      }
+      const { error } = await supabase.from('messages').insert({
+        conversation_id: msg.conversationId,
+        role: msg.role,
+        content: msg.content,
+        external_id: msg.externalId ?? null,
+        tool_call_id: msg.toolCallId ?? null,
+        tool_name: msg.toolName ?? null,
+        tokens_in: msg.tokensIn ?? null,
+        tokens_out: msg.tokensOut ?? null,
+        cache_hit: msg.cacheHit ?? false,
+      });
+      // Conflito de external_id (dedup) é OK — não propagar
+      if (error && !error.message.includes('duplicate key')) throw error;
     },
   },
 
@@ -152,14 +277,62 @@ export const db = {
       agentId: string;
       conversationId: string;
       customerPhone: string;
+      customerName?: string;
       status: 'resolved' | 'escalated' | 'failed';
       toolsUsed: string[];
       responseTimeMs: number;
       totalTokens: number;
       cacheReadTokens: number;
+      costUsd?: number;
     }): Promise<void> {
-      // TODO: INSERT INTO executions ...
-      console.debug(`[db.executions.save] stub status=${exec.status} agent=${exec.agentId}`);
+      if (!supabase) {
+        console.debug(`[db.executions.save] stub status=${exec.status}`);
+        return;
+      }
+      const { error } = await supabase.from('executions').insert({
+        agent_id: exec.agentId,
+        conversation_id: exec.conversationId,
+        customer_phone: exec.customerPhone,
+        customer_name: exec.customerName ?? null,
+        status: exec.status,
+        tools_used: exec.toolsUsed,
+        response_time_ms: exec.responseTimeMs,
+        total_tokens: exec.totalTokens,
+        cache_read_tokens: exec.cacheReadTokens,
+        cost_usd: exec.costUsd ?? 0,
+      });
+      if (error) throw error;
+    },
+  },
+
+  escalations: {
+    async create(esc: {
+      agentId: string;
+      conversationId: string;
+      customerPhone: string;
+      customerName?: string;
+      reason: string;
+      priority?: 'low' | 'medium' | 'high' | 'critical';
+    }): Promise<void> {
+      if (!supabase) return;
+      const { error } = await supabase.from('escalations').insert({
+        agent_id: esc.agentId,
+        conversation_id: esc.conversationId,
+        customer_phone: esc.customerPhone,
+        customer_name: esc.customerName ?? null,
+        reason: esc.reason,
+        priority: esc.priority ?? 'medium',
+      });
+      if (error) throw error;
+    },
+
+    async resolve(id: string): Promise<void> {
+      if (!supabase) return;
+      const { error } = await supabase
+        .from('escalations')
+        .update({ resolved_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
     },
   },
 };
