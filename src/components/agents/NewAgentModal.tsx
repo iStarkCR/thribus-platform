@@ -14,6 +14,7 @@ export function NewAgentModal({ onClose }: Props) {
   const [client, setClient] = useState('');
   const [type, setType] = useState<AgentType>('modular');
   const [model, setModel] = useState<AIModel>('claude-sonnet-4-20250514');
+  const [channel, setChannel] = useState('');
   const [prompt, setPrompt] = useState('');
   const [tools, setTools] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,6 +35,7 @@ export function NewAgentModal({ onClose }: Props) {
         model,
         systemPrompt: prompt,
         tools,
+        channel: channel.trim() || undefined,
       });
       await loadAgents();
       addToast('Colaborador criado', 'green');
@@ -81,13 +83,26 @@ export function NewAgentModal({ onClose }: Props) {
           </div>
         </div>
 
-        <div>
-          <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Modelo de IA</label>
-          <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
-            <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
-            <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
-            <option value="claude-opus-4-6">claude-opus-4-6</option>
-          </select>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Modelo de IA</label>
+            <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
+              <option value="claude-sonnet-4-20250514">claude-sonnet-4 (recomendado)</option>
+              <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (rápido/barato)</option>
+              <option value="claude-opus-4-6">claude-opus-4-6 (premium)</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+              Canal (slug)
+            </label>
+            <input
+              className="input font-mono"
+              value={channel}
+              onChange={(e) => setChannel(e.target.value)}
+              placeholder="texnet-duall"
+            />
+          </div>
         </div>
 
         <div>
@@ -95,7 +110,7 @@ export function NewAgentModal({ onClose }: Props) {
             System Prompt (treinamento)
           </label>
           <textarea
-            className="textarea font-mono text-[13.5px] min-h-[150px]"
+            className="textarea font-mono text-[13.5px] min-h-[280px] leading-relaxed"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Descreva o comportamento, identidade, fluxo padrão e regras de escalonamento do colaborador..."

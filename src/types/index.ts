@@ -23,6 +23,7 @@ export interface Agent {
   model: AIModel;
   systemPrompt: string;
   tools: string[];
+  channel?: string;       // slug do canal (ex: texnet-duall) — usado pelo worker
   stats: AgentStats;
   createdAt: string;
   updatedAt: string;
@@ -36,6 +37,7 @@ export interface CreateAgentPayload {
   model: AIModel;
   systemPrompt: string;
   tools: string[];
+  channel?: string;
 }
 
 // ═══════════════════════════════════════

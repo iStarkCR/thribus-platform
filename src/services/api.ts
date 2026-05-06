@@ -43,6 +43,9 @@ interface AgentRow {
   updated_at: string;
 }
 
+// Para o INSERT/UPDATE — channel pode ser null para "limpar"
+type AgentRowUpdate = Partial<Omit<AgentRow, 'channel'>> & { channel?: string | null };
+
 function rowToAgent(r: AgentRow): Agent {
   return {
     id: r.id,
@@ -54,6 +57,7 @@ function rowToAgent(r: AgentRow): Agent {
     model: r.model,
     systemPrompt: r.system_prompt,
     tools: r.tools ?? [],
+    channel: r.channel ?? undefined,
     stats: {
       today: r.stats_today,
       resolution: r.stats_resolution,
@@ -195,6 +199,7 @@ export const agentsApi = {
         model: payload.model,
         system_prompt: payload.systemPrompt,
         tools: payload.tools,
+        channel: payload.channel ?? null,
         status: 'standby',
       })
       .select()
@@ -210,7 +215,7 @@ export const agentsApi = {
       SEED_AGENTS[idx] = { ...SEED_AGENTS[idx], ...payload, updatedAt: new Date().toISOString() };
       return SEED_AGENTS[idx];
     }
-    const update: Partial<AgentRow> = {};
+    const update: AgentRowUpdate = {};
     if (payload.name !== undefined) update.name = payload.name;
     if (payload.client !== undefined) update.client = payload.client;
     if (payload.sector !== undefined) update.sector = payload.sector;
@@ -219,6 +224,7 @@ export const agentsApi = {
     if (payload.model !== undefined) update.model = payload.model;
     if (payload.systemPrompt !== undefined) update.system_prompt = payload.systemPrompt;
     if (payload.tools !== undefined) update.tools = payload.tools;
+    if (payload.channel !== undefined) update.channel = payload.channel || null;
 
     const { data, error } = await supabase
       .from('agents')

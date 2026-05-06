@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Bot, Plus } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Bot, Plus, Search, Building2 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { AgentCard } from '@/components/agents/AgentCard';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
@@ -10,17 +10,57 @@ export function AgentsPage() {
   const agents = useAppStore((s) => s.agents);
   const [selected, setSelected] = useState<Agent | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [search, setSearch] = useState('');
+
+  // Filtra por busca
+  const filtered = useMemo(() => {
+    if (!search.trim()) return agents;
+    const q = search.toLowerCase();
+    return agents.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        a.client.toLowerCase().includes(q) ||
+        a.sector.toLowerCase().includes(q) ||
+        (a.channel ?? '').toLowerCase().includes(q),
+    );
+  }, [agents, search]);
+
+  // Agrupa por cliente
+  const grouped = useMemo(() => {
+    const map = new Map<string, Agent[]>();
+    for (const a of filtered) {
+      const key = a.client || '— sem cliente —';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(a);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [filtered]);
 
   return (
     <>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
           <Bot size={16} className="text-creme-mute" /> Todos os Colaboradores Digitais
+          <span className="ml-2 chip chip-muted">{agents.length}</span>
         </div>
         <button className="btn btn-accent" onClick={() => setShowNew(true)}>
           <Plus size={13} /> Novo Colaborador
         </button>
       </div>
+
+      {/* Busca */}
+      {agents.length > 0 && (
+        <div className="relative mb-4 max-w-[420px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-creme-faint" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome, cliente, setor ou canal..."
+            className="input pl-9"
+          />
+        </div>
+      )}
 
       {agents.length === 0 ? (
         <div className="bg-surface-2 border border-default rounded-[10px] px-12 py-16 text-center">
@@ -35,10 +75,33 @@ export function AgentsPage() {
             <Plus size={13} /> Criar primeiro colaborador
           </button>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-surface-2 border border-default rounded-[10px] px-8 py-12 text-center">
+          <p className="text-[13.5px] text-creme-mute">Nenhum colaborador corresponde a "{search}"</p>
+        </div>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          {agents.map((a) => (
-            <AgentCard key={a.id} agent={a} showFullInfo onClick={() => setSelected(a)} />
+        <div className="space-y-5">
+          {grouped.map(([client, list]) => (
+            <div key={client}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <Building2 size={14} className="text-creme-faint" />
+                <span className="text-[13px] font-bold uppercase tracking-wider text-creme-mute">
+                  {client}
+                </span>
+                <span className="chip chip-muted text-[11.5px]">{list.length}</span>
+                <div className="flex-1 h-px bg-default ml-2" />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                {list.map((a) => (
+                  <AgentCard
+                    key={a.id}
+                    agent={a}
+                    showFullInfo
+                    onClick={() => setSelected(a)}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
