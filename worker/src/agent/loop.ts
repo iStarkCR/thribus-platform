@@ -678,13 +678,17 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         cacheHit: cacheReadTokens > 0,
       });
 
-      // Auto-escalation por dois gatilhos no mesmo turno:
+      // Auto-escalation por três gatilhos no mesmo turno:
       //   (a) Agente disse "vou passar pra time" → handoff intencional
       //   (b) Circuit breaker disparou (tool falhou 3x) → handoff por erro técnico
+      //   (c) Endereço sem cobertura → time pode oferecer alternativa (instalação
+      //       futura, parceria com outra prov, registro de interesse, etc)
       const reasonToEscalate = looksLikeEscalation(finalText)
         ? 'Bot encaminhou pro time (handoff detectado).'
         : circuitBreakerTripped
         ? 'Bot encaminhou pro time (problema técnico — tool falhou 3 vezes nesta conversa).'
+        : currentState === 'sem_cobertura'
+        ? 'Endereço sem cobertura — time pode oferecer alternativa ou registrar interesse pra futura expansão.'
         : null;
 
       if (reasonToEscalate) {
