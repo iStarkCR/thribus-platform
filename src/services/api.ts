@@ -189,6 +189,78 @@ function rowToEscalation(r: EscalationRow): Escalation {
 // AGENTS
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Calcula stats em runtime a partir da tabela `executions`.
+ * Os campos stats_* na tabela `agents` ficam estáticos (legacy).
+ * Esta função sobrescreve com dados reais por agente:
+ *   - today: # de execuções hoje
+ *   - resolution: % de status='resolved' (vs total)
+ *   - avgResponseTime: avg response_time_ms / 1000 (segundos)
+ *   - escalated: # de status='escalated' (todas, não só hoje)
+ */
+async function computeStatsFromExecutions(
+  agentIds: string[],
+): Promise<Record<string, Agent['stats']>> {
+  const result: Record<string, Agent['stats']> = {};
+  for (const id of agentIds) {
+    result[id] = { today: 0, resolution: 0, avgResponseTime: 0, escalated: 0 };
+  }
+  if (!supabase || agentIds.length === 0) return result;
+
+  // Hoje (UTC) — meia-noite local pode variar, usamos início do dia UTC
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
+  const startISO = startOfToday.toISOString();
+
+  const { data, error } = await supabase
+    .from('executions')
+    .select('agent_id, status, response_time_ms, created_at')
+    .in('agent_id', agentIds);
+  if (error) {
+    console.warn('[stats] erro buscando executions:', error.message);
+    return result;
+  }
+
+  type Row = { agent_id: string; status: string; response_time_ms: number | null; created_at: string };
+  const grouped: Record<
+    string,
+    { todayCount: number; resolved: number; total: number; escalated: number; sumMs: number; countWithMs: number }
+  > = {};
+  for (const r of (data as Row[]) ?? []) {
+    if (!grouped[r.agent_id]) {
+      grouped[r.agent_id] = {
+        todayCount: 0,
+        resolved: 0,
+        total: 0,
+        escalated: 0,
+        sumMs: 0,
+        countWithMs: 0,
+      };
+    }
+    const g = grouped[r.agent_id];
+    g.total++;
+    if (r.status === 'resolved') g.resolved++;
+    if (r.status === 'escalated') g.escalated++;
+    if (r.created_at >= startISO) g.todayCount++;
+    if (typeof r.response_time_ms === 'number' && r.response_time_ms > 0) {
+      g.sumMs += r.response_time_ms;
+      g.countWithMs++;
+    }
+  }
+
+  for (const id of agentIds) {
+    const g = grouped[id];
+    if (!g) continue;
+    result[id] = {
+      today: g.todayCount,
+      resolution: g.total > 0 ? Math.round((g.resolved / g.total) * 100) : 0,
+      avgResponseTime: g.countWithMs > 0 ? Math.round(g.sumMs / g.countWithMs / 1000) : 0,
+      escalated: g.escalated,
+    };
+  }
+  return result;
+}
+
 export const agentsApi = {
   async list(): Promise<Agent[]> {
     if (!supabase) return SEED_AGENTS;
@@ -197,7 +269,10 @@ export const agentsApi = {
       .select('*')
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as AgentRow[]).map(rowToAgent);
+    const agents = (data as AgentRow[]).map(rowToAgent);
+    // Sobrescreve stats com dados calculados em runtime
+    const stats = await computeStatsFromExecutions(agents.map((a) => a.id));
+    return agents.map((a) => ({ ...a, stats: stats[a.id] ?? a.stats }));
   },
 
   async get(id: string): Promise<Agent> {
@@ -208,7 +283,9 @@ export const agentsApi = {
     }
     const { data, error } = await supabase.from('agents').select('*').eq('id', id).single();
     if (error) throw error;
-    return rowToAgent(data as AgentRow);
+    const agent = rowToAgent(data as AgentRow);
+    const stats = await computeStatsFromExecutions([id]);
+    return { ...agent, stats: stats[id] ?? agent.stats };
   },
 
   async create(payload: CreateAgentPayload): Promise<Agent> {
