@@ -43,16 +43,33 @@ interface TexNetWebhookPayload {
 
 // ─── Validação de assinatura ──────────────────────────────────────────────────
 // X-TexNet-Signature = primeiros 16 chars do base64 da API Key
+//
+// Multi-tenant: tenta a chave de cada workspace TexNet ativo no DB.
+// Fallback: TEXNET_API_KEY do env (dev / setup inicial sem workspaces).
 
-function getExpectedSignature(): string {
-  const key = process.env.TEXNET_API_KEY ?? '';
+function sigFromKey(key: string): string {
   return Buffer.from(key).toString('base64').slice(0, 16);
 }
 
-function verifySignature(signature: string | undefined): boolean {
-  if (!process.env.TEXNET_API_KEY) return true; // dev sem chave
-  if (!signature) return false;
-  return signature === getExpectedSignature();
+async function verifySignature(signature: string | undefined): Promise<boolean> {
+  if (!signature) {
+    // Sem signature: aceita só se nem env nem workspaces estiverem configurados
+    const envKey = process.env.TEXNET_API_KEY;
+    const workspaces = await db.workspaces.listByCrmProvider('texnet').catch(() => []);
+    return !envKey && workspaces.length === 0;
+  }
+
+  // 1) Tenta chave do env (back-compat)
+  const envKey = process.env.TEXNET_API_KEY;
+  if (envKey && signature === sigFromKey(envKey)) return true;
+
+  // 2) Tenta chave de cada workspace TexNet
+  const workspaces = await db.workspaces.listByCrmProvider('texnet').catch(() => []);
+  for (const ws of workspaces) {
+    if (ws.crmApiToken && signature === sigFromKey(ws.crmApiToken)) return true;
+  }
+
+  return false;
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -64,8 +81,9 @@ export function createWebhookRouter(): Router {
     console.log(`[webhook] received event=${req.body?.event} from ${req.ip}`);
     console.log(`[webhook] PAYLOAD:`, JSON.stringify(req.body, null, 2));
 
-    // 1. Validar assinatura
-    if (!verifySignature(req.headers['x-texnet-signature'] as string)) {
+    // 1. Validar assinatura (tenta env + cada workspace TexNet)
+    const sigOk = await verifySignature(req.headers['x-texnet-signature'] as string);
+    if (!sigOk) {
       console.warn('[webhook] assinatura inválida — rejeitando 401');
       res.status(401).json({ error: 'invalid signature' });
       return;

@@ -64,6 +64,21 @@ function notConfigured(method: string): never {
   );
 }
 
+function rowToWorkspace(data: Record<string, unknown>): WorkspaceRecord {
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    llmProvider: data.llm_provider as 'openai' | 'anthropic',
+    llmApiKey: (data.llm_api_key as string | null) ?? undefined,
+    crmProvider: (data.crm_provider as 'talki' | 'texnet' | null) ?? undefined,
+    crmBaseUrl: (data.crm_base_url as string | null) ?? undefined,
+    crmAccountId: (data.crm_account_id as string | null) ?? undefined,
+    crmApiToken: (data.crm_api_token as string | null) ?? undefined,
+    texnetBotSenderId: (data.texnet_bot_sender_id as string | null) ?? undefined,
+    talkiRequiredLabel: (data.talki_required_label as string | null) ?? undefined,
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // API
 // ═══════════════════════════════════════════════════════════════════════════
@@ -150,18 +165,17 @@ export const db = {
         .maybeSingle();
       if (error) throw error;
       if (!data) return null;
-      return {
-        id: data.id,
-        name: data.name,
-        llmProvider: data.llm_provider,
-        llmApiKey: data.llm_api_key ?? undefined,
-        crmProvider: data.crm_provider ?? undefined,
-        crmBaseUrl: data.crm_base_url ?? undefined,
-        crmAccountId: data.crm_account_id ?? undefined,
-        crmApiToken: data.crm_api_token ?? undefined,
-        texnetBotSenderId: data.texnet_bot_sender_id ?? undefined,
-        talkiRequiredLabel: data.talki_required_label ?? undefined,
-      };
+      return rowToWorkspace(data);
+    },
+
+    async listByCrmProvider(provider: 'talki' | 'texnet'): Promise<WorkspaceRecord[]> {
+      if (!supabase) return [];
+      const { data, error } = await supabase
+        .from('workspaces')
+        .select('*')
+        .eq('crm_provider', provider);
+      if (error) throw error;
+      return (data ?? []).map(rowToWorkspace);
     },
   },
 
