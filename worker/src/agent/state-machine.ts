@@ -203,8 +203,34 @@ export function buildStateReminder(
     return `ESTADO ATUAL: desconhecido (${currentState}). Continue conforme o prompt.`;
   }
 
+  // Calcula data de hoje + amanhã + próximos dias em fuso Brasília
+  // (UTC-3) para ajudar a LLM a interpretar referências de data ("amanhã",
+  // "depois de amanhã", "dia 15", etc).
+  const nowUTC = new Date();
+  const nowBrasilia = new Date(nowUTC.getTime() - 3 * 60 * 60 * 1000);
+  const fmtDate = (d: Date) => {
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  const fmtBR = (d: Date) => {
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = d.getUTCFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+  const dayNames = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+  const today = new Date(Date.UTC(nowBrasilia.getUTCFullYear(), nowBrasilia.getUTCMonth(), nowBrasilia.getUTCDate()));
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  const dayAfter = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000);
+
   const lines: string[] = [
     `═══════════ CONTEXTO INTERNO (não exibir ao cliente) ═══════════`,
+    `DATA ATUAL (Brasília): ${fmtBR(today)} (${dayNames[today.getUTCDay()]}) — ISO: ${fmtDate(today)}`,
+    `AMANHÃ: ${fmtBR(tomorrow)} (${dayNames[tomorrow.getUTCDay()]}) — ISO: ${fmtDate(tomorrow)}`,
+    `DEPOIS DE AMANHÃ: ${fmtBR(dayAfter)} (${dayNames[dayAfter.getUTCDay()]}) — ISO: ${fmtDate(dayAfter)}`,
+    ``,
     `ESTADO ATUAL: ${state.id}`,
     `O QUE FAZER: ${state.description}`,
   ];
