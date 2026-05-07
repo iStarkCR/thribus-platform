@@ -32,6 +32,7 @@ import {
   SALES_FLOW_STATES,
 } from './state-machine.js';
 import { buildHandoffSummary } from './handoff-summary.js';
+import { getToolInputSchema } from './tool-schemas.js';
 
 const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 10);
 
@@ -375,10 +376,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   const toolDefs: ToolDefinition[] = toolRecords.map((t) => ({
     name: t.name,
     description: t.description,
-    input_schema: {
-      type: 'object' as const,
-      properties: {},
-    },
+    input_schema: getToolInputSchema(t.name),
   }));
 
   // 8. Estado da conversa (state machine)
