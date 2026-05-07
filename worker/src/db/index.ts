@@ -201,7 +201,9 @@ export const db = {
         .maybeSingle();
       if (!agentRow) return [];
 
-      // Tools cujo nome está em agent.tools E (scope=global OU scope=client)
+      // Tools cujo nome está em agent.tools E (scope=global OU scope=client).
+      // Match de scope é case-insensitive — assim "Texnet"/"TexNet"/"texnet"
+      // funcionam todos sem o bug antigo de capitalização.
       const allowedNames: string[] = agentRow.tools ?? [];
       if (allowedNames.length === 0) return [];
 
@@ -210,7 +212,7 @@ export const db = {
         .select('id, name, description, endpoint, method, scope, active')
         .in('name', allowedNames)
         .eq('active', true)
-        .or(`scope.eq.global,scope.eq.${agentRow.client}`);
+        .or(`scope.eq.global,scope.ilike.${agentRow.client}`);
       if (error) throw error;
       return (data ?? []) as ToolRecord[];
     },
@@ -232,7 +234,7 @@ export const db = {
         .select('id, name, description, endpoint, method, scope, active')
         .eq('name', name)
         .eq('active', true)
-        .or(`scope.eq.global,scope.eq.${client}`)
+        .or(`scope.eq.global,scope.ilike.${client}`)
         .maybeSingle();
       if (error) throw error;
       return (data as ToolRecord) ?? null;
