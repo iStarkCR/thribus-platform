@@ -388,6 +388,46 @@ export const db = {
       // Conflito de external_id (dedup) é OK — não propagar
       if (error && !error.message.includes('duplicate key')) throw error;
     },
+
+    /** Bulk-insert: usado quando o worker hidrata a primeira vez do CRM. */
+    async bulkSave(
+      conversationId: string,
+      msgs: Array<{
+        role: string;
+        content: string;
+        externalId?: string;
+        createdAt?: string;
+      }>,
+    ): Promise<void> {
+      if (!supabase || msgs.length === 0) return;
+      const rows = msgs.map((m) => ({
+        conversation_id: conversationId,
+        role: m.role,
+        content: m.content,
+        external_id: m.externalId ?? null,
+        created_at: m.createdAt ?? new Date().toISOString(),
+      }));
+      const { error } = await supabase.from('messages').insert(rows);
+      if (error && !error.message.includes('duplicate key')) {
+        console.warn(`[db.messages.bulkSave] erro:`, error.message);
+      }
+    },
+
+    /**
+     * Apaga todas as mensagens de uma conversa.
+     * Usado pra cleanup quando atendimento termina (estado terminal):
+     * o histórico permanece no CRM como source of truth final, e o nosso
+     * DB fica enxuto.
+     */
+    async deleteAllForConversation(conversationId: string): Promise<number> {
+      if (!supabase) return 0;
+      const { error, count } = await supabase
+        .from('messages')
+        .delete({ count: 'exact' })
+        .eq('conversation_id', conversationId);
+      if (error) throw error;
+      return count ?? 0;
+    },
   },
 
   executions: {

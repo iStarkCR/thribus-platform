@@ -132,6 +132,20 @@ export const SALES_FLOW_STATES: Record<string, StateDefinition> = {
 };
 
 /**
+ * Estados terminais — ao alcançar, o atendimento é considerado encerrado.
+ * Worker faz cleanup do histórico do DB local (CRM mantém o registro).
+ */
+export const TERMINAL_STATES = new Set([
+  '11_completed',
+  'sem_cobertura',
+  'escalated',
+]);
+
+export function isTerminalState(state: string): boolean {
+  return TERMINAL_STATES.has(state);
+}
+
+/**
  * Verifica qual estado deve seguir após uma tool ser chamada com sucesso.
  *
  * Ex: tool="consultar_viabilidade" + result indica COBERTURA DISPONÍVEL → "5_plans"

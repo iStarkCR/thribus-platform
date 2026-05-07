@@ -26,6 +26,7 @@ import * as talki from '../talki/client.js';
 import {
   buildStateReminder,
   extractStateData,
+  isTerminalState,
   nextStateAfterTool,
   SALES_FLOW_STATES,
 } from './state-machine.js';
@@ -202,11 +203,41 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   });
 
   // 6. Monta histórico de mensagens para o LLM.
-  // Trim: mantém só últimas HISTORY_KEEP_TURNS pra cortar tokens e reduzir
-  // confusão de estado (modelos pequenos regridem com histórico longo).
-  // O state reminder + stateData carrega o contexto crítico mesmo após trim.
+  //
+  // Estratégia híbrida (cache local + CRM como fallback):
+  //   - Lê do nosso DB primeiro (rápido, ~50ms)
+  //   - Se DB vazio (conversa nova ou primeira interação), hidrata do CRM
+  //     copiando as msgs pra cá. Próximos turnos leem só do DB.
+  //   - Cleanup automático ao final: quando estado vira terminal
+  //     (11_completed/sem_cobertura/escalated), apaga as msgs do DB.
+  //     CRM permanece como source of truth permanente.
   const HISTORY_KEEP_TURNS = Number(process.env.HISTORY_KEEP_TURNS ?? 20);
-  const history = (lead.messages ?? []).filter((m) => m.type === 'text');
+
+  let dbMsgs = await db.messages.listByConversation(conversation.id);
+
+  // Hidrata se DB vazio mas CRM tem histórico
+  if (dbMsgs.length === 0 && (lead.messages?.length ?? 0) > 0) {
+    const toHydrate = (lead.messages ?? [])
+      .filter((m) => m.type === 'text')
+      .map((m) => ({
+        role: (m.direction === 'inbound' ? 'user' : 'assistant') as
+          | 'user'
+          | 'assistant',
+        content: m.content,
+        externalId: m.id,
+        createdAt: m.createdAt,
+      }));
+    await db.messages.bulkSave(conversation.id, toHydrate);
+    console.log(
+      `[loop] hydrated DB from CRM count=${toHydrate.length} convId=${conversation.id}`,
+    );
+    dbMsgs = await db.messages.listByConversation(conversation.id);
+  }
+
+  // Filtra só user/assistant (descarta tool/system)
+  const history = dbMsgs.filter(
+    (m) => m.role === 'user' || m.role === 'assistant',
+  );
   const trimmed = history.slice(-HISTORY_KEEP_TURNS);
   const droppedCount = history.length - trimmed.length;
   if (droppedCount > 0) {
@@ -218,9 +249,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   // content blocks multimodais (texto + imagem) compatíveis com Anthropic/OpenAI.
   const messages: MessageParam[] = await Promise.all(
     trimmed.map(async (m) => {
-      const role = (m.direction === 'inbound' ? 'user' : 'assistant') as
-        | 'user'
-        | 'assistant';
+      const role = m.role as 'user' | 'assistant';
       const { urls, text } = extractImageRefs(m.content);
       if (urls.length === 0 || role === 'assistant') {
         return { role, content: m.content };
@@ -579,5 +608,20 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       reason: 'Bot transferiu para humano',
       priority: 'medium',
     }).catch((err) => console.warn('[loop] falha ao registrar escalation', err));
+  }
+
+  // Cleanup: ao chegar em estado terminal, apaga histórico do nosso DB.
+  // CRM permanece como source of truth permanente.
+  if (isTerminalState(currentState)) {
+    const removed = await db.messages
+      .deleteAllForConversation(conversation.id)
+      .catch((err) => {
+        console.warn(`[loop] falha cleanup msgs convId=${conversation.id}:`, err);
+        return 0;
+      });
+    await db.conversations.close(conversation.id).catch(() => undefined);
+    console.log(
+      `[loop] cleanup terminal_state=${currentState} convId=${conversation.id} msgs_removed=${removed}`,
+    );
   }
 }
