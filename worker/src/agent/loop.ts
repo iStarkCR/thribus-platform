@@ -88,25 +88,58 @@ function extractBalancedJSON(text: string): string | null {
   return null;
 }
 
+/**
+ * Remove meta-comentários do output que vazam da "reasoning" de modelos
+ * thinking (ex: gpt-5-mini, o1) — palavras como "calculating...",
+ * "thinking...", "analyzing..." que aparecem como marcadores antes
+ * da resposta real.
+ */
+function sanitizeMetaText(text: string): string {
+  // 1) Remove blocos completos <thinking>...</thinking>, <reasoning>...</reasoning>, etc.
+  let cleaned = text.replace(
+    /<(thinking|reasoning|analysis|scratchpad)\b[^>]*>[\s\S]*?<\/\1>/gi,
+    '',
+  );
+
+  // 2) Remove linhas que são puro marcador de meta-reasoning
+  const META_LINES = [
+    /^\s*(calculating|thinking|analyzing|checking|processing|reasoning|computing|verifying|evaluating|considering|reflecting)\s*\.{2,}\s*$/i,
+    /^\s*(calculating|thinking|analyzing|processing)\s*$/i,
+    /^\s*<\/?(?:thinking|reasoning|analysis|scratchpad)>\s*$/i,
+  ];
+
+  cleaned = cleaned
+    .split(/\r?\n/)
+    .filter((line) => !META_LINES.some((p) => p.test(line)))
+    .join('\n');
+
+  // 3) Normaliza whitespace
+  return cleaned
+    .replace(/^\n+/, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function extractMessages(raw: string): string[] {
-  const trimmed = raw.trim();
+  const cleaned = sanitizeMetaText(raw);
+  const trimmed = cleaned.trim();
 
   // 1) JSON puro
   const direct = tryParseMessageJSON(trimmed);
-  if (direct) return direct;
+  if (direct) return direct.map((m) => sanitizeMetaText(m));
 
   // 2) Bloco markdown ```json ... ```
   const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (fenceMatch) {
     const fenced = tryParseMessageJSON(fenceMatch[1]);
-    if (fenced) return fenced;
+    if (fenced) return fenced.map((m) => sanitizeMetaText(m));
   }
 
   // 3) Texto + JSON misturados — extrai JSON balanceado
   const embedded = extractBalancedJSON(trimmed);
   if (embedded) {
     const parsed = tryParseMessageJSON(embedded);
-    if (parsed) return parsed;
+    if (parsed) return parsed.map((m) => sanitizeMetaText(m));
   }
 
   // 4) Fallback — texto puro
