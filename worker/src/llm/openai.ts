@@ -143,7 +143,9 @@ export async function callOpenAI(opts: CallOpts): Promise<LLMResponse> {
 
   const response = await getClient(opts.apiKey).chat.completions.create({
     model: opts.model,
-    max_tokens: 1024,
+    // gpt-5+ exige max_completion_tokens; gpt-4o e família mais antiga
+    // também aceita esse campo, então é seguro usar sempre.
+    max_completion_tokens: 1024,
     messages,
     tools: opts.tools.length > 0 ? buildOpenAITools(opts.tools) : undefined,
     ...(opts.forceTool && opts.tools.length > 0 ? { tool_choice: 'required' as const } : {}),
