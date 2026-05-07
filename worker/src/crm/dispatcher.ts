@@ -151,3 +151,34 @@ export async function escalateToHuman(channel: string, leadId: string, ws?: Work
   const cfg = texnet.configFromWorkspace(ws);
   await texnet.escalateToHuman(leadId, channel, cfg);
 }
+
+// ─── Internal note (private) ─────────────────────────────────────────────────
+// Cria uma nota interna visível só pra agentes (não vai pro cliente).
+// Útil pra resumir o atendimento antes de passar pra humano.
+
+export async function addInternalNote(
+  channel: string,
+  leadId: string,
+  content: string,
+  ws?: WorkspaceRecord,
+): Promise<void> {
+  const provider = detectProvider(channel);
+
+  if (provider === 'talki') {
+    const cfg = talki.configFromWorkspace(ws);
+    await talki.messages.privateNote(Number(leadId), content, cfg);
+    return;
+  }
+
+  // TexNet: salva como `notes` no lead via PATCH /leads/:id
+  // Notes do TexNet são internos por natureza (não enviados ao cliente).
+  const cfg = texnet.configFromWorkspace(ws);
+  // Concatena com notas existentes pra não sobrescrever
+  try {
+    const lead = await texnet.leads.get(leadId, cfg);
+    const existingNotes = lead.notes ? `${lead.notes}\n\n---\n\n` : '';
+    await texnet.leads.update(leadId, { notes: existingNotes + content }, cfg);
+  } catch (err) {
+    console.warn(`[crm] addInternalNote falhou pra TexNet leadId=${leadId}:`, (err as Error).message);
+  }
+}

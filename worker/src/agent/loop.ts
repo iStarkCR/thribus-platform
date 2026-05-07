@@ -30,6 +30,7 @@ import {
   nextStateAfterTool,
   SALES_FLOW_STATES,
 } from './state-machine.js';
+import { buildHandoffSummary } from './handoff-summary.js';
 
 const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 10);
 
@@ -583,10 +584,37 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       // Auto-escalation: se o agente disse "vou passar pra time", escala automaticamente.
       // Marca botMode=false (Bianca para de responder), atribui agente humano, e
       // dispara cleanup do histórico (estado terminal).
+      // Antes de escalar, deixa uma NOTA INTERNA com resumo do atendimento +
+      // dados coletados — visível só pra agentes (não vai pro cliente).
       if (looksLikeEscalation(finalText)) {
         console.log(
           `[loop] auto-escalation detected leadId=${job.leadId} text="${finalText.slice(0, 100).replace(/\n/g, ' ')}..." — escalating`,
         );
+
+        // 1. Posta nota interna com o resumo do atendimento
+        const summary = buildHandoffSummary({
+          agentName: agent.name,
+          customerName: job.customerName,
+          customerPhone: job.customerPhone,
+          currentState,
+          stateData,
+          toolsUsed,
+          lastAgentReply: finalText,
+          reason: 'Bot encaminhou pro time (handoff detectado).',
+        });
+        try {
+          await crm.addInternalNote(
+            job.channel,
+            job.leadId,
+            summary,
+            workspace ?? undefined,
+          );
+          console.log(`[loop] handoff summary postado (nota interna) leadId=${job.leadId}`);
+        } catch (err) {
+          console.warn(`[loop] falha postando nota interna:`, (err as Error).message);
+        }
+
+        // 2. Marca botMode=false + atribui agente humano
         try {
           await crm.escalateToHuman(job.channel, job.leadId, workspace ?? undefined);
         } catch (err) {

@@ -126,6 +126,20 @@ export const messages = {
   },
 
   /**
+   * Envia uma "private note" — mensagem interna visível apenas pra agentes
+   * dentro do Chatwoot, não entregue ao cliente. Útil pra deixar contexto
+   * antes de passar a conversa pra humano.
+   */
+  async privateNote(conversationId: number, content: string, cfg: TalkiConfig = fromEnv()): Promise<TalkiMessage> {
+    return req<TalkiMessage>(cfg, 'POST', `/conversations/${conversationId}/messages`, {
+      content,
+      message_type: 'outgoing',
+      content_type: 'text',
+      private: true,
+    });
+  },
+
+  /**
    * Envia áudio (ou outro arquivo) via multipart form-data.
    * Chatwoot processa e entrega como mensagem com attachment.
    */
