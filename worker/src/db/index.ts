@@ -54,7 +54,11 @@ interface ConversationRecord {
   externalId: string;
   customerPhone: string;
   status: string;
+  currentState?: string;
+  stateData?: Record<string, unknown>;
 }
+
+export type ConversationStateData = Record<string, unknown>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -243,7 +247,7 @@ export const db = {
       // Tenta buscar
       const { data: existing } = await supabase
         .from('conversations')
-        .select('id, agent_id, external_id, customer_phone, status')
+        .select('id, agent_id, external_id, customer_phone, status, current_state, state_data')
         .eq('external_id', opts.externalId)
         .maybeSingle();
       if (existing) {
@@ -253,6 +257,8 @@ export const db = {
           externalId: existing.external_id,
           customerPhone: existing.customer_phone,
           status: existing.status,
+          currentState: existing.current_state ?? '1_welcome',
+          stateData: (existing.state_data as ConversationStateData) ?? {},
         };
       }
 
@@ -265,6 +271,8 @@ export const db = {
           customer_phone: opts.customerPhone,
           customer_name: opts.customerName ?? null,
           status: 'active',
+          current_state: '1_welcome',
+          state_data: {},
         })
         .select()
         .single();
@@ -275,7 +283,39 @@ export const db = {
         externalId: data.external_id,
         customerPhone: data.customer_phone,
         status: data.status,
+        currentState: data.current_state ?? '1_welcome',
+        stateData: (data.state_data as ConversationStateData) ?? {},
       };
+    },
+
+    async setState(
+      id: string,
+      currentState: string,
+      stateDataMerge?: ConversationStateData,
+    ): Promise<void> {
+      if (!supabase) {
+        console.warn(`[db.conversations.setState] stub id=${id} state=${currentState}`);
+        return;
+      }
+      const update: Record<string, unknown> = {
+        current_state: currentState,
+        state_updated_at: new Date().toISOString(),
+      };
+      // Se passou stateDataMerge, faz merge com o state_data existente
+      if (stateDataMerge) {
+        const { data: current } = await supabase
+          .from('conversations')
+          .select('state_data')
+          .eq('id', id)
+          .maybeSingle();
+        const existing = (current?.state_data as ConversationStateData) ?? {};
+        update.state_data = { ...existing, ...stateDataMerge };
+      }
+      const { error } = await supabase
+        .from('conversations')
+        .update(update)
+        .eq('id', id);
+      if (error) throw error;
     },
 
     async close(id: string): Promise<void> {

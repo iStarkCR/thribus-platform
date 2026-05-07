@@ -47,4 +47,11 @@ export interface CallOpts {
    * OpenAI:    tool_choice: "required"
    */
   forceTool?: boolean;
+  /**
+   * Força o LLM a chamar uma tool ESPECÍFICA por nome.
+   * Tem precedência sobre forceTool.
+   * Anthropic: tool_choice: { type: "tool", name: "X" }
+   * OpenAI:    tool_choice: { type: "function", function: { name: "X" } }
+   */
+  forceToolName?: string;
 }

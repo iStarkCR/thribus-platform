@@ -150,7 +150,16 @@ export async function callOpenAI(opts: CallOpts): Promise<LLMResponse> {
     max_completion_tokens: 4096,
     messages,
     tools: opts.tools.length > 0 ? buildOpenAITools(opts.tools) : undefined,
-    ...(opts.forceTool && opts.tools.length > 0 ? { tool_choice: 'required' as const } : {}),
+    ...(opts.forceToolName && opts.tools.some((t) => t.name === opts.forceToolName)
+      ? {
+          tool_choice: {
+            type: 'function' as const,
+            function: { name: opts.forceToolName },
+          },
+        }
+      : opts.forceTool && opts.tools.length > 0
+      ? { tool_choice: 'required' as const }
+      : {}),
   });
 
   const choice = response.choices[0];

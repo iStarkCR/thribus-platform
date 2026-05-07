@@ -20,6 +20,12 @@ import { executeTool } from '../tools/dispatcher.js';
 import * as crm from '../crm/dispatcher.js';
 import { db } from '../db/index.js';
 import type { AgentJob } from '../queue/index.js';
+import {
+  buildStateReminder,
+  extractStateData,
+  nextStateAfterTool,
+  SALES_FLOW_STATES,
+} from './state-machine.js';
 
 const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 10);
 
@@ -192,15 +198,23 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     externalId: job.messageId,
   });
 
-  // 6. Monta histórico de mensagens para o Claude
-  // Usa as mensagens do próprio CRM (fonte de verdade)
-  const history = lead.messages ?? [];
-  const messages: MessageParam[] = history
-    .filter((m) => m.type === 'text')
-    .map((m) => ({
-      role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
-      content: m.content,
-    }));
+  // 6. Monta histórico de mensagens para o LLM.
+  // Trim: mantém só últimas HISTORY_KEEP_TURNS pra cortar tokens e reduzir
+  // confusão de estado (modelos pequenos regridem com histórico longo).
+  // O state reminder + stateData carrega o contexto crítico mesmo após trim.
+  const HISTORY_KEEP_TURNS = Number(process.env.HISTORY_KEEP_TURNS ?? 20);
+  const history = (lead.messages ?? []).filter((m) => m.type === 'text');
+  const trimmed = history.slice(-HISTORY_KEEP_TURNS);
+  const droppedCount = history.length - trimmed.length;
+  if (droppedCount > 0) {
+    console.log(
+      `[loop] history trim: kept=${trimmed.length} dropped=${droppedCount} (HISTORY_KEEP_TURNS=${HISTORY_KEEP_TURNS})`,
+    );
+  }
+  const messages: MessageParam[] = trimmed.map((m) => ({
+    role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
+    content: m.content,
+  }));
 
   // Garante que a mensagem atual está ao final (pode já estar no histórico)
   const lastMsg = messages[messages.length - 1];
@@ -219,7 +233,19 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     },
   }));
 
-  // 8. Loop agêntico
+  // 8. Estado da conversa (state machine)
+  let currentState = conversation.currentState ?? '1_welcome';
+  const stateData: Record<string, unknown> = { ...(conversation.stateData ?? {}) };
+  const stateChanged = (newState: string): boolean => newState !== currentState;
+  const persistState = async () => {
+    await db.conversations.setState(conversation.id, currentState, stateData).catch((err) => {
+      console.warn(`[loop] falha ao persistir estado leadId=${job.leadId}:`, err);
+    });
+  };
+
+  console.log(`[loop] state at entry=${currentState} dataKeys=[${Object.keys(stateData).join(',')}]`);
+
+  // 9. Loop agêntico
   const toolsUsed: string[] = [];
   const toolFailures: Record<string, number> = {}; // circuit breaker
   const MAX_TOOL_FAILURES = 3;
@@ -241,16 +267,34 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       }
     }
 
-    console.log(`[loop] iter=${iter} agentId=${job.agentId} leadId=${job.leadId}`);
+    console.log(`[loop] iter=${iter} state=${currentState} agentId=${job.agentId} leadId=${job.leadId}`);
+
+    // Injeta state reminder no final do system prompt — modelo lê estado atual
+    // + dados já coletados, eliminando inferência por histórico.
+    const stateReminder = buildStateReminder(currentState, stateData);
+    const augmentedSystemPrompt = `${agent.systemPrompt}\n\n${stateReminder}`;
+
+    // Após anti-promise, força tool. Se o estado atual tem expectedTool E ela
+    // está disponível, força ela especificamente (mais determinístico).
+    let forceToolName: string | undefined;
+    let forceTool = false;
+    if (promiseRetries > 0 && toolDefs.length > 0) {
+      const expected = SALES_FLOW_STATES[currentState]?.expectedTool;
+      if (expected && toolDefs.some((t) => t.name === expected)) {
+        forceToolName = expected;
+      } else {
+        forceTool = true;
+      }
+    }
 
     const response = await callLLM({
       model: agent.model,
-      systemPrompt: agent.systemPrompt,
+      systemPrompt: augmentedSystemPrompt,
       tools: toolDefs,
       messages,
       apiKey: workspace?.llmApiKey,
-      // Após anti-promise, força tool call (impede texto puro de novo)
-      forceTool: promiseRetries > 0 && toolDefs.length > 0,
+      forceTool,
+      forceToolName,
     });
 
     totalTokensIn += response.usage.inputTokens;
@@ -293,9 +337,24 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         toolsUsed.push(r.toolName);
         if (r.error) {
           toolFailures[r.toolName] = (toolFailures[r.toolName] ?? 0) + 1;
+          continue;
         }
-        console.log(`[loop] tool="${r.toolName}" durationMs=${r.durationMs} ${r.error ? `error=${r.error}` : 'ok'}`);
+        console.log(`[loop] tool="${r.toolName}" durationMs=${r.durationMs} ok`);
+
+        // Atualiza state machine com base no output da tool
+        const extracted = extractStateData(r.toolName, r.output);
+        if (Object.keys(extracted).length > 0) {
+          Object.assign(stateData, extracted);
+        }
+        const next = nextStateAfterTool(currentState, r.toolName, r.output);
+        if (next && stateChanged(next)) {
+          console.log(`[loop] state transition ${currentState} -> ${next} via ${r.toolName}`);
+          currentState = next;
+        }
       }
+
+      // Persiste estado após todas as tools desta iteração
+      await persistState();
 
       messages.push({
         role: 'user',
@@ -311,6 +370,8 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       if (escalation) {
         await crm.escalateToHuman(job.channel, job.leadId, workspace ?? undefined);
         exitReason = 'escalated';
+        currentState = 'escalated';
+        await persistState();
         break;
       }
 
@@ -400,6 +461,9 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         tokensOut: totalTokensOut,
         cacheHit: cacheReadTokens > 0,
       });
+
+      // Persist final state (pode ter mudado durante esta iter via tools)
+      await persistState();
 
       break;
     }
