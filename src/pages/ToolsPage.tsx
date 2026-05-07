@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import {
   Wrench, Plus, Users, FileText, Wifi, Zap, Server, Calendar,
@@ -59,10 +59,25 @@ export function ToolsPage() {
   const [extraFolders, setExtraFolders] = useState<string[]>(() => loadExtraFolders());
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const collapseInitialized = useRef(false);
 
   useEffect(() => {
     saveExtraFolders(extraFolders);
   }, [extraFolders]);
+
+  // Por padrão, pastas começam retraídas. Roda só uma vez quando tools carregam.
+  useEffect(() => {
+    if (collapseInitialized.current || tools.length === 0) return;
+    const allKeys = new Set<string>();
+    for (const t of tools) {
+      allKeys.add((t.scope || 'global').toLowerCase().trim());
+    }
+    for (const f of extraFolders) {
+      allKeys.add(f.toLowerCase().trim());
+    }
+    setCollapsed(allKeys);
+    collapseInitialized.current = true;
+  }, [tools, extraFolders]);
 
   const handleCreateFolder = () => {
     const name = newFolderName.trim();
@@ -77,6 +92,12 @@ export function ToolsPage() {
       return;
     }
     setExtraFolders((prev) => [...prev, name]);
+    // Pasta nova começa expandida (mais natural — user acabou de criar)
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.delete(lower);
+      return next;
+    });
     setShowNewFolder(false);
     setNewFolderName('');
   };
