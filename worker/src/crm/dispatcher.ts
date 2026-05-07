@@ -177,8 +177,16 @@ export async function addInternalNote(
   try {
     const lead = await texnet.leads.get(leadId, cfg);
     const existingNotes = lead.notes ? `${lead.notes}\n\n---\n\n` : '';
-    await texnet.leads.update(leadId, { notes: existingNotes + content }, cfg);
+    const merged = existingNotes + content;
+    console.log(`[crm] addInternalNote TexNet leadId=${leadId} notesLen=${merged.length}`);
+    await texnet.leads.update(leadId, { notes: merged }, cfg);
+    console.log(`[crm] addInternalNote TexNet OK leadId=${leadId}`);
   } catch (err) {
-    console.warn(`[crm] addInternalNote falhou pra TexNet leadId=${leadId}:`, (err as Error).message);
+    console.warn(
+      `[crm] addInternalNote falhou pra TexNet leadId=${leadId}:`,
+      (err as Error).message,
+      'stack:',
+      (err as Error).stack?.slice(0, 500),
+    );
   }
 }

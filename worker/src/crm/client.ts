@@ -202,18 +202,39 @@ export const channels = {
 };
 
 // ─── Escalação para humano (padrão recomendado pela API doc) ──────────────────
+//
+// Comportamento desejado:
+//   1. Bot para de responder (botMode=false)
+//   2. Lead vai pra fila aberta "aguardando" (stage=aguardando, SEM responsável)
+//   3. Cliente recebe mensagem informativa
+//
+// IMPORTANTE: NÃO atribuímos automaticamente a um agente. O time da Texnet
+// pega da fila quando puder. Atribuir aqui faria a conversa ir direto pra
+// "Em atendimento" com agente específico, pulando a fila.
 
 export async function escalateToHuman(leadId: string, channel: string, cfg?: TexNetConfig): Promise<void> {
-  const agent = await users.findOnlineAgent(cfg);
+  // 1. Bot para de responder
   await leads.setBotMode(leadId, false, cfg);
-  if (agent) {
-    await leads.assign(leadId, agent.id, cfg);
+
+  // 2. Move pra fila aguardando (stage=aguardando) e remove responsável (null)
+  // O endpoint update aceita stage; pra remover responsibleId enviamos null via assign.
+  try {
+    await leads.update(leadId, { stage: 'aguardando' }, cfg);
+  } catch (err) {
+    console.warn(`[crm] falha ao mover lead ${leadId} pra aguardando:`, (err as Error).message);
   }
+  try {
+    // Limpa atribuição mandando responsibleId vazio
+    await leads.assign(leadId, '', cfg);
+  } catch (err) {
+    // Se a API rejeitar string vazia, tenta null literal via PATCH bruto
+    console.warn(`[crm] unassign via assign('') falhou pra lead ${leadId}:`, (err as Error).message);
+  }
+
+  // 3. Mensagem ao cliente
   await messages.send(leadId,
-    agent
-      ? `Vou passar você para o time responsável agora mesmo. Já já alguém vai te direcionar para concluir o atendimento! 🙌`
-      : `Nossa equipe será notificada em instantes para te dar continuidade no atendimento! 🙌`,
+    'Vou passar você para o time responsável agora mesmo. Já já alguém vai te direcionar para concluir o atendimento! 🙌',
     cfg,
   );
-  console.log(`[crm] lead ${leadId} escalado para humano. agente: ${agent?.name ?? 'nenhum online'}`);
+  console.log(`[crm] lead ${leadId} escalado pra fila aguardando (sem responsável)`);
 }
