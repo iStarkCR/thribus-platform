@@ -97,15 +97,22 @@ function extractBalancedJSON(text: string): string | null {
 function sanitizeMetaText(text: string): string {
   // 1) Remove blocos completos <thinking>...</thinking>, <reasoning>...</reasoning>, etc.
   let cleaned = text.replace(
-    /<(thinking|reasoning|analysis|scratchpad)\b[^>]*>[\s\S]*?<\/\1>/gi,
+    /<(thinking|reasoning|analysis|scratchpad|tool_call|function_call)\b[^>]*>[\s\S]*?<\/\1>/gi,
     '',
   );
 
-  // 2) Remove linhas que são puro marcador de meta-reasoning
+  // 2) Remove linhas que são puro marcador de meta-reasoning ou narração de tool call
   const META_LINES = [
+    // Marcadores de reasoning: "calculating...", "thinking...", etc.
     /^\s*(calculating|thinking|analyzing|checking|processing|reasoning|computing|verifying|evaluating|considering|reflecting)\s*\.{2,}\s*$/i,
     /^\s*(calculating|thinking|analyzing|processing)\s*$/i,
-    /^\s*<\/?(?:thinking|reasoning|analysis|scratchpad)>\s*$/i,
+    // Tags soltas (caso não fechem)
+    /^\s*<\/?(?:thinking|reasoning|analysis|scratchpad|tool_call|function_call)>\s*$/i,
+    // Narração de tool calls em PT/EN: "Chamando listar_planos()...", "Calling X()", "Executando Y", "Invocando Z"
+    /^\s*(chamando|executando|invocando|usando)\s+[a-z_]+(\s*\([^)]*\))?\s*\.{0,3}\s*$/i,
+    /^\s*(calling|invoking|executing|using|running)\s+[a-z_]+(\s*\([^)]*\))?\s*\.{0,3}\s*$/i,
+    // "Tool: X" / "Function: Y"
+    /^\s*(tool|function|action)\s*:\s*[a-z_]+\s*$/i,
   ];
 
   cleaned = cleaned
