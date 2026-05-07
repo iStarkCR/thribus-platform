@@ -73,15 +73,11 @@ export function createWebhookRouter(): Router {
 
     const payload = req.body as TexNetWebhookPayload;
 
-    // 2. Só processar mensagens INBOUND com conteúdo de texto.
-    //    O TexNet às vezes classifica eventos inbound como "message.sent"
-    //    mesmo quando direction=inbound — então confiamos no `direction`,
-    //    que é o campo de fato definitivo.
-    const isMessageEvent =
-      payload.event === 'message.received' || payload.event === 'message.sent';
-
+    // 2. Só processa message.received com direction=inbound e conteúdo de texto.
+    //    message.sent é a saída do próprio CRM (incluindo nossas respostas) —
+    //    processar isso causaria loop infinito.
     if (
-      !isMessageEvent ||
+      payload.event !== 'message.received' ||
       payload.data?.message?.direction !== 'inbound' ||
       !payload.data?.message?.content?.trim()
     ) {
