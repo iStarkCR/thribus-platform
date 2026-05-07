@@ -262,19 +262,28 @@ export function extractStateData(
     try {
       const json = JSON.parse(toolOutput) as {
         sucesso?: boolean;
-        wizard_cliente_id?: number;
-        wizard_contrato_id?: number;
+        // Campos REAIS retornados pelo workflow n8n (sem prefixo wizard_)
+        cliente_id?: number | string;
+        contrato_id?: number | string;
+        login?: string;
+        login_id?: number | string;
+        os_id?: number | string;
+        // Aliases legacy (caso alguém tenha mudado o workflow pra usar wizard_*)
+        wizard_cliente_id?: number | string;
+        wizard_contrato_id?: number | string;
         wizard_login?: string;
-        wizard_login_id?: number;
-        wizard_os_id?: number;
+        wizard_login_id?: number | string;
+        wizard_os_id?: number | string;
       };
       if (json.sucesso) {
         data.cadastro_realizado = true;
-        data.wizard_cliente_id = json.wizard_cliente_id;
-        data.wizard_contrato_id = json.wizard_contrato_id;
-        data.wizard_login = json.wizard_login;
-        data.wizard_login_id = json.wizard_login_id;
-        data.wizard_os_id = json.wizard_os_id;
+        // Salva no state_data com prefixo wizard_* (compatível com prompt da Bianca)
+        // mas LÊ tanto o nome direto quanto o aliasado.
+        data.wizard_cliente_id = json.cliente_id ?? json.wizard_cliente_id;
+        data.wizard_contrato_id = json.contrato_id ?? json.wizard_contrato_id;
+        data.wizard_login = json.login ?? json.wizard_login;
+        data.wizard_login_id = json.login_id ?? json.wizard_login_id;
+        data.wizard_os_id = json.os_id ?? json.wizard_os_id;
       }
     } catch {
       // ignore
