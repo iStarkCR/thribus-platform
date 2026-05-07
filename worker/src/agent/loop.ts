@@ -23,6 +23,19 @@ import type { AgentJob } from '../queue/index.js';
 
 const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 10);
 
+// Anti-promise: detecta "vou X / um momento" — agente prometendo ação sem executar
+const PROMISE_PATTERNS = [
+  /\bvou\s+(verificar|consultar|buscar|listar|realizar|fazer|chamar|acessar|pesquisar|conferir|cadastrar|criar|processar|enviar|abrir|gerar|providenciar|preparar|montar)\b/i,
+  /\bum\s+momento\b/i,
+  /\baguarde\b/i,
+  /\bestou\s+(verificando|consultando|buscando|processando|listando|realizando|cadastrando)\b/i,
+  /\bj[aá]\s+(te\s+)?retorno\b/i,
+];
+
+function looksLikePromise(text: string): boolean {
+  return PROMISE_PATTERNS.some((p) => p.test(text));
+}
+
 /**
  * Extrai mensagens do output do agente.
  * Suporta múltiplos formatos:
@@ -167,6 +180,8 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   const toolsUsed: string[] = [];
   const toolFailures: Record<string, number> = {}; // circuit breaker
   const MAX_TOOL_FAILURES = 3;
+  let promiseRetries = 0;
+  const MAX_PROMISE_RETRIES = 1;
   let totalTokensIn = 0;
   let totalTokensOut = 0;
   let cacheReadTokens = 0;
@@ -259,6 +274,28 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
 
     // ── Resposta final em texto ───────────────────────────────────────────
     if (response.text) {
+      // Anti-promise: se prometeu ação sem chamar tool, re-roda com hint
+      if (
+        promiseRetries < MAX_PROMISE_RETRIES &&
+        toolDefs.length > 0 &&
+        looksLikePromise(response.text)
+      ) {
+        console.warn(
+          `[loop] anti-promise tripped iter=${iter} retry=${promiseRetries + 1} text="${response.text.slice(0, 100).replace(/\n/g, ' ')}..."`,
+        );
+        promiseRetries++;
+        messages.push({ role: 'assistant', content: response.text });
+        messages.push({
+          role: 'user',
+          content:
+            'SISTEMA (não exibido ao cliente): Você prometeu uma ação ("vou X", "um momento", etc.) sem executá-la. Isso é proibido. ' +
+            'Regra: (a) se a ação requer uma tool disponível, chame a tool AGORA neste turno. ' +
+            '(b) se não há tool, RESPONDA DIRETO com a info real (sem "vou listar / um momento"). ' +
+            'Sua próxima resposta deve ser uma chamada de tool OU a resposta final com conteúdo útil — nunca outra promessa.',
+        });
+        continue;
+      }
+
       finalText = response.text;
 
       // Verifica canal conectado antes de enviar
