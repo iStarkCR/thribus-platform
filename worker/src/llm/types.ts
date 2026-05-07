@@ -41,4 +41,10 @@ export interface CallOpts {
   messages: MessageParam[];
   /** API key opcional — se não passar, usa env var */
   apiKey?: string;
+  /**
+   * Força o LLM a chamar UMA tool qualquer (não pode responder texto puro).
+   * Anthropic: tool_choice: { type: "any" }
+   * OpenAI:    tool_choice: "required"
+   */
+  forceTool?: boolean;
 }

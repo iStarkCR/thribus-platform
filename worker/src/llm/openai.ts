@@ -146,6 +146,7 @@ export async function callOpenAI(opts: CallOpts): Promise<LLMResponse> {
     max_tokens: 1024,
     messages,
     tools: opts.tools.length > 0 ? buildOpenAITools(opts.tools) : undefined,
+    ...(opts.forceTool && opts.tools.length > 0 ? { tool_choice: 'required' as const } : {}),
   });
 
   const choice = response.choices[0];

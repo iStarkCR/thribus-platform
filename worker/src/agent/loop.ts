@@ -209,6 +209,8 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       tools: toolDefs,
       messages,
       apiKey: workspace?.llmApiKey,
+      // Após anti-promise, força tool call (impede texto puro de novo)
+      forceTool: promiseRetries > 0 && toolDefs.length > 0,
     });
 
     totalTokensIn += response.usage.inputTokens;
@@ -277,24 +279,53 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
 
     // ── Resposta final em texto ───────────────────────────────────────────
     if (response.text) {
-      // Anti-promise: se prometeu ação sem chamar tool, re-roda com hint
+      const isPromise = looksLikePromise(response.text);
+      console.log(
+        `[loop] iter=${iter} text-only response, len=${response.text.length}, promise=${isPromise}, tools=${toolDefs.length}, retries=${promiseRetries}`,
+      );
+
+      // Anti-promise: se prometeu ação sem chamar tool, ENVIA o anúncio
+      // ao cliente (pra ele saber que o sistema está trabalhando) e
+      // continua o loop forçando a tool ser chamada na próxima iteração.
       if (
         promiseRetries < MAX_PROMISE_RETRIES &&
         toolDefs.length > 0 &&
         looksLikePromise(response.text)
       ) {
         console.warn(
-          `[loop] anti-promise tripped iter=${iter} retry=${promiseRetries + 1} text="${response.text.slice(0, 100).replace(/\n/g, ' ')}..."`,
+          `[loop] anti-promise tripped iter=${iter} retry=${promiseRetries + 1} text="${response.text.slice(0, 100).replace(/\n/g, ' ')}..." — sending ack and forcing tool`,
         );
         promiseRetries++;
+
+        // 1. Envia o anúncio ao cliente (assim ele sabe que o sistema entendeu).
+        const connected = await crm.isChannelConnected(job.channel, workspace ?? undefined);
+        if (connected) {
+          const ackMessages = extractMessages(response.text);
+          for (let i = 0; i < ackMessages.length; i++) {
+            await crm.sendMessage(job.channel, job.leadId, ackMessages[i], workspace ?? undefined);
+            if (i < ackMessages.length - 1) {
+              await new Promise((r) => setTimeout(r, 600));
+            }
+          }
+          await db.messages.save({
+            conversationId: conversation.id,
+            role: 'assistant',
+            content: response.text,
+            tokensIn: totalTokensIn,
+            tokensOut: totalTokensOut,
+            cacheHit: cacheReadTokens > 0,
+          });
+        }
+
+        // 2. Adiciona o anúncio ao histórico + injeta instrução pra forçar a tool.
         messages.push({ role: 'assistant', content: response.text });
         messages.push({
           role: 'user',
           content:
-            'SISTEMA (não exibido ao cliente): Você prometeu uma ação ("vou X", "um momento", etc.) sem executá-la. Isso é proibido. ' +
-            'Regra: (a) se a ação requer uma tool disponível, chame a tool AGORA neste turno. ' +
-            '(b) se não há tool, RESPONDA DIRETO com a info real (sem "vou listar / um momento"). ' +
-            'Sua próxima resposta deve ser uma chamada de tool OU a resposta final com conteúdo útil — nunca outra promessa.',
+            'SISTEMA (não exibido ao cliente): O anúncio que você acabou de fazer já foi entregue ao cliente. ' +
+            'AGORA você DEVE executar a ação prometida chamando a tool correspondente. ' +
+            'Sua próxima resposta tem que ser uma chamada de tool — NÃO envie mais texto explicativo, ' +
+            'NÃO repita o aviso, NÃO peça mais informações. Chame a tool e depois responda com o resultado real.',
         });
         continue;
       }

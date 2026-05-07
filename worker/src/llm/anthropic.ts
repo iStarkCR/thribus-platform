@@ -83,6 +83,9 @@ export async function callAnthropic(opts: CallOpts): Promise<LLMResponse> {
     system,
     tools: buildCachedTools(opts.tools),
     messages: applyHistoryCache(opts.messages),
+    ...(opts.forceTool && opts.tools.length > 0
+      ? { tool_choice: { type: 'any' } as const }
+      : {}),
   });
 
   const text =
