@@ -124,6 +124,40 @@ export const messages = {
       content_type: 'text',
     });
   },
+
+  /**
+   * Envia áudio (ou outro arquivo) via multipart form-data.
+   * Chatwoot processa e entrega como mensagem com attachment.
+   */
+  async sendAudio(
+    conversationId: number,
+    audioBuffer: Buffer,
+    opts: { filename?: string; mimeType?: string; caption?: string } = {},
+    cfg: TalkiConfig = fromEnv(),
+  ): Promise<unknown> {
+    if (!cfg.baseUrl || !cfg.accountId || !cfg.apiToken) {
+      throw new Error('Talki não configurado');
+    }
+    const filename = opts.filename ?? 'audio.ogg';
+    const mimeType = opts.mimeType ?? 'audio/ogg';
+
+    const form = new FormData();
+    form.append('message_type', 'outgoing');
+    if (opts.caption) form.append('content', opts.caption);
+    const blob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
+    form.append('attachments[]', blob, filename);
+
+    const res = await fetch(url(cfg, `/conversations/${conversationId}/messages`), {
+      method: 'POST',
+      headers: { api_access_token: cfg.apiToken },
+      body: form,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Talki sendAudio ${res.status}: ${text.slice(0, 200)}`);
+    }
+    return res.json();
+  },
 };
 
 // ─── Inboxes ──────────────────────────────────────────────────────────────────

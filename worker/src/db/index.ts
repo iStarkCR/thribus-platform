@@ -23,6 +23,8 @@ interface AgentRecord {
   tools: string[];
   channel?: string;
   workspaceId?: string;
+  /** Se true, agente pode responder em áudio (TTS) quando o usuário envia áudio. */
+  audioOutEnabled?: boolean;
 }
 
 export interface WorkspaceRecord {
@@ -98,7 +100,7 @@ export const db = {
       }
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel, workspace_id')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled')
         .eq('id', id)
         .maybeSingle();
       if (error) throw error;
@@ -112,6 +114,7 @@ export const db = {
         tools: data.tools ?? [],
         channel: data.channel ?? undefined,
         workspaceId: data.workspace_id ?? undefined,
+        audioOutEnabled: data.audio_out_enabled ?? false,
       };
     },
 
@@ -122,7 +125,7 @@ export const db = {
       }
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel, workspace_id')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled')
         .eq('channel', channel)
         .maybeSingle();
       if (error) throw error;
@@ -136,6 +139,7 @@ export const db = {
         tools: data.tools ?? [],
         channel: data.channel ?? undefined,
         workspaceId: data.workspace_id ?? undefined,
+        audioOutEnabled: data.audio_out_enabled ?? false,
       };
     },
 
@@ -143,7 +147,7 @@ export const db = {
       if (!supabase) return [];
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel, workspace_id')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled')
         .not('channel', 'is', null);
       if (error) throw error;
       return (data ?? []).map((a) => ({

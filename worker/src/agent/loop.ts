@@ -20,6 +20,9 @@ import { executeTool } from '../tools/dispatcher.js';
 import * as crm from '../crm/dispatcher.js';
 import { db } from '../db/index.js';
 import type { AgentJob } from '../queue/index.js';
+import { extractImageRefs, urlToAnthropicImageBlock } from '../media/vision.js';
+import { generateSpeech } from '../media/tts.js';
+import * as talki from '../talki/client.js';
 import {
   buildStateReminder,
   extractStateData,
@@ -211,15 +214,48 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       `[loop] history trim: kept=${trimmed.length} dropped=${droppedCount} (HISTORY_KEEP_TURNS=${HISTORY_KEEP_TURNS})`,
     );
   }
-  const messages: MessageParam[] = trimmed.map((m) => ({
-    role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
-    content: m.content,
-  }));
+  // Constrói mensagens — se conteúdo tiver [image_url: ...], converte pra
+  // content blocks multimodais (texto + imagem) compatíveis com Anthropic/OpenAI.
+  const messages: MessageParam[] = await Promise.all(
+    trimmed.map(async (m) => {
+      const role = (m.direction === 'inbound' ? 'user' : 'assistant') as
+        | 'user'
+        | 'assistant';
+      const { urls, text } = extractImageRefs(m.content);
+      if (urls.length === 0 || role === 'assistant') {
+        return { role, content: m.content };
+      }
+      // Build multimodal content: imagens + texto
+      const blocks: Array<unknown> = [];
+      for (const url of urls) {
+        const block = await urlToAnthropicImageBlock(url);
+        if (block) blocks.push(block);
+      }
+      if (text) blocks.push({ type: 'text', text });
+      return blocks.length > 0
+        ? ({ role, content: blocks } as MessageParam)
+        : { role, content: m.content };
+    }),
+  );
 
   // Garante que a mensagem atual está ao final (pode já estar no histórico)
   const lastMsg = messages[messages.length - 1];
-  if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== job.content) {
-    messages.push({ role: 'user', content: job.content });
+  const lastContentText =
+    typeof lastMsg?.content === 'string' ? lastMsg.content : '';
+  if (!lastMsg || lastMsg.role !== 'user' || lastContentText !== job.content) {
+    // Processa job.content também pra suportar imagem na mensagem atual
+    const { urls: jobUrls, text: jobText } = extractImageRefs(job.content);
+    if (jobUrls.length > 0) {
+      const blocks: Array<unknown> = [];
+      for (const url of jobUrls) {
+        const block = await urlToAnthropicImageBlock(url);
+        if (block) blocks.push(block);
+      }
+      if (jobText) blocks.push({ type: 'text', text: jobText });
+      messages.push({ role: 'user', content: blocks } as MessageParam);
+    } else {
+      messages.push({ role: 'user', content: job.content });
+    }
   }
 
   // 7. Carrega tool definitions
@@ -444,9 +480,43 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       // Suporte a output JSON: { "mensagem": "..." } ou { "mensagens": ["...", "..."] }
       const messagesToSend = extractMessages(finalText);
 
+      // Audio out: se agente tem audio_out_enabled E o cliente mandou áudio
+      // (job.messageType === 'audio'), responde a primeira mensagem em áudio
+      // (TTS) + restante em texto. Só Talki suportado por enquanto.
+      const wantAudioReply =
+        agent.audioOutEnabled &&
+        job.messageType === 'audio' &&
+        job.channel.startsWith('talki:');
+
       for (let i = 0; i < messagesToSend.length; i++) {
-        await crm.sendMessage(job.channel, job.leadId, messagesToSend[i], workspace ?? undefined);
-        // Pequeno delay entre mensagens para chegar em ordem
+        const msg = messagesToSend[i];
+        // Primeira mensagem em áudio se opt-in; restantes em texto
+        if (i === 0 && wantAudioReply) {
+          const audio = await generateSpeech(msg, {
+            apiKey: workspace?.llmApiKey,
+            voice: 'nova',
+            format: 'opus',
+          });
+          if (audio) {
+            try {
+              const cfg = talki.configFromWorkspace(workspace ?? undefined);
+              await talki.messages.sendAudio(
+                Number(job.leadId),
+                audio,
+                { filename: 'resposta.ogg', mimeType: 'audio/ogg' },
+                cfg,
+              );
+              // Não envia o texto correspondente — a transcrição é representada pelo áudio
+              if (i < messagesToSend.length - 1) {
+                await new Promise((r) => setTimeout(r, 600));
+              }
+              continue;
+            } catch (err) {
+              console.warn(`[loop] audio out falhou, fallback pra texto:`, (err as Error).message);
+            }
+          }
+        }
+        await crm.sendMessage(job.channel, job.leadId, msg, workspace ?? undefined);
         if (i < messagesToSend.length - 1) {
           await new Promise((r) => setTimeout(r, 600));
         }

@@ -94,8 +94,12 @@ function toOpenAIMessages(
     }
 
     if (msg.role === 'user') {
-      // Pode conter tool_result blocks (resultado de tools chamadas) ou texto.
+      // Pode conter tool_result blocks (resultado de tools), texto, ou imagens.
       const textParts: string[] = [];
+      const multimodal: Array<
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string } }
+      > = [];
 
       for (const block of msg.content) {
         if (block.type === 'tool_result' && 'tool_use_id' in block) {
@@ -109,10 +113,25 @@ function toOpenAIMessages(
           });
         } else if (block.type === 'text' && 'text' in block) {
           textParts.push(block.text);
+          multimodal.push({ type: 'text', text: block.text });
+        } else if (block.type === 'image' && 'source' in block) {
+          // Anthropic image block → OpenAI image_url format
+          const src = (block as { source: { type: string; media_type?: string; data?: string; url?: string } }).source;
+          let url: string | null = null;
+          if (src.type === 'base64' && src.data && src.media_type) {
+            url = `data:${src.media_type};base64,${src.data}`;
+          } else if (src.type === 'url' && src.url) {
+            url = src.url;
+          }
+          if (url) multimodal.push({ type: 'image_url', image_url: { url } });
         }
       }
 
-      if (textParts.length > 0) {
+      // Se houve imagens, manda como multimodal. Senão, texto puro (mais simples).
+      const hasImages = multimodal.some((b) => b.type === 'image_url');
+      if (hasImages) {
+        result.push({ role: 'user', content: multimodal });
+      } else if (textParts.length > 0) {
         result.push({ role: 'user', content: textParts.join('') });
       }
     }

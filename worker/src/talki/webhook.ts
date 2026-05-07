@@ -17,6 +17,7 @@ import express, { Router, type Request, type Response } from 'express';
 import { bufferEnqueue } from '../agent/buffer.js';
 import { db } from '../db/index.js';
 import * as talki from './client.js';
+import { transcribeAudio } from '../media/transcribe.js';
 
 // ⚠️ SAFETY: só processa conversas que tenham essa label aplicada no Talki.
 // Configurar no Coolify:
@@ -174,14 +175,38 @@ export function createTalkiWebhookRouter(): Router {
         }
       }
 
+      // ── Áudio in: transcreve via Whisper antes de enfileirar ────────────
+      let finalContent = content;
+      if (audioAttachment?.data_url) {
+        const transcribed = await transcribeAudio(
+          audioAttachment.data_url,
+          workspace?.llmApiKey,
+        );
+        if (transcribed) {
+          // Substitui o tag [audio_url: ...] pelo texto transcrito.
+          // O agente vê uma mensagem normal com prefixo [áudio] pra contexto.
+          finalContent = finalContent.replace(
+            /\[audio_url:\s*[^\]]+\]/g,
+            `[áudio do cliente] ${transcribed}`,
+          ).trim();
+          console.log(`[talki-webhook] audio transcribed convId=${conv.id} chars=${transcribed.length}`);
+        } else {
+          // Se a transcrição falhou, troca o tag por um placeholder claro
+          finalContent = finalContent.replace(
+            /\[audio_url:\s*[^\]]+\]/g,
+            '[cliente enviou áudio — transcrição indisponível]',
+          ).trim();
+        }
+      }
+
       bufferEnqueue({
         agentId: agent.id,
         leadId: String(conv.id), // conversation_id no Chatwoot
         messageId: String(payload.id ?? `talki-${Date.now()}`),
         customerPhone: sender?.phone_number ?? '',
         customerName: sender?.name,
-        content,
-        messageType: payload.content_type ?? (imageAttachment ? 'image' : 'text'),
+        content: finalContent,
+        messageType: payload.content_type ?? (imageAttachment ? 'image' : audioAttachment ? 'audio' : 'text'),
         channel: channelKey,
         leadStage: conv.status,
       });
