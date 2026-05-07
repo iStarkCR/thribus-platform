@@ -70,13 +70,19 @@ async function runOnce(): Promise<void> {
     // Polling só é necessário para TexNet (Talki usa webhook)
     if (crmDispatcher.detectProvider(channel) !== 'texnet') continue;
 
+    // Carrega workspace do agente (multi-tenant)
+    const workspace = agent.workspaceId
+      ? await db.workspaces.findById(agent.workspaceId).catch(() => null)
+      : null;
+    const cfg = crm.configFromWorkspace(workspace ?? undefined);
+
     let leadsList: crm.Lead[] = [];
     try {
-      leadsList = await crm.leads.list({ channel, limit: 50 });
+      leadsList = await crm.leads.list({ channel, limit: 50 }, cfg);
     } catch (err) {
       // Se TexNet não tiver endpoint /leads?channel=, tenta sem filtro
       try {
-        const all = await crm.leads.list({ limit: 100 });
+        const all = await crm.leads.list({ limit: 100 }, cfg);
         leadsList = all.filter((l) => l.channel === channel);
       } catch (err2) {
         console.warn(`[poll] falha ao listar leads (channel=${channel}):`, (err2 as Error).message);
@@ -97,7 +103,7 @@ async function runOnce(): Promise<void> {
       // Busca lead completo com mensagens
       let fullLead: crm.Lead;
       try {
-        fullLead = await crm.leads.get(lead.id);
+        fullLead = await crm.leads.get(lead.id, cfg);
       } catch (err) {
         console.warn(`[poll] falha ao buscar lead ${lead.id}:`, (err as Error).message);
         continue;

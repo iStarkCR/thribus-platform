@@ -4,21 +4,42 @@
  * Base URL: https://texcrm.texnet.com.br/api/v1
  * Auth: header x-api-key (formato txn_<32-64 chars>)
  * Docs: TexNet API Reference v1
+ *
+ * Multi-tenant: cada chamada aceita TexNetConfig opcional.
+ * Se vazio, faz fallback nas env vars (TEXNET_BASE_URL / TEXNET_API_KEY).
  */
 
-const BASE = 'https://texcrm.texnet.com.br/api/v1';
+import type { WorkspaceRecord } from '../db/index.js';
 
-function headers(): Record<string, string> {
+const DEFAULT_BASE = 'https://texcrm.texnet.com.br/api/v1';
+
+export interface TexNetConfig {
+  baseUrl: string;
+  apiKey: string;
+}
+
+function fromEnv(): TexNetConfig {
   return {
-    'Content-Type': 'application/json',
-    'x-api-key': process.env.TEXNET_API_KEY ?? '',
+    baseUrl: process.env.TEXNET_BASE_URL ?? DEFAULT_BASE,
+    apiKey: process.env.TEXNET_API_KEY ?? '',
   };
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+export function configFromWorkspace(ws?: WorkspaceRecord): TexNetConfig {
+  const env = fromEnv();
+  return {
+    baseUrl: ws?.crmBaseUrl || env.baseUrl,
+    apiKey: ws?.crmApiToken || env.apiKey,
+  };
+}
+
+async function req<T>(method: string, path: string, body?: unknown, cfg: TexNetConfig = fromEnv()): Promise<T> {
+  const res = await fetch(`${cfg.baseUrl}${path}`, {
     method,
-    headers: headers(),
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': cfg.apiKey,
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -87,62 +108,61 @@ export type LeadStage =
 // ─── Leads ────────────────────────────────────────────────────────────────────
 
 export const leads = {
-  async get(id: string): Promise<Lead> {
-    return req<Lead>('GET', `/leads/${id}`);
+  async get(id: string, cfg?: TexNetConfig): Promise<Lead> {
+    return req<Lead>('GET', `/leads/${id}`, undefined, cfg);
   },
 
-  async list(opts: { channel?: string; limit?: number } = {}): Promise<Lead[]> {
+  async list(opts: { channel?: string; limit?: number } = {}, cfg?: TexNetConfig): Promise<Lead[]> {
     const params = new URLSearchParams();
     if (opts.channel) params.set('channel', opts.channel);
     if (opts.limit) params.set('limit', String(opts.limit));
     const qs = params.toString();
     const path = qs ? `/leads?${qs}` : '/leads';
-    // TexNet pode retornar { data: Lead[] } ou Lead[] direto
-    const result = await req<Lead[] | { data: Lead[] }>('GET', path);
+    const result = await req<Lead[] | { data: Lead[] }>('GET', path, undefined, cfg);
     return Array.isArray(result) ? result : (result.data ?? []);
   },
 
   async update(id: string, data: Partial<{
     name: string; email: string; value: number;
     notes: string; tags: string[]; stage: LeadStage;
-  }>): Promise<Lead> {
-    return req<Lead>('PATCH', `/leads/${id}`, data);
+  }>, cfg?: TexNetConfig): Promise<Lead> {
+    return req<Lead>('PATCH', `/leads/${id}`, data, cfg);
   },
 
-  async moveStage(id: string, stage: LeadStage): Promise<Lead> {
-    return req<Lead>('PATCH', `/leads/${id}/stage`, { stage });
+  async moveStage(id: string, stage: LeadStage, cfg?: TexNetConfig): Promise<Lead> {
+    return req<Lead>('PATCH', `/leads/${id}/stage`, { stage }, cfg);
   },
 
-  async assign(id: string, responsibleId: string): Promise<Lead> {
-    return req<Lead>('PATCH', `/leads/${id}/assign`, { responsibleId });
+  async assign(id: string, responsibleId: string, cfg?: TexNetConfig): Promise<Lead> {
+    return req<Lead>('PATCH', `/leads/${id}/assign`, { responsibleId }, cfg);
   },
 
-  async setBotMode(id: string, enabled: boolean): Promise<{ id: string; botMode: boolean }> {
-    return req('PATCH', `/leads/${id}/bot-mode`, { enabled });
+  async setBotMode(id: string, enabled: boolean, cfg?: TexNetConfig): Promise<{ id: string; botMode: boolean }> {
+    return req('PATCH', `/leads/${id}/bot-mode`, { enabled }, cfg);
   },
 };
 
 // ─── Mensagens ────────────────────────────────────────────────────────────────
 
 export const messages = {
-  async send(leadId: string, content: string): Promise<LeadMessage> {
-    return req<LeadMessage>('POST', `/leads/${leadId}/messages`, { content, type: 'text' });
+  async send(leadId: string, content: string, cfg?: TexNetConfig): Promise<LeadMessage> {
+    return req<LeadMessage>('POST', `/leads/${leadId}/messages`, { content, type: 'text' }, cfg);
   },
 
-  async list(leadId: string, limit = 20): Promise<{ data: LeadMessage[] }> {
-    return req('GET', `/leads/${leadId}/messages?limit=${limit}`);
+  async list(leadId: string, limit = 20, cfg?: TexNetConfig): Promise<{ data: LeadMessage[] }> {
+    return req('GET', `/leads/${leadId}/messages?limit=${limit}`, undefined, cfg);
   },
 };
 
 // ─── Usuários ─────────────────────────────────────────────────────────────────
 
 export const users = {
-  async list(): Promise<CrmUser[]> {
-    return req<CrmUser[]>('GET', '/users');
+  async list(cfg?: TexNetConfig): Promise<CrmUser[]> {
+    return req<CrmUser[]>('GET', '/users', undefined, cfg);
   },
 
-  async findOnlineAgent(): Promise<CrmUser | null> {
-    const all = await this.list();
+  async findOnlineAgent(cfg?: TexNetConfig): Promise<CrmUser | null> {
+    const all = await this.list(cfg);
     return all.find((u) => u.role === 'agent' && u.status === 'online') ?? null;
   },
 };
@@ -150,25 +170,22 @@ export const users = {
 // ─── Canais ───────────────────────────────────────────────────────────────────
 
 export const channels = {
-  async listWhatsApp(): Promise<Array<{ name: string; status: string; slug?: string }>> {
-    return req('GET', '/whatsapp/channels');
+  async listWhatsApp(cfg?: TexNetConfig): Promise<Array<{ name: string; status: string; slug?: string }>> {
+    return req('GET', '/whatsapp/channels', undefined, cfg);
   },
 
-  async isConnected(channelName: string): Promise<boolean> {
+  async isConnected(channelName: string, cfg?: TexNetConfig): Promise<boolean> {
     try {
-      const list = await this.listWhatsApp();
-      // Tenta achar pelo `name` ou `slug` (TexNet pode usar qualquer um)
+      const list = await this.listWhatsApp(cfg);
       const ch = list.find(
         (c) => c.name === channelName || c.slug === channelName,
       );
 
-      // Se não conseguir localizar, assume conectado (não bloqueia envio).
       if (!ch) {
         console.warn(`[crm] canal "${channelName}" não encontrado em /whatsapp/channels — assumindo conectado`);
         return true;
       }
 
-      // Status válidos pra conexão (TexNet retorna em PT-BR: "Ativo")
       const ok = ['connected', 'active', 'ativo', 'online', 'ready'];
       const status = (ch.status ?? '').toLowerCase();
       const isOk = ok.includes(status);
@@ -178,7 +195,6 @@ export const channels = {
       }
       return isOk;
     } catch (err) {
-      // Se falhar a chamada (endpoint indisponível, etc.), não bloqueia
       console.warn(`[crm] erro ao checar canal "${channelName}":`, (err as Error).message);
       return true;
     }
@@ -187,24 +203,17 @@ export const channels = {
 
 // ─── Escalação para humano (padrão recomendado pela API doc) ──────────────────
 
-export async function escalateToHuman(leadId: string, channel: string): Promise<void> {
-  // 1. Verifica agente disponível
-  const agent = await users.findOnlineAgent();
-
-  // 2. Desativa bot
-  await leads.setBotMode(leadId, false);
-
-  // 3. Atribui ao agente (se disponível)
+export async function escalateToHuman(leadId: string, channel: string, cfg?: TexNetConfig): Promise<void> {
+  const agent = await users.findOnlineAgent(cfg);
+  await leads.setBotMode(leadId, false, cfg);
   if (agent) {
-    await leads.assign(leadId, agent.id);
+    await leads.assign(leadId, agent.id, cfg);
   }
-
-  // 4. Avisa o cliente
   await messages.send(leadId,
     agent
       ? `Vou passar você para o time responsável agora mesmo. Já já alguém vai te direcionar para concluir o atendimento! 🙌`
-      : `Nossa equipe será notificada em instantes para te dar continuidade no atendimento! 🙌`
+      : `Nossa equipe será notificada em instantes para te dar continuidade no atendimento! 🙌`,
+    cfg,
   );
-
   console.log(`[crm] lead ${leadId} escalado para humano. agente: ${agent?.name ?? 'nenhum online'}`);
 }

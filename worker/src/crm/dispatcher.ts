@@ -69,7 +69,8 @@ export async function getLead(channel: string, leadId: string, ws?: WorkspaceRec
   }
 
   // TexNet (default)
-  const lead = await texnet.leads.get(leadId);
+  const cfg = texnet.configFromWorkspace(ws);
+  const lead = await texnet.leads.get(leadId, cfg);
   return {
     id: lead.id,
     name: lead.name,
@@ -99,19 +100,21 @@ export async function sendMessage(channel: string, leadId: string, content: stri
     return;
   }
 
-  await texnet.messages.send(leadId, content);
+  const cfg = texnet.configFromWorkspace(ws);
+  await texnet.messages.send(leadId, content, cfg);
 }
 
 // ─── Channel connected check ─────────────────────────────────────────────────
 
-export async function isChannelConnected(channel: string, _ws?: WorkspaceRecord): Promise<boolean> {
+export async function isChannelConnected(channel: string, ws?: WorkspaceRecord): Promise<boolean> {
   const provider = detectProvider(channel);
 
   if (provider === 'talki') {
     return true;
   }
 
-  return texnet.channels.isConnected(channel);
+  const cfg = texnet.configFromWorkspace(ws);
+  return texnet.channels.isConnected(channel, cfg);
 }
 
 // ─── Set bot mode ─────────────────────────────────────────────────────────────
@@ -125,7 +128,8 @@ export async function setBotMode(channel: string, leadId: string, enabled: boole
     return;
   }
 
-  await texnet.leads.setBotMode(leadId, enabled);
+  const cfg = texnet.configFromWorkspace(ws);
+  await texnet.leads.setBotMode(leadId, enabled, cfg);
 }
 
 // ─── Escalate to human ────────────────────────────────────────────────────────
@@ -144,5 +148,6 @@ export async function escalateToHuman(channel: string, leadId: string, ws?: Work
     return;
   }
 
-  await texnet.escalateToHuman(leadId, channel);
+  const cfg = texnet.configFromWorkspace(ws);
+  await texnet.escalateToHuman(leadId, channel, cfg);
 }
