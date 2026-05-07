@@ -91,15 +91,15 @@ export const SALES_FLOW_STATES: Record<string, StateDefinition> = {
   '8_registering': {
     id: '8_registering',
     description:
-      'Dados confirmados. PRÓXIMA AÇÃO OBRIGATÓRIA: chamar cadastro_wizard com TODOS os dados (cpf, nome, email, celular, cep, rua, numero, bairro, data_nascimento, tipo_cobranca:"B", dia_vencimento, canal_venda:"whatsapp").',
+      'Dados confirmados. PRÓXIMA AÇÃO OBRIGATÓRIA: chamar cadastro_wizard com TODOS os dados (cpf, nome, email, celular, cep, rua, numero, bairro, data_nascimento, tipo_cobranca:"B", dia_vencimento, canal_venda:"whatsapp"). Após sucesso, envia mensagem de instruções de assinatura e PULA DIRETO para 10_scheduling (não aguarda assinatura — CRM Texnet ainda não tem fluxo de status_contrato finalizado).',
     expectedTool: 'cadastro_wizard',
-    nextState: '9_signature_check',
+    nextState: '10_scheduling',
     allowedTools: ['cadastro_wizard'],
   },
   '9_signature_check': {
     id: '9_signature_check',
     description:
-      'Cadastro feito, contrato_id obtido. Aguarda cliente avisar que assinou. Quando avisar, chama status_contrato com o contrato_id da sessão.',
+      '⚠️ DESATIVADO temporariamente — pulamos direto de 8_registering pra 10_scheduling porque o CRM Texnet ainda não tem o fluxo de status_contrato finalizado. Mantido aqui pra quando voltar.',
     expectedTool: 'status_contrato',
     nextState: '10_scheduling',
     altTransitions: {
