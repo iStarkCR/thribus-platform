@@ -28,8 +28,11 @@ const PROMISE_PATTERNS = [
   /\bvou\s+(verificar|consultar|buscar|listar|realizar|fazer|chamar|acessar|pesquisar|conferir|cadastrar|criar|processar|enviar|abrir|gerar|providenciar|preparar|montar)\b/i,
   /\bum\s+momento\b/i,
   /\baguarde\b/i,
-  /\bestou\s+(verificando|consultando|buscando|processando|listando|realizando|cadastrando)\b/i,
+  /\b(estou|vou\s+estar|ja\s+estou|já\s+estou)\s+(verificando|consultando|buscando|processando|listando|realizando|cadastrando|preparando|gerando|montando)\b/i,
+  // Gerúndio no início de linha (ex: "Verificando cobertura...")
+  /^\s*(verificando|consultando|buscando|processando|listando|realizando|cadastrando|preparando|gerando|montando|analisando|validando|conferindo)\s+\w+/im,
   /\bj[aá]\s+(te\s+)?retorno\b/i,
+  /\b(s[oó]\s+um\s+(instante|segundo|minuto|momento|momentinho))\b/i,
 ];
 
 function looksLikePromise(text: string): boolean {
