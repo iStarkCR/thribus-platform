@@ -291,11 +291,14 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     break;
   }
 
-  // Estorou iterações sem resposta → escalar
+  // Estorou iterações sem resposta → falha (NÃO escala automaticamente,
+  // pra evitar mudar status da conversa só por loop infinito).
+  // Apenas loga e marca como failed. Operador humano pode escalar manualmente
+  // observando os logs.
   if (!finalText && exitReason === 'failed') {
-    console.error(`[loop] MAX_TOOL_ITERATIONS atingido — escalando leadId=${job.leadId}`);
-    await crm.escalateToHuman(job.channel, job.leadId);
-    exitReason = 'escalated';
+    console.error(
+      `[loop] MAX_TOOL_ITERATIONS atingido — leadId=${job.leadId} (NÃO escalando para evitar travar conversa)`,
+    );
   }
 
   const durationMs = Date.now() - start;

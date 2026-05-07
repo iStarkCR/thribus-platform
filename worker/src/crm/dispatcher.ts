@@ -53,9 +53,15 @@ export async function getLead(channel: string, leadId: string): Promise<UnifiedL
       phone: conv.contact?.phone_number ?? conv.meta?.sender?.phone_number ?? '',
       channel,
       stage: conv.status,
-      // Talki/Chatwoot: status='open' significa bot pode atuar
-      // Quando humano "assume" geralmente atribui assignee — não temos esse signal aqui
-      botMode: conv.status === 'open',
+      // Talki/Chatwoot:
+      //   open    → bot atua
+      //   pending → bot atua (cliente ainda esperando, label-gate já validou)
+      //   snoozed → bot atua
+      //   resolved → bot NÃO atua (humano fechou)
+      // O label `testando-agente` (TALKI_REQUIRED_LABEL) é o gate principal
+      // antes do webhook chegar aqui. Aqui só protege contra responder em
+      // conversa explicitamente resolved.
+      botMode: conv.status !== 'resolved',
       responsibleId: null,
       messages: msgs.map((m) => {
         const mt = m.message_type as number | string;
