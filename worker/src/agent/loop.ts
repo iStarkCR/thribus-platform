@@ -107,8 +107,13 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   const agent = await db.agents.findById(job.agentId);
   if (!agent) throw new Error(`Agent ${job.agentId} não encontrado no banco`);
 
+  // 1.5. Carrega workspace (multi-tenant)
+  const workspace = agent.workspaceId
+    ? await db.workspaces.findById(agent.workspaceId).catch(() => null)
+    : null;
+
   // 2. Busca lead completo no CRM (TexNet ou Talki — dispatcher decide)
-  const lead = await crm.getLead(job.channel, job.leadId);
+  const lead = await crm.getLead(job.channel, job.leadId, workspace ?? undefined);
 
   // 3. ⚠️ SAFETY: só processa se botMode JÁ está true. Não ativa automaticamente!
   if (lead.botMode !== true) {
@@ -171,7 +176,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     // Re-verifica botMode a cada iteração (humano pode assumir no meio)
     if (iter > 0) {
-      const refreshed = await crm.getLead(job.channel, job.leadId);
+      const refreshed = await crm.getLead(job.channel, job.leadId, workspace ?? undefined);
       if (refreshed.botMode === false) {
         console.log(`[loop] humano assumiu durante loop iter=${iter} — cancelando`);
         return;
@@ -185,6 +190,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       systemPrompt: agent.systemPrompt,
       tools: toolDefs,
       messages,
+      apiKey: workspace?.llmApiKey,
     });
 
     totalTokensIn += response.usage.inputTokens;
@@ -243,7 +249,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       // Escalonamento via tool
       const escalation = results.find((r) => r.toolName === 'escalar_humano');
       if (escalation) {
-        await crm.escalateToHuman(job.channel, job.leadId);
+        await crm.escalateToHuman(job.channel, job.leadId, workspace ?? undefined);
         exitReason = 'escalated';
         break;
       }
@@ -256,7 +262,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       finalText = response.text;
 
       // Verifica canal conectado antes de enviar
-      const connected = await crm.isChannelConnected(job.channel);
+      const connected = await crm.isChannelConnected(job.channel, workspace ?? undefined);
       if (!connected) {
         console.warn(`[loop] canal ${job.channel} desconectado — não enviando`);
         exitReason = 'failed';
@@ -267,7 +273,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       const messagesToSend = extractMessages(finalText);
 
       for (let i = 0; i < messagesToSend.length; i++) {
-        await crm.sendMessage(job.channel, job.leadId, messagesToSend[i]);
+        await crm.sendMessage(job.channel, job.leadId, messagesToSend[i], workspace ?? undefined);
         // Pequeno delay entre mensagens para chegar em ordem
         if (i < messagesToSend.length - 1) {
           await new Promise((r) => setTimeout(r, 600));

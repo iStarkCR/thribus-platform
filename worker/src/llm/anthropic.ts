@@ -14,9 +14,18 @@ import type {
 } from '@anthropic-ai/sdk/resources/beta/prompt-caching/messages.js';
 import type { CallOpts, LLMResponse, MessageParam, ToolDefinition } from './types.js';
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Cache de clients por API key (evita recriar cliente a cada call)
+const clientCache = new Map<string, Anthropic>();
+
+function getClient(apiKey?: string): Anthropic {
+  const key = apiKey ?? process.env.ANTHROPIC_API_KEY ?? '';
+  let c = clientCache.get(key);
+  if (!c) {
+    c = new Anthropic({ apiKey: key });
+    clientCache.set(key, c);
+  }
+  return c;
+}
 
 const HISTORY_CACHE_WINDOW = 4;
 
@@ -68,7 +77,7 @@ export async function callAnthropic(opts: CallOpts): Promise<LLMResponse> {
     },
   ];
 
-  const response = await client.beta.promptCaching.messages.create({
+  const response = await getClient(opts.apiKey).beta.promptCaching.messages.create({
     model: opts.model,
     max_tokens: 1024,
     system,

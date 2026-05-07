@@ -20,18 +20,20 @@ export async function callLLM(opts: CallOpts): Promise<LLMResponse> {
   const model = opts.model.toLowerCase();
 
   if (model.startsWith('gpt-') || model.startsWith('o1-') || model.startsWith('o3-')) {
-    if (!process.env.OPENAI_API_KEY) {
+    const key = opts.apiKey ?? process.env.OPENAI_API_KEY;
+    if (!key) {
       throw new Error(
-        `Modelo ${opts.model} é OpenAI mas OPENAI_API_KEY não está definido no worker.`,
+        `Modelo ${opts.model} é OpenAI mas API key não está disponível (workspace nem env).`,
       );
     }
     return callOpenAI(opts);
   }
 
   if (model.startsWith('claude-')) {
-    if (!process.env.ANTHROPIC_API_KEY) {
+    const key = opts.apiKey ?? process.env.ANTHROPIC_API_KEY;
+    if (!key) {
       throw new Error(
-        `Modelo ${opts.model} é Anthropic mas ANTHROPIC_API_KEY não está definido no worker.`,
+        `Modelo ${opts.model} é Anthropic mas API key não está disponível (workspace nem env).`,
       );
     }
     return callAnthropic(opts);

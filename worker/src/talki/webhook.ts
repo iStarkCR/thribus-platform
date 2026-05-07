@@ -140,19 +140,26 @@ export function createTalkiWebhookRouter(): Router {
         return;
       }
 
+      // Carrega workspace se agent estiver vinculado (multi-tenant)
+      const workspace = agent.workspaceId
+        ? await db.workspaces.findById(agent.workspaceId).catch(() => null)
+        : null;
+
       // ⚠️ SAFETY: checa label obrigatória, se configurada
-      if (REQUIRED_LABEL) {
+      // Prioridade: workspace.talki_required_label > env var
+      const requiredLabel = (workspace?.talkiRequiredLabel ?? REQUIRED_LABEL).trim();
+      if (requiredLabel) {
         let labels = conv.labels ?? [];
-        // Se webhook não trouxe labels, busca via API
         if (labels.length === 0) {
-          labels = await talki.conversations.listLabels(conv.id);
+          const cfg = talki.configFromWorkspace(workspace ?? undefined);
+          labels = await talki.conversations.listLabels(conv.id, cfg);
         }
         const hasLabel = labels.some(
-          (l) => l.toLowerCase() === REQUIRED_LABEL.toLowerCase(),
+          (l) => l.toLowerCase() === requiredLabel.toLowerCase(),
         );
         if (!hasLabel) {
           console.log(
-            `[talki-webhook] conv ${conv.id} sem label "${REQUIRED_LABEL}" (tem: ${labels.join(',') || 'nenhuma'}) — ignorando`,
+            `[talki-webhook] conv ${conv.id} sem label "${requiredLabel}" (tem: ${labels.join(',') || 'nenhuma'}) — ignorando`,
           );
           return;
         }

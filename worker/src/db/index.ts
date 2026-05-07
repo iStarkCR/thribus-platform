@@ -22,6 +22,20 @@ interface AgentRecord {
   systemPrompt: string;
   tools: string[];
   channel?: string;
+  workspaceId?: string;
+}
+
+export interface WorkspaceRecord {
+  id: string;
+  name: string;
+  llmProvider: 'openai' | 'anthropic';
+  llmApiKey?: string;
+  crmProvider?: 'talki' | 'texnet';
+  crmBaseUrl?: string;
+  crmAccountId?: string;
+  crmApiToken?: string;
+  texnetBotSenderId?: string;
+  talkiRequiredLabel?: string;
 }
 
 interface ToolRecord {
@@ -65,7 +79,7 @@ export const db = {
       }
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id')
         .eq('id', id)
         .maybeSingle();
       if (error) throw error;
@@ -78,6 +92,7 @@ export const db = {
         systemPrompt: data.system_prompt,
         tools: data.tools ?? [],
         channel: data.channel ?? undefined,
+        workspaceId: data.workspace_id ?? undefined,
       };
     },
 
@@ -88,7 +103,7 @@ export const db = {
       }
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id')
         .eq('channel', channel)
         .maybeSingle();
       if (error) throw error;
@@ -101,6 +116,7 @@ export const db = {
         systemPrompt: data.system_prompt,
         tools: data.tools ?? [],
         channel: data.channel ?? undefined,
+        workspaceId: data.workspace_id ?? undefined,
       };
     },
 
@@ -108,7 +124,7 @@ export const db = {
       if (!supabase) return [];
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id')
         .not('channel', 'is', null);
       if (error) throw error;
       return (data ?? []).map((a) => ({
@@ -119,7 +135,33 @@ export const db = {
         systemPrompt: a.system_prompt,
         tools: a.tools ?? [],
         channel: a.channel ?? undefined,
+        workspaceId: a.workspace_id ?? undefined,
       }));
+    },
+  },
+
+  workspaces: {
+    async findById(id: string): Promise<WorkspaceRecord | null> {
+      if (!supabase) return null;
+      const { data, error } = await supabase
+        .from('workspaces')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return {
+        id: data.id,
+        name: data.name,
+        llmProvider: data.llm_provider,
+        llmApiKey: data.llm_api_key ?? undefined,
+        crmProvider: data.crm_provider ?? undefined,
+        crmBaseUrl: data.crm_base_url ?? undefined,
+        crmAccountId: data.crm_account_id ?? undefined,
+        crmApiToken: data.crm_api_token ?? undefined,
+        texnetBotSenderId: data.texnet_bot_sender_id ?? undefined,
+        talkiRequiredLabel: data.talki_required_label ?? undefined,
+      };
     },
   },
 

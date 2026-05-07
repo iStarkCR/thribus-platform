@@ -1,40 +1,44 @@
 /**
  * Talki / Chatwoot API Client
  *
- * Talki é uma instância white-label de Chatwoot.
- * Docs: https://www.chatwoot.com/developers/api/
- *
- * Auth: header `api_access_token: <token>`
- * Base URL: https://talki.<dominio>/api/v1/accounts/{ACCOUNT_ID}/
- *
- * Configurar:
- *   TALKI_BASE_URL=https://talki.thribustech.com
- *   TALKI_ACCOUNT_ID=5
- *   TALKI_API_TOKEN=<seu_token>
+ * Suporta config tanto via env vars (single-tenant) quanto via objeto
+ * `cfg` (multi-tenant — workspace.crm_*).
  */
 
-const BASE = process.env.TALKI_BASE_URL ?? '';
-const ACCOUNT_ID = process.env.TALKI_ACCOUNT_ID ?? '';
-const TOKEN = process.env.TALKI_API_TOKEN ?? '';
+// ─── Configuração ─────────────────────────────────────────────────────────────
 
-function url(path: string): string {
-  return `${BASE}/api/v1/accounts/${ACCOUNT_ID}${path}`;
+export interface TalkiConfig {
+  baseUrl: string;
+  accountId: string;
+  apiToken: string;
 }
 
-function headers(): Record<string, string> {
+function fromEnv(): TalkiConfig {
   return {
-    'Content-Type': 'application/json',
-    api_access_token: TOKEN,
+    baseUrl: process.env.TALKI_BASE_URL ?? '',
+    accountId: process.env.TALKI_ACCOUNT_ID ?? '',
+    apiToken: process.env.TALKI_API_TOKEN ?? '',
   };
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  if (!BASE || !ACCOUNT_ID || !TOKEN) {
-    throw new Error('Talki não configurado: defina TALKI_BASE_URL, TALKI_ACCOUNT_ID e TALKI_API_TOKEN');
+function url(cfg: TalkiConfig, path: string): string {
+  return `${cfg.baseUrl}/api/v1/accounts/${cfg.accountId}${path}`;
+}
+
+function headers(cfg: TalkiConfig): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    api_access_token: cfg.apiToken,
+  };
+}
+
+async function req<T>(cfg: TalkiConfig, method: string, path: string, body?: unknown): Promise<T> {
+  if (!cfg.baseUrl || !cfg.accountId || !cfg.apiToken) {
+    throw new Error('Talki não configurado: defina TALKI_BASE_URL, TALKI_ACCOUNT_ID e TALKI_API_TOKEN (ou via workspace)');
   }
-  const res = await fetch(url(path), {
+  const res = await fetch(url(cfg, path), {
     method,
-    headers: headers(),
+    headers: headers(cfg),
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -83,17 +87,13 @@ export interface TalkiConversation {
 // ─── Conversations ────────────────────────────────────────────────────────────
 
 export const conversations = {
-  async get(id: number): Promise<TalkiConversation> {
-    return req<TalkiConversation>('GET', `/conversations/${id}`);
+  async get(id: number, cfg: TalkiConfig = fromEnv()): Promise<TalkiConversation> {
+    return req<TalkiConversation>(cfg, 'GET', `/conversations/${id}`);
   },
 
-  /**
-   * Lista as labels (etiquetas) aplicadas a uma conversa.
-   * Endpoint: GET /conversations/:id/labels → { payload: ["label1", "label2"] }
-   */
-  async listLabels(id: number): Promise<string[]> {
+  async listLabels(id: number, cfg: TalkiConfig = fromEnv()): Promise<string[]> {
     try {
-      const res = await req<{ payload: string[] } | string[]>('GET', `/conversations/${id}/labels`);
+      const res = await req<{ payload: string[] } | string[]>(cfg, 'GET', `/conversations/${id}/labels`);
       if (Array.isArray(res)) return res;
       return res.payload ?? [];
     } catch {
@@ -101,24 +101,24 @@ export const conversations = {
     }
   },
 
-  async listByInbox(inboxId: number, status: 'open' | 'all' = 'open'): Promise<{ data: { payload: TalkiConversation[] } }> {
-    return req('GET', `/conversations?inbox_id=${inboxId}&status=${status}&assignee_type=me&page=1`);
+  async listByInbox(inboxId: number, status: 'open' | 'all' = 'open', cfg: TalkiConfig = fromEnv()): Promise<{ data: { payload: TalkiConversation[] } }> {
+    return req(cfg, 'GET', `/conversations?inbox_id=${inboxId}&status=${status}&assignee_type=me&page=1`);
   },
 
-  async setStatus(id: number, status: 'open' | 'resolved' | 'pending'): Promise<TalkiConversation> {
-    return req<TalkiConversation>('POST', `/conversations/${id}/toggle_status`, { status });
+  async setStatus(id: number, status: 'open' | 'resolved' | 'pending', cfg: TalkiConfig = fromEnv()): Promise<TalkiConversation> {
+    return req<TalkiConversation>(cfg, 'POST', `/conversations/${id}/toggle_status`, { status });
   },
 
-  async listMessages(id: number): Promise<{ payload: TalkiMessage[] }> {
-    return req('GET', `/conversations/${id}/messages`);
+  async listMessages(id: number, cfg: TalkiConfig = fromEnv()): Promise<{ payload: TalkiMessage[] }> {
+    return req(cfg, 'GET', `/conversations/${id}/messages`);
   },
 };
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 
 export const messages = {
-  async send(conversationId: number, content: string): Promise<TalkiMessage> {
-    return req<TalkiMessage>('POST', `/conversations/${conversationId}/messages`, {
+  async send(conversationId: number, content: string, cfg: TalkiConfig = fromEnv()): Promise<TalkiMessage> {
+    return req<TalkiMessage>(cfg, 'POST', `/conversations/${conversationId}/messages`, {
       content,
       message_type: 'outgoing',
       content_type: 'text',
@@ -129,7 +129,22 @@ export const messages = {
 // ─── Inboxes ──────────────────────────────────────────────────────────────────
 
 export const inboxes = {
-  async list(): Promise<{ payload: Array<{ id: number; name: string; channel_type: string }> }> {
-    return req('GET', '/inboxes');
+  async list(cfg: TalkiConfig = fromEnv()): Promise<{ payload: Array<{ id: number; name: string; channel_type: string }> }> {
+    return req(cfg, 'GET', '/inboxes');
   },
 };
+
+// ─── Helper: monta config a partir de workspace ───────────────────────────────
+
+export function configFromWorkspace(ws?: {
+  crmBaseUrl?: string;
+  crmAccountId?: string;
+  crmApiToken?: string;
+}): TalkiConfig {
+  const env = fromEnv();
+  return {
+    baseUrl: ws?.crmBaseUrl || env.baseUrl,
+    accountId: ws?.crmAccountId || env.accountId,
+    apiToken: ws?.crmApiToken || env.apiToken,
+  };
+}

@@ -18,9 +18,18 @@ import type {
 } from 'openai/resources/chat/completions.js';
 import type { CallOpts, LLMResponse, MessageParam, ToolDefinition } from './types.js';
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Cache de clients por API key
+const clientCache = new Map<string, OpenAI>();
+
+function getClient(apiKey?: string): OpenAI {
+  const key = apiKey ?? process.env.OPENAI_API_KEY ?? '';
+  let c = clientCache.get(key);
+  if (!c) {
+    c = new OpenAI({ apiKey: key });
+    clientCache.set(key, c);
+  }
+  return c;
+}
 
 // ─── Conversão de tools ───────────────────────────────────────────────────────
 
@@ -132,7 +141,7 @@ function mapStopReason(finishReason: string | null | undefined): string {
 export async function callOpenAI(opts: CallOpts): Promise<LLMResponse> {
   const messages = toOpenAIMessages(opts.systemPrompt, opts.messages);
 
-  const response = await client.chat.completions.create({
+  const response = await getClient(opts.apiKey).chat.completions.create({
     model: opts.model,
     max_tokens: 1024,
     messages,

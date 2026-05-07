@@ -12,7 +12,7 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   '/analytics': { title: 'Analytics', subtitle: 'Métricas e performance' },
   '/logs': { title: 'Logs', subtitle: 'Histórico de execuções' },
   '/settings': { title: 'Configurações', subtitle: 'Configurações do sistema' },
-  '/clients': { title: 'Clientes', subtitle: 'Gestão de clientes' },
+  '/clients': { title: 'Workspaces', subtitle: 'Credenciais por cliente (multi-tenant)' },
 };
 
 interface HeaderProps {

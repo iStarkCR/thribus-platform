@@ -1,27 +1,25 @@
 /**
  * CRM Dispatcher — escolhe o provider correto baseado no agent.
  *
- * O channel field no Supabase identifica o provider:
- *   - "texnet-duall"           → TexNet
- *   - "talki:5:42"             → Talki (account 5, inbox 42)
- *
- * Loop usa esses helpers em vez de chamar TexNet/Talki direto.
+ * Multi-tenant: se workspace fornecido, usa as credenciais dele.
+ * Senão, fallback nas env vars (single-tenant).
  */
 
 import * as texnet from './client.js';
 import * as talki from '../talki/client.js';
+import type { WorkspaceRecord } from '../db/index.js';
 
 export type Provider = 'texnet' | 'talki';
 
 export function detectProvider(channel: string): Provider {
   if (channel.startsWith('talki:')) return 'talki';
-  return 'texnet'; // default
+  return 'texnet';
 }
 
 // ─── Interface unificada ──────────────────────────────────────────────────────
 
 export interface UnifiedLead {
-  id: string;          // string em ambos
+  id: string;
   name: string;
   phone: string;
   channel: string;
@@ -39,12 +37,13 @@ export interface UnifiedLead {
 
 // ─── Lead get ─────────────────────────────────────────────────────────────────
 
-export async function getLead(channel: string, leadId: string): Promise<UnifiedLead> {
+export async function getLead(channel: string, leadId: string, ws?: WorkspaceRecord): Promise<UnifiedLead> {
   const provider = detectProvider(channel);
 
   if (provider === 'talki') {
-    const conv = await talki.conversations.get(Number(leadId));
-    const msgsRes = await talki.conversations.listMessages(Number(leadId));
+    const cfg = talki.configFromWorkspace(ws);
+    const conv = await talki.conversations.get(Number(leadId), cfg);
+    const msgsRes = await talki.conversations.listMessages(Number(leadId), cfg);
     const msgs = msgsRes.payload ?? [];
 
     return {
@@ -53,14 +52,6 @@ export async function getLead(channel: string, leadId: string): Promise<UnifiedL
       phone: conv.contact?.phone_number ?? conv.meta?.sender?.phone_number ?? '',
       channel,
       stage: conv.status,
-      // Talki/Chatwoot:
-      //   open    → bot atua
-      //   pending → bot atua (cliente ainda esperando, label-gate já validou)
-      //   snoozed → bot atua
-      //   resolved → bot NÃO atua (humano fechou)
-      // O label `testando-agente` (TALKI_REQUIRED_LABEL) é o gate principal
-      // antes do webhook chegar aqui. Aqui só protege contra responder em
-      // conversa explicitamente resolved.
       botMode: conv.status !== 'resolved',
       responsibleId: null,
       messages: msgs.map((m) => {
@@ -99,11 +90,12 @@ export async function getLead(channel: string, leadId: string): Promise<UnifiedL
 
 // ─── Send message ─────────────────────────────────────────────────────────────
 
-export async function sendMessage(channel: string, leadId: string, content: string): Promise<void> {
+export async function sendMessage(channel: string, leadId: string, content: string, ws?: WorkspaceRecord): Promise<void> {
   const provider = detectProvider(channel);
 
   if (provider === 'talki') {
-    await talki.messages.send(Number(leadId), content);
+    const cfg = talki.configFromWorkspace(ws);
+    await talki.messages.send(Number(leadId), content, cfg);
     return;
   }
 
@@ -112,25 +104,24 @@ export async function sendMessage(channel: string, leadId: string, content: stri
 
 // ─── Channel connected check ─────────────────────────────────────────────────
 
-export async function isChannelConnected(channel: string): Promise<boolean> {
+export async function isChannelConnected(channel: string, _ws?: WorkspaceRecord): Promise<boolean> {
   const provider = detectProvider(channel);
 
   if (provider === 'talki') {
-    // Talki não tem endpoint de "channel status" simples — assume true
     return true;
   }
 
   return texnet.channels.isConnected(channel);
 }
 
-// ─── Set bot mode (activate/deactivate) ───────────────────────────────────────
+// ─── Set bot mode ─────────────────────────────────────────────────────────────
 
-export async function setBotMode(channel: string, leadId: string, enabled: boolean): Promise<void> {
+export async function setBotMode(channel: string, leadId: string, enabled: boolean, ws?: WorkspaceRecord): Promise<void> {
   const provider = detectProvider(channel);
 
   if (provider === 'talki') {
-    // Em Talki: bot mode = open status. Quando desativar bot, marca como pending (humano vai pegar)
-    await talki.conversations.setStatus(Number(leadId), enabled ? 'open' : 'pending');
+    const cfg = talki.configFromWorkspace(ws);
+    await talki.conversations.setStatus(Number(leadId), enabled ? 'open' : 'pending', cfg);
     return;
   }
 
@@ -139,15 +130,16 @@ export async function setBotMode(channel: string, leadId: string, enabled: boole
 
 // ─── Escalate to human ────────────────────────────────────────────────────────
 
-export async function escalateToHuman(channel: string, leadId: string): Promise<void> {
+export async function escalateToHuman(channel: string, leadId: string, ws?: WorkspaceRecord): Promise<void> {
   const provider = detectProvider(channel);
 
   if (provider === 'talki') {
-    // Marca conversa como pending (humano assume)
-    await talki.conversations.setStatus(Number(leadId), 'pending');
+    const cfg = talki.configFromWorkspace(ws);
+    await talki.conversations.setStatus(Number(leadId), 'pending', cfg);
     await talki.messages.send(
       Number(leadId),
       'Vou passar você para o time responsável agora mesmo. Já já alguém vai te direcionar para concluir o atendimento! 🙌',
+      cfg,
     );
     return;
   }

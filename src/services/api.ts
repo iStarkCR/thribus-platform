@@ -12,12 +12,14 @@
 import type {
   Agent,
   CreateAgentPayload,
+  CreateWorkspacePayload,
   DashboardMetrics,
   Escalation,
   Execution,
   TestAgentPayload,
   TestAgentResponse,
   Tool,
+  Workspace,
 } from '@/types';
 import { SEED_AGENTS, SEED_ESCALATIONS, SEED_EXECUTIONS, SEED_TOOLS } from '@/lib/seed-data';
 import { supabase } from '@/lib/supabase';
@@ -46,7 +48,7 @@ interface AgentRow {
 // Para o INSERT/UPDATE — channel pode ser null para "limpar"
 type AgentRowUpdate = Partial<Omit<AgentRow, 'channel'>> & { channel?: string | null };
 
-function rowToAgent(r: AgentRow): Agent {
+function rowToAgent(r: AgentRow & { workspace_id?: string | null }): Agent {
   return {
     id: r.id,
     name: r.name,
@@ -58,12 +60,45 @@ function rowToAgent(r: AgentRow): Agent {
     systemPrompt: r.system_prompt,
     tools: r.tools ?? [],
     channel: r.channel ?? undefined,
+    workspaceId: r.workspace_id ?? undefined,
     stats: {
       today: r.stats_today,
       resolution: r.stats_resolution,
       avgResponseTime: Number(r.stats_avg_response_time),
       escalated: r.stats_escalated,
     },
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+interface WorkspaceRow {
+  id: string;
+  name: string;
+  llm_provider: 'openai' | 'anthropic';
+  llm_api_key: string | null;
+  crm_provider: 'talki' | 'texnet' | null;
+  crm_base_url: string | null;
+  crm_account_id: string | null;
+  crm_api_token: string | null;
+  texnet_bot_sender_id: string | null;
+  talki_required_label: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function rowToWorkspace(r: WorkspaceRow): Workspace {
+  return {
+    id: r.id,
+    name: r.name,
+    llmProvider: r.llm_provider,
+    llmApiKey: r.llm_api_key ?? undefined,
+    crmProvider: r.crm_provider ?? undefined,
+    crmBaseUrl: r.crm_base_url ?? undefined,
+    crmAccountId: r.crm_account_id ?? undefined,
+    crmApiToken: r.crm_api_token ?? undefined,
+    texnetBotSenderId: r.texnet_bot_sender_id ?? undefined,
+    talkiRequiredLabel: r.talki_required_label ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -189,19 +224,22 @@ export const agentsApi = {
       SEED_AGENTS.push(newAgent);
       return newAgent;
     }
+    const insertPayload: Record<string, unknown> = {
+      name: payload.name,
+      client: payload.client,
+      sector: payload.sector,
+      type: payload.type,
+      model: payload.model,
+      system_prompt: payload.systemPrompt,
+      tools: payload.tools,
+      channel: payload.channel ?? null,
+      status: 'standby',
+    };
+    if (payload.workspaceId) insertPayload.workspace_id = payload.workspaceId;
+
     const { data, error } = await supabase
       .from('agents')
-      .insert({
-        name: payload.name,
-        client: payload.client,
-        sector: payload.sector,
-        type: payload.type,
-        model: payload.model,
-        system_prompt: payload.systemPrompt,
-        tools: payload.tools,
-        channel: payload.channel ?? null,
-        status: 'standby',
-      })
+      .insert(insertPayload)
       .select()
       .single();
     if (error) throw error;
@@ -225,6 +263,9 @@ export const agentsApi = {
     if (payload.systemPrompt !== undefined) update.system_prompt = payload.systemPrompt;
     if (payload.tools !== undefined) update.tools = payload.tools;
     if (payload.channel !== undefined) update.channel = payload.channel || null;
+    if (payload.workspaceId !== undefined) {
+      (update as Record<string, unknown>).workspace_id = payload.workspaceId || null;
+    }
 
     const { data, error } = await supabase
       .from('agents')
@@ -384,6 +425,87 @@ export const escalationsApi = {
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data as EscalationRow[]).map(rowToEscalation);
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKSPACES (multi-tenant)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const workspacesApi = {
+  async list(): Promise<Workspace[]> {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from('workspaces')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data as WorkspaceRow[]).map(rowToWorkspace);
+  },
+
+  async get(id: string): Promise<Workspace> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { data, error } = await supabase
+      .from('workspaces')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) throw error;
+    return rowToWorkspace(data as WorkspaceRow);
+  },
+
+  async create(payload: CreateWorkspacePayload): Promise<Workspace> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { data, error } = await supabase
+      .from('workspaces')
+      .insert({
+        name: payload.name,
+        llm_provider: payload.llmProvider,
+        llm_api_key: payload.llmApiKey ?? null,
+        crm_provider: payload.crmProvider ?? null,
+        crm_base_url: payload.crmBaseUrl ?? null,
+        crm_account_id: payload.crmAccountId ?? null,
+        crm_api_token: payload.crmApiToken ?? null,
+        texnet_bot_sender_id: payload.texnetBotSenderId ?? null,
+        talki_required_label: payload.talkiRequiredLabel ?? null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToWorkspace(data as WorkspaceRow);
+  },
+
+  async update(id: string, payload: Partial<Workspace>): Promise<Workspace> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const update: Partial<WorkspaceRow> = {};
+    if (payload.name !== undefined) update.name = payload.name;
+    if (payload.llmProvider !== undefined) update.llm_provider = payload.llmProvider;
+    if (payload.llmApiKey !== undefined) update.llm_api_key = payload.llmApiKey || null;
+    if (payload.crmProvider !== undefined) update.crm_provider = payload.crmProvider || null;
+    if (payload.crmBaseUrl !== undefined) update.crm_base_url = payload.crmBaseUrl || null;
+    if (payload.crmAccountId !== undefined) update.crm_account_id = payload.crmAccountId || null;
+    if (payload.crmApiToken !== undefined) update.crm_api_token = payload.crmApiToken || null;
+    if (payload.texnetBotSenderId !== undefined) update.texnet_bot_sender_id = payload.texnetBotSenderId || null;
+    if (payload.talkiRequiredLabel !== undefined) update.talki_required_label = payload.talkiRequiredLabel || null;
+
+    const { data, error } = await supabase
+      .from('workspaces')
+      .update(update)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToWorkspace(data as WorkspaceRow);
+  },
+
+  async delete(id: string): Promise<void> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { error } = await supabase.from('workspaces').delete().eq('id', id);
+    if (error) throw error;
   },
 };
 

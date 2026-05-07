@@ -34,10 +34,35 @@ export interface Agent {
   systemPrompt: string;
   tools: string[];
   channel?: string;       // slug do canal (ex: texnet-duall) — usado pelo worker
+  workspaceId?: string;   // multi-tenant — vincula a um workspace com creds
   stats: AgentStats;
   createdAt: string;
   updatedAt: string;
 }
+
+// ═══════════════════════════════════════
+// WORKSPACE (multi-tenant)
+// ═══════════════════════════════════════
+
+export type LLMProvider = 'openai' | 'anthropic';
+export type CRMProvider = 'talki' | 'texnet';
+
+export interface Workspace {
+  id: string;
+  name: string;
+  llmProvider: LLMProvider;
+  llmApiKey?: string;
+  crmProvider?: CRMProvider;
+  crmBaseUrl?: string;
+  crmAccountId?: string;
+  crmApiToken?: string;
+  texnetBotSenderId?: string;
+  talkiRequiredLabel?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type CreateWorkspacePayload = Omit<Workspace, 'id' | 'createdAt' | 'updatedAt'>;
 
 export interface CreateAgentPayload {
   name: string;
@@ -48,6 +73,7 @@ export interface CreateAgentPayload {
   systemPrompt: string;
   tools: string[];
   channel?: string;
+  workspaceId?: string;
 }
 
 // ═══════════════════════════════════════

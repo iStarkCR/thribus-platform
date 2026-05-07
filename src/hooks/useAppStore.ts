@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import type { Agent, DashboardMetrics, Escalation, Execution, Tool } from '@/types';
-import { agentsApi, dashboardApi, escalationsApi, executionsApi, toolsApi, type CreateToolPayload } from '@/services/api';
+import type { Agent, DashboardMetrics, Escalation, Execution, Tool, Workspace, CreateWorkspacePayload } from '@/types';
+import { agentsApi, dashboardApi, escalationsApi, executionsApi, toolsApi, workspacesApi, type CreateToolPayload } from '@/services/api';
 
 interface AppState {
   // Data
   agents: Agent[];
   tools: Tool[];
+  workspaces: Workspace[];
   executions: Execution[];
   escalations: Escalation[];
   metrics: DashboardMetrics | null;
@@ -32,6 +33,12 @@ interface AppState {
   toggleTool: (id: string) => Promise<void>;
   deleteTool: (id: string) => Promise<void>;
 
+  // Workspace actions
+  loadWorkspaces: () => Promise<void>;
+  createWorkspace: (payload: CreateWorkspacePayload) => Promise<void>;
+  updateWorkspace: (id: string, data: Partial<Workspace>) => Promise<void>;
+  deleteWorkspace: (id: string) => Promise<void>;
+
   // Toast
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
   removeToast: (id: string) => void;
@@ -40,6 +47,7 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   agents: [],
   tools: [],
+  workspaces: [],
   executions: [],
   escalations: [],
   metrics: null,
@@ -50,14 +58,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialize: async () => {
     set({ loading: true });
     try {
-      const [agents, tools, executions, escalations, metrics] = await Promise.all([
+      const [agents, tools, workspaces, executions, escalations, metrics] = await Promise.all([
         agentsApi.list(),
         toolsApi.list(),
+        workspacesApi.list().catch(() => [] as Workspace[]),
         executionsApi.list(),
         escalationsApi.listPending(),
         dashboardApi.getMetrics(),
       ]);
-      set({ agents, tools, executions, escalations, metrics, loading: false });
+      set({ agents, tools, workspaces, executions, escalations, metrics, loading: false });
     } catch {
       set({ loading: false });
       get().addToast('Erro ao carregar dados', 'red');
@@ -121,6 +130,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     await toolsApi.delete(id);
     set({ tools: get().tools.filter((t) => t.id !== id) });
     get().addToast('Ferramenta removida', 'amber');
+  },
+
+  loadWorkspaces: async () => {
+    const workspaces = await workspacesApi.list();
+    set({ workspaces });
+  },
+
+  createWorkspace: async (payload) => {
+    const ws = await workspacesApi.create(payload);
+    set({ workspaces: [...get().workspaces, ws] });
+    get().addToast('Workspace criado', 'green');
+  },
+
+  updateWorkspace: async (id, data) => {
+    const ws = await workspacesApi.update(id, data);
+    set({ workspaces: get().workspaces.map((w) => (w.id === id ? ws : w)) });
+    get().addToast('Workspace atualizado', 'green');
+  },
+
+  deleteWorkspace: async (id) => {
+    await workspacesApi.delete(id);
+    set({ workspaces: get().workspaces.filter((w) => w.id !== id) });
+    get().addToast('Workspace removido', 'amber');
   },
 
   addToast: (message, type = 'green') => {

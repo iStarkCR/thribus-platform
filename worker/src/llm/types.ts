@@ -39,4 +39,6 @@ export interface CallOpts {
   systemPrompt: string;
   tools: ToolDefinition[];
   messages: MessageParam[];
+  /** API key opcional — se não passar, usa env var */
+  apiKey?: string;
 }

@@ -22,12 +22,13 @@ export function AgentDetailModal({ agent, onClose }: Props) {
   const [type, setType] = useState<AgentType>(agent.type);
   const [model, setModel] = useState<AIModel>(agent.model);
   const [channel, setChannel] = useState(agent.channel ?? '');
+  const [workspaceId, setWorkspaceId] = useState(agent.workspaceId ?? '');
   const [prompt, setPrompt] = useState(agent.systemPrompt);
   const [tools, setTools] = useState<string[]>(agent.tools);
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const { updateAgent, deleteAgent, addToast } = useAppStore();
+  const { updateAgent, deleteAgent, addToast, workspaces } = useAppStore();
 
   const dirty =
     name !== agent.name ||
@@ -36,6 +37,7 @@ export function AgentDetailModal({ agent, onClose }: Props) {
     type !== agent.type ||
     model !== agent.model ||
     channel !== (agent.channel ?? '') ||
+    workspaceId !== (agent.workspaceId ?? '') ||
     prompt !== agent.systemPrompt ||
     JSON.stringify(tools) !== JSON.stringify(agent.tools);
 
@@ -53,6 +55,7 @@ export function AgentDetailModal({ agent, onClose }: Props) {
         type,
         model,
         channel: channel.trim(),
+        workspaceId: workspaceId || undefined,
         systemPrompt: prompt,
         tools,
       });
@@ -212,6 +215,21 @@ export function AgentDetailModal({ agent, onClose }: Props) {
             <p className="text-[12px] text-creme-faint mt-1.5">
               Slug do canal no CRM (ex: <code className="font-mono text-brand">texnet-duall</code>). É como o webhook
               roteia mensagens deste canal para este colaborador.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+              Workspace (cliente)
+            </label>
+            <select className="input" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
+              <option value="">— sem workspace (usa env vars) —</option>
+              {workspaces.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+            <p className="text-[12px] text-creme-faint mt-1.5">
+              Workspace define quais credenciais (LLM, CRM) o agente usa. Se vazio, usa as env vars globais.
             </p>
           </div>
         </div>

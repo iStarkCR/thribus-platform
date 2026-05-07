@@ -27,7 +27,7 @@ const NAV_ITEMS = [
     group: 'Sistema',
     items: [
       { path: '/settings', label: 'Configurações', icon: Settings },
-      { path: '/clients', label: 'Clientes', icon: Building2 },
+      { path: '/clients', label: 'Workspaces', icon: Building2 },
     ],
   },
 ];
