@@ -19,6 +19,7 @@ import { callLLM, type ToolDefinition } from '../llm/client.js';
 import { executeTool } from '../tools/dispatcher.js';
 import * as crm from '../crm/dispatcher.js';
 import { db } from '../db/index.js';
+import type { WorkspaceRecord } from '../db/index.js';
 import type { AgentJob } from '../queue/index.js';
 import { extractImageRefs, urlToAnthropicImageBlock } from '../media/vision.js';
 import { generateSpeech } from '../media/tts.js';
@@ -67,6 +68,68 @@ const ESCALATION_PATTERNS = [
 
 function looksLikeEscalation(text: string): boolean {
   return ESCALATION_PATTERNS.some((p) => p.test(text));
+}
+
+// Cliente pede humano explicitamente — frases que o cliente diz pedindo
+// pra falar com pessoa de verdade. Se detectado, escala imediatamente.
+const CUSTOMER_WANTS_HUMAN_PATTERNS = [
+  /\b(quero|preciso|posso)\s+falar\s+com\s+(uma\s+|um\s+)?(pessoa|atendente|humano|algu[eé]m|gente|operador|consultor)/i,
+  /\bpassa\s+(pra|para)\s+(uma\s+|um\s+)?(pessoa|atendente|humano|algu[eé]m|gente|operador|consultor)/i,
+  /\b(falar|conversar)\s+com\s+(uma\s+pessoa|algu[eé]m\s+(real|de\s+verdade))/i,
+  /\b(at[eé]ndente|n[aã]o\s+rob[oô])/i,
+  /\bn[aã]o\s+(quero|tô\s+querendo|estou\s+querendo)\s+(falar\s+com|usar)\s+(rob[oô]|bot|m[aá]quina)/i,
+  /\bvoc[eê]\s+[eé]\s+(rob[oô]|bot|m[aá]quina)/i,
+];
+
+function customerAsksForHuman(text: string): boolean {
+  return CUSTOMER_WANTS_HUMAN_PATTERNS.some((p) => p.test(text));
+}
+
+/**
+ * Executa handoff completo pra humano:
+ *   1. Posta nota interna (privada) com resumo
+ *   2. Chama escalateToHuman (botMode=false + atribui agente)
+ *   3. Caller deve definir state='escalated' depois
+ *
+ * Usado em vários cenários: detecção de "vou passar", cliente pede humano,
+ * circuit breaker abriu, MAX_TOOL_ITERATIONS, etc.
+ */
+async function handoffToHuman(args: {
+  channel: string;
+  leadId: string;
+  workspace: WorkspaceRecord | null;
+  agent: { name: string };
+  customerName?: string;
+  customerPhone?: string;
+  currentState: string;
+  stateData: Record<string, unknown>;
+  toolsUsed: string[];
+  lastAgentReply?: string;
+  reason: string;
+}): Promise<void> {
+  const summary = buildHandoffSummary({
+    agentName: args.agent.name,
+    customerName: args.customerName,
+    customerPhone: args.customerPhone,
+    currentState: args.currentState,
+    stateData: args.stateData,
+    toolsUsed: args.toolsUsed,
+    lastAgentReply: args.lastAgentReply,
+    reason: args.reason,
+  });
+
+  try {
+    await crm.addInternalNote(args.channel, args.leadId, summary, args.workspace ?? undefined);
+    console.log(`[loop] handoff summary postado leadId=${args.leadId}`);
+  } catch (err) {
+    console.warn(`[loop] falha postando nota interna:`, (err as Error).message);
+  }
+
+  try {
+    await crm.escalateToHuman(args.channel, args.leadId, args.workspace ?? undefined);
+  } catch (err) {
+    console.warn(`[loop] escalateToHuman falhou:`, (err as Error).message);
+  }
 }
 
 /**
@@ -330,10 +393,43 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
 
   console.log(`[loop] state at entry=${currentState} dataKeys=[${Object.keys(stateData).join(',')}]`);
 
+  // ── Check 1: cliente pediu humano explicitamente ─────────────────────────
+  // Se a mensagem atual contém "quero falar com atendente / pessoa / humano",
+  // escala IMEDIATAMENTE sem invocar LLM. Economiza tokens + acelera handoff.
+  if (customerAsksForHuman(job.content)) {
+    console.log(`[loop] customer asked for human leadId=${job.leadId} content="${job.content.slice(0, 80)}"`);
+    const ackMsg = 'Entendido! Vou passar você para o time responsável agora mesmo. Já já alguém vai te atender. 🙌';
+    try {
+      await crm.sendMessage(job.channel, job.leadId, ackMsg, workspace ?? undefined);
+    } catch (err) {
+      console.warn(`[loop] falha enviando ack de handoff:`, (err as Error).message);
+    }
+    await handoffToHuman({
+      channel: job.channel,
+      leadId: job.leadId,
+      workspace: workspace ?? null,
+      agent: { name: agent.name },
+      customerName: job.customerName,
+      customerPhone: job.customerPhone,
+      currentState,
+      stateData,
+      toolsUsed: [],
+      lastAgentReply: ackMsg,
+      reason: 'Cliente solicitou atendimento humano explicitamente.',
+    });
+    currentState = 'escalated';
+    await persistState();
+    await db.messages.deleteAllForConversation(conversation.id).catch(() => 0);
+    await db.conversations.close(conversation.id).catch(() => undefined);
+    console.log(`[loop] done leadId=${job.leadId} status=escalated reason=customer_asked_human`);
+    return;
+  }
+
   // 9. Loop agêntico
   const toolsUsed: string[] = [];
   const toolFailures: Record<string, number> = {}; // circuit breaker
   const MAX_TOOL_FAILURES = 3;
+  let circuitBreakerTripped = false; // se true, escala ao final do turno
   let promiseRetries = 0;
   const MAX_PROMISE_RETRIES = 1;
   let totalTokensIn = 0;
@@ -404,6 +500,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
           const fails = toolFailures[tc.name] ?? 0;
           if (fails >= MAX_TOOL_FAILURES) {
             console.warn(`[loop] tool="${tc.name}" circuit-breaker tripped (${fails} failures) — short-circuiting`);
+            circuitBreakerTripped = true;
             return {
               toolCallId: tc.id,
               toolName: tc.name,
@@ -581,45 +678,32 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         cacheHit: cacheReadTokens > 0,
       });
 
-      // Auto-escalation: se o agente disse "vou passar pra time", escala automaticamente.
-      // Marca botMode=false (Bianca para de responder), atribui agente humano, e
-      // dispara cleanup do histórico (estado terminal).
-      // Antes de escalar, deixa uma NOTA INTERNA com resumo do atendimento +
-      // dados coletados — visível só pra agentes (não vai pro cliente).
-      if (looksLikeEscalation(finalText)) {
-        console.log(
-          `[loop] auto-escalation detected leadId=${job.leadId} text="${finalText.slice(0, 100).replace(/\n/g, ' ')}..." — escalating`,
-        );
+      // Auto-escalation por dois gatilhos no mesmo turno:
+      //   (a) Agente disse "vou passar pra time" → handoff intencional
+      //   (b) Circuit breaker disparou (tool falhou 3x) → handoff por erro técnico
+      const reasonToEscalate = looksLikeEscalation(finalText)
+        ? 'Bot encaminhou pro time (handoff detectado).'
+        : circuitBreakerTripped
+        ? 'Bot encaminhou pro time (problema técnico — tool falhou 3 vezes nesta conversa).'
+        : null;
 
-        // 1. Posta nota interna com o resumo do atendimento
-        const summary = buildHandoffSummary({
-          agentName: agent.name,
+      if (reasonToEscalate) {
+        console.log(
+          `[loop] auto-escalation leadId=${job.leadId} reason="${reasonToEscalate}"`,
+        );
+        await handoffToHuman({
+          channel: job.channel,
+          leadId: job.leadId,
+          workspace: workspace ?? null,
+          agent: { name: agent.name },
           customerName: job.customerName,
           customerPhone: job.customerPhone,
           currentState,
           stateData,
           toolsUsed,
           lastAgentReply: finalText,
-          reason: 'Bot encaminhou pro time (handoff detectado).',
+          reason: reasonToEscalate,
         });
-        try {
-          await crm.addInternalNote(
-            job.channel,
-            job.leadId,
-            summary,
-            workspace ?? undefined,
-          );
-          console.log(`[loop] handoff summary postado (nota interna) leadId=${job.leadId}`);
-        } catch (err) {
-          console.warn(`[loop] falha postando nota interna:`, (err as Error).message);
-        }
-
-        // 2. Marca botMode=false + atribui agente humano
-        try {
-          await crm.escalateToHuman(job.channel, job.leadId, workspace ?? undefined);
-        } catch (err) {
-          console.warn(`[loop] auto-escalation falhou:`, (err as Error).message);
-        }
         exitReason = 'escalated';
         currentState = 'escalated';
       }
@@ -634,14 +718,29 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     break;
   }
 
-  // Estorou iterações sem resposta → falha (NÃO escala automaticamente,
-  // pra evitar mudar status da conversa só por loop infinito).
-  // Apenas loga e marca como failed. Operador humano pode escalar manualmente
-  // observando os logs.
+  // Estourou iterações sem resposta → escala pra humano.
+  // Antes ficava como 'failed' silencioso, mas o user pediu pra TODO caso
+  // não-conclusivo virar handoff (não deixar conversa órfã).
   if (!finalText && exitReason === 'failed') {
-    console.error(
-      `[loop] MAX_TOOL_ITERATIONS atingido — leadId=${job.leadId} (NÃO escalando para evitar travar conversa)`,
+    console.log(
+      `[loop] MAX_TOOL_ITERATIONS atingido leadId=${job.leadId} — escalando pra humano`,
     );
+    await handoffToHuman({
+      channel: job.channel,
+      leadId: job.leadId,
+      workspace: workspace ?? null,
+      agent: { name: agent.name },
+      customerName: job.customerName,
+      customerPhone: job.customerPhone,
+      currentState,
+      stateData,
+      toolsUsed,
+      lastAgentReply: undefined,
+      reason: `Bot atingiu limite de iterações (${MAX_TOOL_ITERATIONS}) sem conseguir responder. Escalado automaticamente.`,
+    });
+    exitReason = 'escalated';
+    currentState = 'escalated';
+    await persistState();
   }
 
   const durationMs = Date.now() - start;
