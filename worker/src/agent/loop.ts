@@ -49,6 +49,25 @@ function looksLikePromise(text: string): boolean {
   return PROMISE_PATTERNS.some((p) => p.test(text));
 }
 
+// Auto-escalation: detecta quando o agente está encaminhando pra humano.
+// Quando detectado, o worker automaticamente:
+//   1. Envia a mensagem ao cliente (resposta normal)
+//   2. Chama crm.escalateToHuman() — botMode=false + atribui agente
+//   3. Marca state=escalated → triggers cleanup do histórico
+const ESCALATION_PATTERNS = [
+  /\bpassar\s+(voc[eê]|vc)\s+para\s+(o\s+)?time/i,
+  /\bvou\s+passar\s+(voc[eê]|vc)\s+(para|pra)/i,
+  /\bdirecionar\s+(voc[eê]|vc)?\s*(para|pra)\s+(o\s+)?time/i,
+  /\bvou\s+direcionar\s+(voc[eê]|vc)?\s*(para|pra)/i,
+  /\balgu[eé]m\s+do\s+(nosso\s+)?time\s+vai/i,
+  /\bencaminhar\s+(voc[eê]|vc)?\s*(para|pra)\s+(o\s+)?time/i,
+  /\bequipe\s+ser[áa]\s+notificad/i,
+];
+
+function looksLikeEscalation(text: string): boolean {
+  return ESCALATION_PATTERNS.some((p) => p.test(text));
+}
+
 /**
  * Extrai mensagens do output do agente.
  * Suporta múltiplos formatos:
@@ -560,6 +579,22 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         tokensOut: totalTokensOut,
         cacheHit: cacheReadTokens > 0,
       });
+
+      // Auto-escalation: se o agente disse "vou passar pra time", escala automaticamente.
+      // Marca botMode=false (Bianca para de responder), atribui agente humano, e
+      // dispara cleanup do histórico (estado terminal).
+      if (looksLikeEscalation(finalText)) {
+        console.log(
+          `[loop] auto-escalation detected leadId=${job.leadId} text="${finalText.slice(0, 100).replace(/\n/g, ' ')}..." — escalating`,
+        );
+        try {
+          await crm.escalateToHuman(job.channel, job.leadId, workspace ?? undefined);
+        } catch (err) {
+          console.warn(`[loop] auto-escalation falhou:`, (err as Error).message);
+        }
+        exitReason = 'escalated';
+        currentState = 'escalated';
+      }
 
       // Persist final state (pode ter mudado durante esta iter via tools)
       await persistState();
