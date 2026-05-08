@@ -4,16 +4,25 @@ import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
 import { useAppStore } from '@/hooks/useAppStore';
 import { agentsApi, templatesApi } from '@/services/api';
-import type { AgentTemplate, AgentType, AIModel } from '@/types';
+import type { AgentRole, AgentTemplate, AgentType, AIModel } from '@/types';
 
 interface Props {
   onClose: () => void;
 }
 
+const ROLE_OPTIONS: Array<{ value: AgentRole; label: string; icon: string }> = [
+  { value: 'sales', label: 'Vendas', icon: '🎯' },
+  { value: 'support', label: 'Suporte', icon: '🛠️' },
+  { value: 'finance', label: 'Financeiro', icon: '💰' },
+  { value: 'retention', label: 'Retenção', icon: '🤝' },
+  { value: 'generic', label: 'Genérico', icon: '🤖' },
+];
+
 export function NewAgentModal({ onClose }: Props) {
   const [name, setName] = useState('');
   const [client, setClient] = useState('');
   const [type, setType] = useState<AgentType>('modular');
+  const [role, setRole] = useState<AgentRole | ''>('');
   const [model, setModel] = useState<AIModel>('claude-sonnet-4-20250514');
   const [channel, setChannel] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -63,6 +72,7 @@ export function NewAgentModal({ onClose }: Props) {
         systemPrompt: prompt,
         tools,
         channel: channel.trim() || undefined,
+        role: role || undefined,
       });
       await loadAgents();
       addToast('Colaborador criado', 'green');
@@ -164,6 +174,24 @@ export function NewAgentModal({ onClose }: Props) {
               Customize abaixo conforme o cliente.
             </div>
           )}
+
+          <div>
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+              Papel <span className="text-creme-faint normal-case font-normal">(usado pelo roteador multi-agente)</span>
+            </label>
+            <select className="input" value={role} onChange={(e) => setRole(e.target.value as AgentRole | '')}>
+              <option value="">— sem papel definido —</option>
+              {ROLE_OPTIONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.icon}  {r.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-[12px] text-creme-faint mt-1">
+              Quando o workspace tem roteador ativo, esse papel determina pra qual agente uma conversa é direcionada
+              com base na intenção do cliente.
+            </p>
+          </div>
 
           <div>
             <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Nome do Colaborador</label>

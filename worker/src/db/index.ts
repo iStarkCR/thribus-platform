@@ -14,6 +14,9 @@ import { supabase, isSupabaseConfigured } from './supabase.js';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
+/** Papel do agente — usado pelo roteador (M2) pra direcionar conversas. */
+export type AgentRole = 'sales' | 'support' | 'finance' | 'retention' | 'generic';
+
 interface AgentRecord {
   id: string;
   name: string;
@@ -25,6 +28,21 @@ interface AgentRecord {
   workspaceId?: string;
   /** Se true, agente pode responder em áudio (TTS) quando o usuário envia áudio. */
   audioOutEnabled?: boolean;
+  /** Papel do agente (vendas/suporte/financeiro/etc) — M2. */
+  role?: AgentRole;
+}
+
+/**
+ * Config do roteador multi-agente do workspace (M2).
+ * Quando enabled=true, o worker classifica a 1ª msg da conversa via LLM
+ * e direciona pro agent_id correspondente em `intents`.
+ */
+export interface RouterConfig {
+  enabled: boolean;
+  model?: string;
+  router_prompt: string;
+  intents: Record<string, string>; // intent → agent_id
+  fallback_agent_id?: string;
 }
 
 export interface WorkspaceRecord {
@@ -43,6 +61,8 @@ export interface WorkspaceRecord {
    * Tools referenciam por nome simbólico via auth_credentials.*_ref.
    */
   credentials?: Record<string, string>;
+  /** Config do roteador multi-agente (M2). */
+  routerConfig?: RouterConfig;
 }
 
 export type ToolAuthType = 'basic' | 'bearer' | 'apikey';
@@ -100,6 +120,11 @@ function rowToWorkspace(data: Record<string, unknown>): WorkspaceRecord {
     rawCreds && typeof rawCreds === 'object' && !Array.isArray(rawCreds)
       ? (rawCreds as Record<string, string>)
       : undefined;
+  const rawRouter = data.router_config;
+  const routerConfig =
+    rawRouter && typeof rawRouter === 'object' && !Array.isArray(rawRouter)
+      ? (rawRouter as RouterConfig)
+      : undefined;
   return {
     id: data.id as string,
     name: data.name as string,
@@ -112,6 +137,7 @@ function rowToWorkspace(data: Record<string, unknown>): WorkspaceRecord {
     texnetBotSenderId: (data.texnet_bot_sender_id as string | null) ?? undefined,
     talkiRequiredLabel: (data.talki_required_label as string | null) ?? undefined,
     credentials,
+    routerConfig,
   };
 }
 
@@ -153,7 +179,7 @@ export const db = {
       }
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled, role')
         .eq('id', id)
         .maybeSingle();
       if (error) throw error;
@@ -168,6 +194,7 @@ export const db = {
         channel: data.channel ?? undefined,
         workspaceId: data.workspace_id ?? undefined,
         audioOutEnabled: data.audio_out_enabled ?? false,
+        role: (data.role as AgentRole | null) ?? undefined,
       };
     },
 
@@ -178,7 +205,7 @@ export const db = {
       }
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled, role')
         .eq('channel', channel)
         .maybeSingle();
       if (error) throw error;
@@ -193,6 +220,7 @@ export const db = {
         channel: data.channel ?? undefined,
         workspaceId: data.workspace_id ?? undefined,
         audioOutEnabled: data.audio_out_enabled ?? false,
+        role: (data.role as AgentRole | null) ?? undefined,
       };
     },
 
@@ -200,7 +228,7 @@ export const db = {
       if (!supabase) return [];
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled, role')
         .not('channel', 'is', null);
       if (error) throw error;
       return (data ?? []).map((a) => ({
@@ -212,7 +240,42 @@ export const db = {
         tools: a.tools ?? [],
         channel: a.channel ?? undefined,
         workspaceId: a.workspace_id ?? undefined,
+        role: (a.role as AgentRole | null) ?? undefined,
       }));
+    },
+
+    /**
+     * Busca agente do workspace pelo papel (role). Usado pelo roteador
+     * (M2) e pela tool `transferir_para_agente` pra resolver papel → agent_id.
+     * Retorna o primeiro agente ativo com esse role, ou null se nenhum.
+     */
+    async findByWorkspaceAndRole(
+      workspaceId: string,
+      role: AgentRole | string,
+    ): Promise<AgentRecord | null> {
+      if (!supabase) return null;
+      const { data, error } = await supabase
+        .from('agents')
+        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled, role')
+        .eq('workspace_id', workspaceId)
+        .eq('role', role)
+        .neq('status', 'offline')
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return {
+        id: data.id,
+        name: data.name,
+        client: data.client,
+        model: data.model,
+        systemPrompt: data.system_prompt,
+        tools: data.tools ?? [],
+        channel: data.channel ?? undefined,
+        workspaceId: data.workspace_id ?? undefined,
+        audioOutEnabled: data.audio_out_enabled ?? false,
+        role: (data.role as AgentRole | null) ?? undefined,
+      };
     },
   },
 
@@ -398,6 +461,34 @@ export const db = {
         .from('conversations')
         .update(update)
         .eq('id', id);
+      if (error) throw error;
+    },
+
+    /**
+     * Transfere a conversa pra outro agente do mesmo workspace (M2).
+     * Atualiza agent_id + grava trilha (transferred_from_agent_id, transferred_at, transfer_reason)
+     * pra auditoria. Próximo turno o loop pega o agente novo e segue conversa
+     * com histórico preservado.
+     */
+    async transferToAgent(
+      conversationId: string,
+      newAgentId: string,
+      fromAgentId: string,
+      reason: string,
+    ): Promise<void> {
+      if (!supabase) {
+        console.warn(`[db.conversations.transferToAgent] stub conv=${conversationId} → agent=${newAgentId}`);
+        return;
+      }
+      const { error } = await supabase
+        .from('conversations')
+        .update({
+          agent_id: newAgentId,
+          transferred_from_agent_id: fromAgentId,
+          transferred_at: new Date().toISOString(),
+          transfer_reason: reason.slice(0, 500),
+        })
+        .eq('id', conversationId);
       if (error) throw error;
     },
 

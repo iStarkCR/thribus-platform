@@ -115,6 +115,37 @@ const SCHEMAS: Record<string, SchemaSpec> = {
       },
     },
   },
+
+  // ─── Multi-agent routing (M2) ────────────────────────────────────────────────
+  // Tool especial: NÃO chama endpoint HTTP — é tratada pelo dispatcher
+  // como "internal tool" que muda conversation.agent_id no DB.
+  // Usada quando o agente atual percebe que o cliente precisa de outra
+  // especialidade (ex: Bianca-Vendas detecta problema técnico → transfere
+  // pra Renata-Suporte).
+  transferir_para_agente: {
+    properties: {
+      target_agent_role: {
+        type: 'string',
+        description:
+          'Papel do agente destino: "sales", "support", "finance", "retention". ' +
+          'O dispatcher resolve qual agent_id atende esse papel no workspace atual. ' +
+          'Use o papel, NÃO um id específico — assim funciona em qualquer cliente.',
+      },
+      motivo: {
+        type: 'string',
+        description:
+          'Motivo curto da transferência (1-2 frases). Vai pro histórico ' +
+          'pra auditoria e contexto pro agente destino.',
+      },
+      mensagem_ao_cliente: {
+        type: 'string',
+        description:
+          'Mensagem que será enviada ao cliente ANTES da transferência ocorrer. ' +
+          'Ex: "Vou te passar pro time de suporte que vai te ajudar com isso. Um momento."',
+      },
+    },
+    required: ['target_agent_role', 'motivo', 'mensagem_ao_cliente'],
+  },
 };
 
 /**

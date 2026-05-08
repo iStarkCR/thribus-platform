@@ -23,6 +23,9 @@ export interface AgentStats {
   escalated: number;
 }
 
+/** Papel do agente — usado pelo roteador multi-agente (M2). */
+export type AgentRole = 'sales' | 'support' | 'finance' | 'retention' | 'generic';
+
 export interface Agent {
   id: string;
   name: string;
@@ -35,6 +38,7 @@ export interface Agent {
   tools: string[];
   channel?: string;       // slug do canal (ex: texnet-duall) — usado pelo worker
   workspaceId?: string;   // multi-tenant — vincula a um workspace com creds
+  role?: AgentRole;       // M2: papel do agente (sales/support/finance/...)
   stats: AgentStats;
   createdAt: string;
   updatedAt: string;
@@ -46,6 +50,19 @@ export interface Agent {
 
 export type LLMProvider = 'openai' | 'anthropic';
 export type CRMProvider = 'talki' | 'texnet';
+
+/**
+ * Config do roteador multi-agente do workspace (M2).
+ * Quando enabled=true, a 1ª msg da conversa é classificada por LLM
+ * e o worker direciona pro agent_id apropriado.
+ */
+export interface RouterConfig {
+  enabled: boolean;
+  model?: string;              // gpt-4o-mini default — barato pra classificar
+  router_prompt: string;        // prompt de classificação
+  intents: Record<string, string>; // intent → agent_id
+  fallback_agent_id?: string;
+}
 
 export interface Workspace {
   id: string;
@@ -64,6 +81,8 @@ export interface Workspace {
    * Ex: { "ixc_token": "AB12...", "ixc_hash": "xyz...", "hubspot_key": "..." }
    */
   credentials?: Record<string, string>;
+  /** M2: roteamento multi-agente. */
+  routerConfig?: RouterConfig;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -103,6 +122,7 @@ export interface CreateAgentPayload {
   tools: string[];
   channel?: string;
   workspaceId?: string;
+  role?: AgentRole;
 }
 
 // ═══════════════════════════════════════

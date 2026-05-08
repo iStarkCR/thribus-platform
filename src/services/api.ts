@@ -38,6 +38,7 @@ interface AgentRow {
   system_prompt: string;
   tools: string[];
   channel: string | null;
+  role: Agent['role'] | null;
   stats_today: number;
   stats_resolution: number;
   stats_avg_response_time: number;
@@ -62,6 +63,7 @@ function rowToAgent(r: AgentRow & { workspace_id?: string | null }): Agent {
     tools: r.tools ?? [],
     channel: r.channel ?? undefined,
     workspaceId: r.workspace_id ?? undefined,
+    role: r.role ?? undefined,
     stats: {
       today: r.stats_today,
       resolution: r.stats_resolution,
@@ -85,6 +87,7 @@ interface WorkspaceRow {
   texnet_bot_sender_id: string | null;
   talki_required_label: string | null;
   credentials: Record<string, string> | null;
+  router_config: Workspace['routerConfig'] | null;
   created_at: string;
   updated_at: string;
 }
@@ -102,6 +105,7 @@ function rowToWorkspace(r: WorkspaceRow): Workspace {
     texnetBotSenderId: r.texnet_bot_sender_id ?? undefined,
     talkiRequiredLabel: r.talki_required_label ?? undefined,
     credentials: r.credentials && typeof r.credentials === 'object' ? r.credentials : undefined,
+    routerConfig: r.router_config && typeof r.router_config === 'object' ? r.router_config : undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -357,6 +361,7 @@ export const agentsApi = {
       status: 'standby',
     };
     if (payload.workspaceId) insertPayload.workspace_id = payload.workspaceId;
+    if (payload.role) insertPayload.role = payload.role;
 
     const { data, error } = await supabase
       .from('agents')
@@ -386,6 +391,9 @@ export const agentsApi = {
     if (payload.channel !== undefined) update.channel = payload.channel || null;
     if (payload.workspaceId !== undefined) {
       (update as Record<string, unknown>).workspace_id = payload.workspaceId || null;
+    }
+    if (payload.role !== undefined) {
+      (update as Record<string, unknown>).role = payload.role || null;
     }
 
     const { data, error } = await supabase
@@ -610,6 +618,7 @@ export const workspacesApi = {
         texnet_bot_sender_id: payload.texnetBotSenderId ?? null,
         talki_required_label: payload.talkiRequiredLabel ?? null,
         credentials: payload.credentials ?? {},
+        router_config: payload.routerConfig ?? null,
       })
       .select()
       .single();
@@ -630,6 +639,7 @@ export const workspacesApi = {
     if (payload.texnetBotSenderId !== undefined) update.texnet_bot_sender_id = payload.texnetBotSenderId || null;
     if (payload.talkiRequiredLabel !== undefined) update.talki_required_label = payload.talkiRequiredLabel || null;
     if (payload.credentials !== undefined) update.credentials = payload.credentials ?? {};
+    if (payload.routerConfig !== undefined) update.router_config = payload.routerConfig ?? null;
 
     const { data, error } = await supabase
       .from('workspaces')
