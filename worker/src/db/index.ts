@@ -38,6 +38,27 @@ export interface WorkspaceRecord {
   crmApiToken?: string;
   texnetBotSenderId?: string;
   talkiRequiredLabel?: string;
+  /**
+   * Cofre de credenciais do cliente (tokens, hashes, API keys).
+   * Tools referenciam por nome simbólico via auth_credentials.*_ref.
+   */
+  credentials?: Record<string, string>;
+}
+
+export type ToolAuthType = 'basic' | 'bearer' | 'apikey';
+
+/**
+ * Refs pras credenciais do workspace. Formato depende do auth_type:
+ *  - basic:  { username_ref, password_ref }
+ *  - bearer: { token_ref }
+ *  - apikey: { header_name, value_ref }
+ */
+export interface ToolAuthCredentials {
+  username_ref?: string;
+  password_ref?: string;
+  token_ref?: string;
+  header_name?: string;
+  value_ref?: string;
 }
 
 interface ToolRecord {
@@ -48,6 +69,9 @@ interface ToolRecord {
   method: string;
   scope: string;
   active: boolean;
+  authType?: ToolAuthType;
+  authCredentials?: ToolAuthCredentials;
+  extraHeaders?: Record<string, string>;
 }
 
 interface ConversationRecord {
@@ -71,6 +95,11 @@ function notConfigured(method: string): never {
 }
 
 function rowToWorkspace(data: Record<string, unknown>): WorkspaceRecord {
+  const rawCreds = data.credentials;
+  const credentials =
+    rawCreds && typeof rawCreds === 'object' && !Array.isArray(rawCreds)
+      ? (rawCreds as Record<string, string>)
+      : undefined;
   return {
     id: data.id as string,
     name: data.name as string,
@@ -82,6 +111,30 @@ function rowToWorkspace(data: Record<string, unknown>): WorkspaceRecord {
     crmApiToken: (data.crm_api_token as string | null) ?? undefined,
     texnetBotSenderId: (data.texnet_bot_sender_id as string | null) ?? undefined,
     talkiRequiredLabel: (data.talki_required_label as string | null) ?? undefined,
+    credentials,
+  };
+}
+
+function rowToTool(data: Record<string, unknown>): ToolRecord {
+  const authCreds = data.auth_credentials;
+  const extraHdrs = data.extra_headers;
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    description: data.description as string,
+    endpoint: data.endpoint as string,
+    method: data.method as string,
+    scope: data.scope as string,
+    active: data.active as boolean,
+    authType: (data.auth_type as ToolAuthType | null) ?? undefined,
+    authCredentials:
+      authCreds && typeof authCreds === 'object' && !Array.isArray(authCreds)
+        ? (authCreds as ToolAuthCredentials)
+        : undefined,
+    extraHeaders:
+      extraHdrs && typeof extraHdrs === 'object' && !Array.isArray(extraHdrs)
+        ? (extraHdrs as Record<string, string>)
+        : undefined,
   };
 }
 
@@ -185,6 +238,30 @@ export const db = {
       if (error) throw error;
       return (data ?? []).map(rowToWorkspace);
     },
+
+    /**
+     * Resolve o workspace de um agent. Usado pelo dispatcher de tools pra
+     * carregar `credentials` na hora de executar. Retorna null se o agent
+     * não tem workspace_id (legado) ou se o workspace foi removido.
+     */
+    async findByAgentId(agentId: string): Promise<WorkspaceRecord | null> {
+      if (!supabase) return null;
+      const { data: agentRow, error: agentErr } = await supabase
+        .from('agents')
+        .select('workspace_id')
+        .eq('id', agentId)
+        .maybeSingle();
+      if (agentErr) throw agentErr;
+      const wsId = agentRow?.workspace_id;
+      if (!wsId) return null;
+      const { data, error } = await supabase
+        .from('workspaces')
+        .select('*')
+        .eq('id', wsId)
+        .maybeSingle();
+      if (error) throw error;
+      return data ? rowToWorkspace(data) : null;
+    },
   },
 
   tools: {
@@ -209,12 +286,12 @@ export const db = {
 
       const { data, error } = await supabase
         .from('tools')
-        .select('id, name, description, endpoint, method, scope, active')
+        .select('id, name, description, endpoint, method, scope, active, auth_type, auth_credentials, extra_headers')
         .in('name', allowedNames)
         .eq('active', true)
         .or(`scope.eq.global,scope.ilike.${agentRow.client}`);
       if (error) throw error;
-      return (data ?? []) as ToolRecord[];
+      return (data ?? []).map((row) => rowToTool(row as Record<string, unknown>));
     },
 
     async findByName(name: string, agentId: string): Promise<ToolRecord | null> {
@@ -231,13 +308,13 @@ export const db = {
 
       const { data, error } = await supabase
         .from('tools')
-        .select('id, name, description, endpoint, method, scope, active')
+        .select('id, name, description, endpoint, method, scope, active, auth_type, auth_credentials, extra_headers')
         .eq('name', name)
         .eq('active', true)
         .or(`scope.eq.global,scope.ilike.${client}`)
         .maybeSingle();
       if (error) throw error;
-      return (data as ToolRecord) ?? null;
+      return data ? rowToTool(data as Record<string, unknown>) : null;
     },
   },
 

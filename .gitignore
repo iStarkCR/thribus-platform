@@ -49,3 +49,6 @@ worker/.env
 # Misc
 *.pem
 .cache/
+
+# Claude Code — local user permissions (not shared)
+.claude/settings.local.json

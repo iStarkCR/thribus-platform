@@ -5,7 +5,8 @@ import {
   Shield, Calendar, ChevronDown,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
-import type { ExecutionStatus } from '@/types';
+import { resolveCost } from '@/lib/pricing';
+import type { Execution, ExecutionStatus } from '@/types';
 
 const STATUS_CONFIG: Record<ExecutionStatus, { icon: typeof Check; label: string; color: string; bg: string }> = {
   resolved: { icon: Check, label: 'Resolvido', color: 'text-semantic-green', bg: 'bg-semantic-green/10' },
@@ -49,8 +50,11 @@ export function LogsPage() {
     };
   }, [executions]);
 
+  const computeCost = (e: Execution): number =>
+    resolveCost(e.cost ?? 0, e.tokensUsed, e.model, e.cacheReadTokens ?? 0);
+
   const totalTokens = filtered.reduce((sum, e) => sum + e.tokensUsed, 0);
-  const totalCost = filtered.reduce((sum, e) => sum + (e.cost ?? 0), 0);
+  const totalCost = filtered.reduce((sum, e) => sum + computeCost(e), 0);
   const avgTime =
     filtered.length > 0
       ? filtered.reduce((sum, e) => sum + e.responseTime, 0) / filtered.length
@@ -93,7 +97,10 @@ export function LogsPage() {
             Custo Total
           </div>
           <div className="text-[24px] font-extrabold text-creme tracking-tight font-mono">
-            $<span>{totalCost.toFixed(3)}</span>
+            $<span>{totalCost.toFixed(4)}</span>
+          </div>
+          <div className="text-[10px] text-creme-faint mt-1">
+            ≈ R$ {(totalCost * 5).toFixed(2)}
           </div>
         </div>
       </div>
@@ -213,7 +220,7 @@ export function LogsPage() {
               <div className="text-xs font-mono text-brand">{e.toolsUsed.length} tools</div>
               <div className="text-xs font-mono text-creme-dim">{e.responseTime}s</div>
               <div className="text-xs font-mono text-creme-dim">{e.tokensUsed.toLocaleString()}</div>
-              <div className="text-xs font-mono text-creme-dim">${(e.cost ?? 0).toFixed(3)}</div>
+              <div className="text-xs font-mono text-creme-dim">${computeCost(e).toFixed(4)}</div>
               <div className="text-[13px] font-mono text-creme-faint">
                 {Math.round((Date.now() - new Date(e.timestamp).getTime()) / 60000)}m
               </div>

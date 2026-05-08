@@ -83,6 +83,7 @@ interface WorkspaceRow {
   crm_api_token: string | null;
   texnet_bot_sender_id: string | null;
   talki_required_label: string | null;
+  credentials: Record<string, string> | null;
   created_at: string;
   updated_at: string;
 }
@@ -99,6 +100,7 @@ function rowToWorkspace(r: WorkspaceRow): Workspace {
     crmApiToken: r.crm_api_token ?? undefined,
     texnetBotSenderId: r.texnet_bot_sender_id ?? undefined,
     talkiRequiredLabel: r.talki_required_label ?? undefined,
+    credentials: r.credentials && typeof r.credentials === 'object' ? r.credentials : undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -112,6 +114,40 @@ interface ToolRow {
   method: Tool['method'];
   scope: string;
   active: boolean;
+  auth_type: Tool['authType'] | null;
+  auth_credentials: ToolAuthCredentialsDb | null;
+  extra_headers: Record<string, string> | null;
+}
+
+// Schema do jsonb auth_credentials no DB (snake_case).
+interface ToolAuthCredentialsDb {
+  username_ref?: string;
+  password_ref?: string;
+  token_ref?: string;
+  header_name?: string;
+  value_ref?: string;
+}
+
+function authCredsDbToApp(db: ToolAuthCredentialsDb | null): Tool['authCredentials'] {
+  if (!db || typeof db !== 'object') return undefined;
+  return {
+    usernameRef: db.username_ref,
+    passwordRef: db.password_ref,
+    tokenRef: db.token_ref,
+    headerName: db.header_name,
+    valueRef: db.value_ref,
+  };
+}
+
+function authCredsAppToDb(app: Tool['authCredentials']): ToolAuthCredentialsDb | null {
+  if (!app) return null;
+  const out: ToolAuthCredentialsDb = {};
+  if (app.usernameRef) out.username_ref = app.usernameRef;
+  if (app.passwordRef) out.password_ref = app.passwordRef;
+  if (app.tokenRef) out.token_ref = app.tokenRef;
+  if (app.headerName) out.header_name = app.headerName;
+  if (app.valueRef) out.value_ref = app.valueRef;
+  return Object.keys(out).length === 0 ? null : out;
 }
 
 function rowToTool(r: ToolRow): Tool {
@@ -123,6 +159,10 @@ function rowToTool(r: ToolRow): Tool {
     method: r.method,
     scope: r.scope,
     active: r.active,
+    authType: r.auth_type ?? undefined,
+    authCredentials: authCredsDbToApp(r.auth_credentials),
+    extraHeaders:
+      r.extra_headers && typeof r.extra_headers === 'object' ? r.extra_headers : undefined,
   };
 }
 
@@ -136,9 +176,10 @@ interface ExecutionRow {
   tools_used: string[];
   response_time_ms: number;
   total_tokens: number;
+  cache_read_tokens: number | null;
   cost_usd: number;
   created_at: string;
-  agents?: { name: string; client: string };
+  agents?: { name: string; client: string; model: string };
 }
 
 function rowToExecution(r: ExecutionRow): Execution {
@@ -152,6 +193,8 @@ function rowToExecution(r: ExecutionRow): Execution {
     toolsUsed: r.tools_used ?? [],
     responseTime: Math.round(r.response_time_ms / 100) / 10,
     tokensUsed: r.total_tokens,
+    cacheReadTokens: r.cache_read_tokens ?? 0,
+    model: r.agents?.model,
     cost: Number(r.cost_usd),
     timestamp: r.created_at,
     conversationId: r.conversation_id,
@@ -414,6 +457,12 @@ export const toolsApi = {
         method: payload.method,
         scope: payload.scope,
         active: payload.active,
+        auth_type: payload.authType ?? null,
+        auth_credentials: authCredsAppToDb(payload.authCredentials),
+        extra_headers:
+          payload.extraHeaders && Object.keys(payload.extraHeaders).length > 0
+            ? payload.extraHeaders
+            : null,
       })
       .select()
       .single();
@@ -435,6 +484,16 @@ export const toolsApi = {
     if (payload.method !== undefined) update.method = payload.method;
     if (payload.scope !== undefined) update.scope = payload.scope;
     if (payload.active !== undefined) update.active = payload.active;
+    if (payload.authType !== undefined) update.auth_type = payload.authType ?? null;
+    if (payload.authCredentials !== undefined) {
+      update.auth_credentials = authCredsAppToDb(payload.authCredentials);
+    }
+    if (payload.extraHeaders !== undefined) {
+      update.extra_headers =
+        payload.extraHeaders && Object.keys(payload.extraHeaders).length > 0
+          ? payload.extraHeaders
+          : null;
+    }
 
     const { data, error } = await supabase
       .from('tools')
@@ -480,7 +539,7 @@ export const executionsApi = {
     if (!supabase) return SEED_EXECUTIONS.slice(0, limit);
     const { data, error } = await supabase
       .from('executions')
-      .select('*, agents(name, client)')
+      .select('*, agents(name, client, model)')
       .order('created_at', { ascending: false })
       .limit(limit);
     if (error) throw error;
@@ -549,6 +608,7 @@ export const workspacesApi = {
         crm_api_token: payload.crmApiToken ?? null,
         texnet_bot_sender_id: payload.texnetBotSenderId ?? null,
         talki_required_label: payload.talkiRequiredLabel ?? null,
+        credentials: payload.credentials ?? {},
       })
       .select()
       .single();
@@ -568,6 +628,7 @@ export const workspacesApi = {
     if (payload.crmApiToken !== undefined) update.crm_api_token = payload.crmApiToken || null;
     if (payload.texnetBotSenderId !== undefined) update.texnet_bot_sender_id = payload.texnetBotSenderId || null;
     if (payload.talkiRequiredLabel !== undefined) update.talki_required_label = payload.talkiRequiredLabel || null;
+    if (payload.credentials !== undefined) update.credentials = payload.credentials ?? {};
 
     const { data, error } = await supabase
       .from('workspaces')

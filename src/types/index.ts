@@ -58,6 +58,12 @@ export interface Workspace {
   crmApiToken?: string;
   texnetBotSenderId?: string;
   talkiRequiredLabel?: string;
+  /**
+   * Cofre de credenciais do cliente (tokens, hashes, API keys).
+   * Tools referenciam por nome simbólico em auth_credentials.*_ref.
+   * Ex: { "ixc_token": "AB12...", "ixc_hash": "xyz...", "hubspot_key": "..." }
+   */
+  credentials?: Record<string, string>;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -80,6 +86,23 @@ export interface CreateAgentPayload {
 // TOOL TYPES
 // ═══════════════════════════════════════
 
+export type ToolAuthType = 'basic' | 'bearer' | 'apikey';
+
+/**
+ * Refs para as credenciais armazenadas no `workspace.credentials`.
+ * Formato muda por tipo de auth:
+ *  - basic:  { usernameRef, passwordRef }
+ *  - bearer: { tokenRef }
+ *  - apikey: { headerName, valueRef }
+ */
+export interface ToolAuthCredentials {
+  usernameRef?: string;
+  passwordRef?: string;
+  tokenRef?: string;
+  headerName?: string;
+  valueRef?: string;
+}
+
 export interface Tool {
   id: string;
   name: string;
@@ -89,6 +112,9 @@ export interface Tool {
   scope: string;        // client name or "global"
   active: boolean;
   parameters?: ToolParameter[];
+  authType?: ToolAuthType;
+  authCredentials?: ToolAuthCredentials;
+  extraHeaders?: Record<string, string>;
 }
 
 export interface ToolParameter {
@@ -114,7 +140,9 @@ export interface Execution {
   toolsUsed: string[];
   responseTime: number;    // seconds
   tokensUsed: number;
-  cost: number;            // USD
+  cacheReadTokens?: number; // Anthropic prompt cache — reduz custo
+  model?: AIModel | string; // model do agent — usado pra estimar custo
+  cost: number;            // USD (DB se > 0, senão estimado em runtime via pricing.ts)
   timestamp: string;
   conversationId?: string;
 }

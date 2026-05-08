@@ -61,7 +61,15 @@ const SCHEMAS: Record<string, SchemaSpec> = {
       dia_vencimento: { type: 'string', description: 'Dia do vencimento (10 ou 15).' },
       canal_venda: { type: 'string', description: 'Canal da venda. Sempre "whatsapp".' },
       cliente_id_existente: { type: 'string', description: 'ID do cliente existente no IXC (se já cadastrado, opcional).' },
+      plano_id: { type: 'string', description: 'ID do plano escolhido pelo cliente (vem do listar_planos). Sem isso o IXC cadastra com plano errado.' },
+      valor_mensal: { type: 'string', description: 'Valor mensal do plano em reais (ex: "99.90"). Vem do listar_planos. Sem isso o cliente_contrato fica com valor_unitario NULL.' },
+      cidade_id: { type: 'string', description: 'ID da cidade no IXC (opcional — default Fortaleza/948).' },
+      uf_id: { type: 'string', description: 'ID da UF no IXC (opcional — default CE/11).' },
     },
+    // plano_id e valor_mensal NÃO são required pra manter compat: conversas
+    // em andamento na Bianca antiga ainda funcionam (n8n usa fallback).
+    // Quando o prompt for atualizado pra orientar a Bianca a sempre passar,
+    // efetivamente vão sempre vir preenchidos.
     required: ['cpf', 'nome', 'email', 'celular', 'cep', 'rua', 'numero', 'bairro', 'tipo_cobranca', 'dia_vencimento', 'canal_venda'],
   },
 

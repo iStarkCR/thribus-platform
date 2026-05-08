@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { useAppStore } from '@/hooks/useAppStore';
 import type { Workspace, LLMProvider, CRMProvider } from '@/types';
@@ -7,6 +7,25 @@ import type { Workspace, LLMProvider, CRMProvider } from '@/types';
 interface Props {
   workspace?: Workspace;
   onClose: () => void;
+}
+
+interface CredentialEntry {
+  key: string;
+  value: string;
+}
+
+function recordToEntries(rec: Record<string, string> | undefined): CredentialEntry[] {
+  if (!rec) return [];
+  return Object.entries(rec).map(([key, value]) => ({ key, value }));
+}
+
+function entriesToRecord(entries: CredentialEntry[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const { key, value } of entries) {
+    const k = key.trim();
+    if (k) out[k] = value;
+  }
+  return out;
 }
 
 export function WorkspaceModal({ workspace, onClose }: Props) {
@@ -22,13 +41,31 @@ export function WorkspaceModal({ workspace, onClose }: Props) {
   const [crmApiToken, setCrmApiToken] = useState(workspace?.crmApiToken ?? '');
   const [texnetBotSenderId, setTexnetBotSenderId] = useState(workspace?.texnetBotSenderId ?? '');
   const [talkiRequiredLabel, setTalkiRequiredLabel] = useState(workspace?.talkiRequiredLabel ?? '');
+  const [credentials, setCredentials] = useState<CredentialEntry[]>(
+    recordToEntries(workspace?.credentials),
+  );
   const [loading, setLoading] = useState(false);
+
+  const addCredential = () => setCredentials([...credentials, { key: '', value: '' }]);
+  const updateCredential = (idx: number, patch: Partial<CredentialEntry>) => {
+    setCredentials(credentials.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
+  };
+  const removeCredential = (idx: number) =>
+    setCredentials(credentials.filter((_, i) => i !== idx));
 
   const handleSave = async () => {
     if (!name.trim()) {
       addToast('Informe o nome do workspace', 'amber');
       return;
     }
+    // Valida credenciais — keys precisam ser únicas
+    const credsRecord = entriesToRecord(credentials);
+    const declaredKeys = credentials.map((c) => c.key.trim()).filter(Boolean);
+    if (new Set(declaredKeys).size !== declaredKeys.length) {
+      addToast('Há credenciais com a mesma chave. Renomeie pra evitar sobrescrita.', 'amber');
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
@@ -41,6 +78,7 @@ export function WorkspaceModal({ workspace, onClose }: Props) {
         crmApiToken: crmApiToken.trim() || undefined,
         texnetBotSenderId: texnetBotSenderId.trim() || undefined,
         talkiRequiredLabel: talkiRequiredLabel.trim() || undefined,
+        credentials: credsRecord,
       };
       if (isEdit && workspace) {
         await updateWorkspace(workspace.id, payload);
@@ -185,6 +223,63 @@ export function WorkspaceModal({ workspace, onClose }: Props) {
             />
           </div>
         )}
+
+        <div className="text-[12px] font-bold uppercase tracking-widest text-brand-bright pt-2">
+          Credenciais de Integração
+        </div>
+        <p className="text-[12.5px] text-creme-faint -mt-2">
+          Tokens, hashes, API keys que as <span className="font-mono">tools</span> deste workspace
+          podem usar. Cada tool referencia pelo nome simbólico (ex:{' '}
+          <span className="font-mono">ixc_token</span>).
+        </p>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute">
+              Pares chave / valor
+            </label>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addCredential}>
+              <Plus size={12} /> Adicionar
+            </button>
+          </div>
+          {credentials.length === 0 ? (
+            <div className="text-[13px] text-creme-faint italic px-3 py-2 bg-surface-2 border border-default rounded-lg">
+              Nenhuma credencial cadastrada. Tools sem auth funcionam normalmente.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {credentials.map((c, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center bg-surface-2 border border-default rounded-lg p-2"
+                >
+                  <input
+                    className="input font-mono text-[13px]"
+                    value={c.key}
+                    onChange={(e) =>
+                      updateCredential(i, { key: e.target.value.replace(/\s+/g, '_') })
+                    }
+                    placeholder="ex: ixc_token"
+                  />
+                  <input
+                    className="input font-mono text-[13px]"
+                    type="password"
+                    value={c.value}
+                    onChange={(e) => updateCredential(i, { value: e.target.value })}
+                    placeholder="valor (token, hash, key)"
+                  />
+                  <button
+                    type="button"
+                    className="text-creme-faint hover:text-semantic-red transition-colors p-1"
+                    onClick={() => removeCredential(i)}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </Modal>
   );
