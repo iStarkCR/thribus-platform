@@ -70,6 +70,29 @@ export interface Workspace {
 
 export type CreateWorkspacePayload = Omit<Workspace, 'id' | 'createdAt' | 'updatedAt'>;
 
+// ═══════════════════════════════════════
+// AGENT TEMPLATES (M1 — onboarding rápido)
+// ═══════════════════════════════════════
+
+/**
+ * Template pré-pronto pra criar agente em poucos cliques.
+ * Cliente novo escolhe template → preenche variáveis → tem agente funcional.
+ */
+export interface AgentTemplate {
+  id: string;
+  slug: string;                    // "vendas-isp", "suporte-isp"
+  name: string;                    // "Vendedor ISP (Bianca)"
+  sector: string;                  // "isp", "clinica", "ecommerce"
+  description: string;
+  basePrompt: string;              // system_prompt template (com {VARIÁVEIS})
+  defaultTools: string[];          // tools que vêm habilitadas
+  defaultModel: AIModel | string;
+  icon?: string;                   // emoji ou nome
+  isPublic: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface CreateAgentPayload {
   name: string;
   client: string;

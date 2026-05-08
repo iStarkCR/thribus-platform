@@ -11,6 +11,7 @@
 
 import type {
   Agent,
+  AgentTemplate,
   CreateAgentPayload,
   CreateWorkspacePayload,
   DashboardMetrics,
@@ -644,6 +645,68 @@ export const workspacesApi = {
     if (!supabase) throw new Error('Supabase não configurado');
     const { error } = await supabase.from('workspaces').delete().eq('id', id);
     if (error) throw error;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT TEMPLATES (M1 — onboarding rápido)
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface AgentTemplateRow {
+  id: string;
+  slug: string;
+  name: string;
+  sector: string;
+  description: string;
+  base_prompt: string;
+  default_tools: string[];
+  default_model: string;
+  icon: string | null;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+function rowToTemplate(r: AgentTemplateRow): AgentTemplate {
+  return {
+    id: r.id,
+    slug: r.slug,
+    name: r.name,
+    sector: r.sector,
+    description: r.description,
+    basePrompt: r.base_prompt,
+    defaultTools: r.default_tools ?? [],
+    defaultModel: r.default_model,
+    icon: r.icon ?? undefined,
+    isPublic: r.is_public,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+export const templatesApi = {
+  /** Lista templates públicos pro catálogo. */
+  async list(): Promise<AgentTemplate[]> {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from('agent_templates')
+      .select('*')
+      .eq('is_public', true)
+      .order('sector', { ascending: true })
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return (data as AgentTemplateRow[]).map(rowToTemplate);
+  },
+
+  async get(idOrSlug: string): Promise<AgentTemplate | null> {
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('agent_templates')
+      .select('*')
+      .or(`id.eq.${idOrSlug},slug.eq.${idOrSlug}`)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? rowToTemplate(data as AgentTemplateRow) : null;
   },
 };
 
