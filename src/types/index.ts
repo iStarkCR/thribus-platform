@@ -126,6 +126,49 @@ export interface CreateAgentPayload {
 }
 
 // ═══════════════════════════════════════
+// SKILLS (M3 — empacotamento reutilizável)
+// ═══════════════════════════════════════
+
+/**
+ * Skill empacotada — módulo reutilizável que combina prompt + tools + config.
+ *
+ * Diferente de templates (que criam um agente do zero), skills são adicionadas
+ * a agentes existentes. Um agente "Vendedor ISP" pode receber a skill
+ * "Cobrança Amigável" e passar a saber lidar com inadimplência sem virar
+ * outro agente.
+ *
+ * M3 está em scaffold — o worker AINDA NÃO consome skills no agent loop.
+ * Próximo passo: M3-runtime injeta `prompt_fragment` no system_prompt e
+ * adiciona `required_tools` ao set de tools disponíveis.
+ */
+export interface Skill {
+  id: string;
+  slug: string;                                // 'consulta-viabilidade-isp'
+  name: string;                                // "Consulta de Viabilidade (ISP)"
+  description: string;
+  sector?: string;                             // 'isp' | 'clinica' | ... (filtro de catálogo)
+  icon?: string;                               // emoji ou nome
+  promptFragment: string;                      // texto a concatenar no system_prompt
+  requiredTools: string[];                     // nomes de tools necessárias
+  configSchema?: Record<string, unknown>;      // JSON Schema dos params configuráveis
+  isPublic: boolean;
+  workspaceId?: string;                        // null = built-in/global
+  version: string;                             // semver
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Instância da skill habilitada num agente, com config opcional override. */
+export interface AgentSkill {
+  id: string;
+  agentId: string;
+  skillId: string;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  installedAt: string;
+}
+
+// ═══════════════════════════════════════
 // TOOL TYPES
 // ═══════════════════════════════════════
 
