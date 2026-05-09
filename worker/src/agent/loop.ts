@@ -867,14 +867,15 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       // Auto-escalation por três gatilhos no mesmo turno:
       //   (a) Agente disse "vou passar pra time" → handoff intencional
       //   (b) Circuit breaker disparou (tool falhou 3x) → handoff por erro técnico
-      //   (c) Endereço sem cobertura → time pode oferecer alternativa (instalação
-      //       futura, parceria com outra prov, registro de interesse, etc)
+      //   (c) Viabilidade indisponível pelo Geogrid — agente diz que não conseguiu
+      //       verificar e o time confirma manualmente (pode ter cobertura via outra base
+      //       ou ser falso negativo do Geogrid; vale o time olhar antes de descartar).
       const reasonToEscalate = looksLikeEscalation(finalText)
         ? 'Bot encaminhou pro time (handoff detectado).'
         : circuitBreakerTripped
         ? 'Bot encaminhou pro time (problema técnico — tool falhou 3 vezes nesta conversa).'
         : currentState === 'sem_cobertura'
-        ? 'Endereço sem cobertura — time pode oferecer alternativa ou registrar interesse pra futura expansão.'
+        ? 'Viabilidade indisponível pelo Geogrid — confirmar manualmente se há cobertura no endereço.'
         : null;
 
       if (reasonToEscalate) {
