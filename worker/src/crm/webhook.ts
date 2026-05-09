@@ -172,6 +172,24 @@ export function createWebhookRouter(): Router {
           );
           finalContent = '[cliente enviou áudio — formato não reconhecido]';
         }
+      } else if (message.type === 'location') {
+        // Cliente enviou pin de localização do WhatsApp. Formato varia por canal:
+        //  - Evolution: content pode ser "lat,lon" ou JSON { latitude, longitude }
+        //  - 360dialog: idem mas pode vir em outros campos do payload
+        // Sem reverse geocoding (próximo PR), instruímos o agente a pedir endereço
+        // por texto. Logamos o payload bruto pra implementar suporte definitivo.
+        const locRaw = message.content;
+        const preview = typeof locRaw === 'string' ? locRaw.slice(0, 200) : `<${typeof locRaw}>`;
+        console.warn(
+          `[webhook] LOCATION lead=${lead.id} channel=${lead.channel} ` +
+          `messageId=${message.id} contentType=${typeof locRaw} preview="${preview}"`,
+        );
+        finalContent =
+          '[cliente enviou pin de localização do WhatsApp] ' +
+          'INSTRUCAO INTERNA AO AGENTE: O sistema ainda não suporta processar pino de ' +
+          'localização. Peça ao cliente educadamente o endereço por texto: "Recebi seu ' +
+          'pin! Por enquanto preciso do endereço por texto pra confirmar a cobertura. ' +
+          'Pode me passar o CEP + número, ou rua + número + bairro? 🙂"';
       } else if (!finalContent) {
         // Texto vazio em mensagem não-áudio — pula
         console.log(`[webhook] message ${message.id} sem conteúdo textual — skipping`);
