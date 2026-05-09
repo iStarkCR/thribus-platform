@@ -10,13 +10,15 @@
  * responde a segunda baseado em estado parcial → respostas conflitantes.
  *
  * Configurável:
- *   MESSAGE_BUFFER_MS=5000  (default 5s)
+ *   MESSAGE_BUFFER_MS=8000  (default 8s — aumentado de 5s em 09/05/2026 após
+ *     observar caso "Travessa Esperança" onde cliente mandou rua, número e
+ *     bairro em 3 mensagens consecutivas e o buffer flushou antes da 3ª chegar)
  *   MESSAGE_BUFFER_ENABLED=true (default true; setar 'false' pra desligar)
  */
 
 import { enqueue, type AgentJob } from '../queue/index.js';
 
-const BUFFER_MS = Number(process.env.MESSAGE_BUFFER_MS ?? 5000);
+const BUFFER_MS = Number(process.env.MESSAGE_BUFFER_MS ?? 8000);
 const BUFFER_ENABLED = (process.env.MESSAGE_BUFFER_ENABLED ?? 'true').toLowerCase() !== 'false';
 
 interface PendingBuffer {
