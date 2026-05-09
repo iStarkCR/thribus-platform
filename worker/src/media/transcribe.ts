@@ -21,30 +21,51 @@ function getClient(apiKey?: string): OpenAI {
 }
 
 /**
- * Baixa o áudio da URL e transcreve via Whisper.
+ * Transcreve áudio via Whisper.
  *
- * @param audioUrl URL pública do arquivo de áudio (ogg/opus, mp3, m4a, webm, etc.)
+ * Aceita 2 formatos de input:
+ *  1. URL pública (`https://...`) — baixa via fetch
+ *  2. Data URI base64 (`data:audio/ogg;base64,...`) — decodifica direto.
+ *     TexNet CRM entrega áudio nesse formato no payload de webhook.
+ *
+ * @param audioInput URL ou data URI base64
  * @param apiKey OpenAI API key (opcional — usa env como fallback)
  * @returns texto transcrito ou null se falhar
  */
 export async function transcribeAudio(
-  audioUrl: string,
+  audioInput: string,
   apiKey?: string,
 ): Promise<string | null> {
   try {
     const start = Date.now();
 
-    // Baixa o arquivo
-    const fetchRes = await fetch(audioUrl);
-    if (!fetchRes.ok) {
-      console.warn(`[transcribe] download falhou: HTTP ${fetchRes.status} url=${audioUrl}`);
-      return null;
-    }
-    const buf = Buffer.from(await fetchRes.arrayBuffer());
+    let buf: Buffer;
+    let contentType = '';
+    let sourceLabel = '';
 
-    // Inferir extensão a partir da URL ou content-type
-    const contentType = fetchRes.headers.get('content-type') ?? '';
-    const ext = inferAudioExt(audioUrl, contentType);
+    if (audioInput.startsWith('data:')) {
+      // Data URI: data:<mime>;base64,<payload>
+      const match = audioInput.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) {
+        console.warn('[transcribe] data URI malformada');
+        return null;
+      }
+      contentType = match[1];
+      buf = Buffer.from(match[2], 'base64');
+      sourceLabel = `data:${contentType} ${buf.length}b`;
+    } else {
+      // URL — baixa via fetch
+      const fetchRes = await fetch(audioInput);
+      if (!fetchRes.ok) {
+        console.warn(`[transcribe] download falhou: HTTP ${fetchRes.status} url=${audioInput}`);
+        return null;
+      }
+      buf = Buffer.from(await fetchRes.arrayBuffer());
+      contentType = fetchRes.headers.get('content-type') ?? '';
+      sourceLabel = `url ${buf.length}b`;
+    }
+
+    const ext = inferAudioExt(audioInput, contentType);
     const filename = `audio.${ext}`;
 
     // Whisper API espera File-like; usamos toFile do SDK
@@ -60,7 +81,7 @@ export async function transcribeAudio(
 
     const text = (result.text ?? '').trim();
     const ms = Date.now() - start;
-    console.log(`[transcribe] ok durationMs=${ms} chars=${text.length}`);
+    console.log(`[transcribe] ok ${sourceLabel} durationMs=${ms} chars=${text.length}`);
     return text || null;
   } catch (err) {
     console.warn('[transcribe] erro:', (err as Error).message);

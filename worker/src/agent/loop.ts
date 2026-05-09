@@ -24,6 +24,7 @@ import type { AgentJob } from '../queue/index.js';
 import { extractImageRefs, urlToAnthropicImageBlock } from '../media/vision.js';
 import { generateSpeech } from '../media/tts.js';
 import * as talki from '../talki/client.js';
+import * as texnet from '../crm/client.js';
 import {
   buildStateReminder,
   extractStateData,
@@ -713,11 +714,10 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
 
       // Audio out: se agente tem audio_out_enabled E o cliente mandou áudio
       // (job.messageType === 'audio'), responde a primeira mensagem em áudio
-      // (TTS) + restante em texto. Só Talki suportado por enquanto.
+      // (TTS) + restante em texto. Suporta Talki E TexNet.
       const wantAudioReply =
         agent.audioOutEnabled &&
-        job.messageType === 'audio' &&
-        job.channel.startsWith('talki:');
+        job.messageType === 'audio';
 
       for (let i = 0; i < messagesToSend.length; i++) {
         const msg = messagesToSend[i];
@@ -730,13 +730,24 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
           });
           if (audio) {
             try {
-              const cfg = talki.configFromWorkspace(workspace ?? undefined);
-              await talki.messages.sendAudio(
-                Number(job.leadId),
-                audio,
-                { filename: 'resposta.ogg', mimeType: 'audio/ogg' },
-                cfg,
-              );
+              if (job.channel.startsWith('talki:')) {
+                const cfg = talki.configFromWorkspace(workspace ?? undefined);
+                await talki.messages.sendAudio(
+                  Number(job.leadId),
+                  audio,
+                  { filename: 'resposta.ogg', mimeType: 'audio/ogg' },
+                  cfg,
+                );
+              } else {
+                // TexNet (default) — usa POST /messages/media
+                const cfg = texnet.configFromWorkspace(workspace ?? undefined);
+                await texnet.messages.sendAudio(
+                  job.leadId,
+                  audio,
+                  { filename: 'resposta.ogg', mimeType: 'audio/ogg' },
+                  cfg,
+                );
+              }
               // Não envia o texto correspondente — a transcrição é representada pelo áudio
               if (i < messagesToSend.length - 1) {
                 await new Promise((r) => setTimeout(r, 600));

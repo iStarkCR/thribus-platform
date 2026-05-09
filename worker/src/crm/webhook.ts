@@ -16,6 +16,7 @@
 import express, { Router, type Request, type Response } from 'express';
 import { bufferEnqueue } from '../agent/buffer.js';
 import { db } from '../db/index.js';
+import { transcribeAudio } from '../media/transcribe.js';
 
 // ─── Tipos do payload TexNet ──────────────────────────────────────────────────
 
@@ -91,13 +92,14 @@ export function createWebhookRouter(): Router {
 
     const payload = req.body as TexNetWebhookPayload;
 
-    // 2. Só processa message.received com direction=inbound e conteúdo de texto.
+    // 2. Só processa message.received com direction=inbound.
     //    message.sent é a saída do próprio CRM (incluindo nossas respostas) —
     //    processar isso causaria loop infinito.
+    //    Áudios podem ter content vazio ou data URI — não filtra por content
+    //    aqui; quem decide é a transcrição lá embaixo.
     if (
       payload.event !== 'message.received' ||
-      payload.data?.message?.direction !== 'inbound' ||
-      !payload.data?.message?.content?.trim()
+      payload.data?.message?.direction !== 'inbound'
     ) {
       console.log(
         `[webhook] skip event=${payload.event} direction=${payload.data?.message?.direction}`,
@@ -133,13 +135,43 @@ export function createWebhookRouter(): Router {
         return;
       }
 
+      // Resolve workspace pra pegar API key da OpenAI
+      const workspace = agent.workspaceId
+        ? await db.workspaces.findById(agent.workspaceId).catch(() => null)
+        : null;
+
+      // ── Áudio in: transcreve via Whisper antes de enfileirar ─────────────
+      let finalContent = (message.content ?? '').trim();
+
+      if (message.type === 'audio') {
+        // TexNet entrega áudio como data URI (data:audio/ogg;base64,...) ou URL
+        const audioSource = message.content;
+        if (audioSource && (audioSource.startsWith('data:') || audioSource.startsWith('http'))) {
+          console.log(`[webhook] áudio detectado lead=${lead.id} — transcrevendo`);
+          const transcribed = await transcribeAudio(audioSource, workspace?.llmApiKey);
+          if (transcribed) {
+            finalContent = `[áudio do cliente] ${transcribed}`;
+            console.log(`[webhook] audio transcribed lead=${lead.id} chars=${transcribed.length}`);
+          } else {
+            finalContent = '[cliente enviou áudio — transcrição indisponível]';
+            console.warn(`[webhook] audio transcription falhou lead=${lead.id}`);
+          }
+        } else {
+          finalContent = '[cliente enviou áudio — formato não reconhecido]';
+        }
+      } else if (!finalContent) {
+        // Texto vazio em mensagem não-áudio — pula
+        console.log(`[webhook] message ${message.id} sem conteúdo textual — skipping`);
+        return;
+      }
+
       bufferEnqueue({
         agentId: agent.id,
         leadId: lead.id,
         messageId: message.id,
         customerPhone: lead.phone,
         customerName: lead.name,
-        content: message.content,
+        content: finalContent,
         messageType: message.type,
         channel: lead.channel,
         leadStage: lead.stage,

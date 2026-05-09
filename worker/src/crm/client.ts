@@ -153,6 +153,59 @@ export const messages = {
   async list(leadId: string, limit = 20, cfg?: TexNetConfig): Promise<{ data: LeadMessage[] }> {
     return req('GET', `/leads/${leadId}/messages?limit=${limit}`, undefined, cfg);
   },
+
+  /**
+   * Envia mídia (áudio, imagem, documento) pelo endpoint POST /messages/media.
+   *
+   * O TexNet API aceita o conteúdo em base64 (com ou sem prefixo data:...).
+   * Pra áudio, recomenda-se ogg/opus (formato PTT do WhatsApp).
+   *
+   * Áudios .webm são automaticamente convertidos pra .ogg/opus pelo TexNet
+   * pra compatibilidade com WhatsApp.
+   */
+  async sendMedia(
+    leadId: string,
+    payload: {
+      content: string;       // base64 (com ou sem data: prefix)
+      fileName: string;      // ex: "resposta.ogg"
+      mediaType: 'audio' | 'image' | 'video' | 'document' | 'pdf';
+      caption?: string;
+    },
+    cfg?: TexNetConfig,
+  ): Promise<LeadMessage> {
+    return req<LeadMessage>(
+      'POST',
+      `/leads/${leadId}/messages/media`,
+      payload,
+      cfg,
+    );
+  },
+
+  /**
+   * Atalho: envia áudio TTS gerado pra cliente. Wrapper de sendMedia.
+   *
+   * @param leadId ID do lead no TexNet
+   * @param audioBuffer Buffer do áudio (formato ogg/opus de preferência)
+   * @param opts filename + mimeType
+   */
+  async sendAudio(
+    leadId: string,
+    audioBuffer: Buffer,
+    opts: { filename: string; mimeType: string },
+    cfg?: TexNetConfig,
+  ): Promise<LeadMessage> {
+    const base64 = audioBuffer.toString('base64');
+    const dataUri = `data:${opts.mimeType};base64,${base64}`;
+    return this.sendMedia(
+      leadId,
+      {
+        content: dataUri,
+        fileName: opts.filename,
+        mediaType: 'audio',
+      },
+      cfg,
+    );
+  },
 };
 
 // ─── Usuários ─────────────────────────────────────────────────────────────────
