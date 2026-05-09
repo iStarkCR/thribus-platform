@@ -12,6 +12,7 @@
 import express from 'express';
 import { createWebhookRouter } from './crm/webhook.js';
 import { createTalkiWebhookRouter } from './talki/webhook.js';
+import { createAdminRouter } from './admin/reprocess.js';
 import { startWorker } from './queue/index.js';
 import { startPolling } from './agent/poll.js';
 
@@ -42,6 +43,9 @@ app.get('/health', (_req, res) => {
 // Webhook routes
 app.use('/webhook', createWebhookRouter());
 app.use('/webhook', createTalkiWebhookRouter());
+
+// Admin routes (gated por ADMIN_SECRET — endpoints de operação manual)
+app.use('/admin', createAdminRouter());
 
 // Start async worker loop
 startWorker();
