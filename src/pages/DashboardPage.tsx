@@ -1,19 +1,83 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   Bot, MessageSquare, CheckCircle, ArrowUpRight, ChevronRight,
-  AlertTriangle, Users,
+  AlertTriangle, Users, DollarSign, Clock, Zap, Wrench, TrendingUp,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { AgentCard } from '@/components/agents/AgentCard';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
-import type { Agent } from '@/types';
+import { resolveCost, usdToBrl } from '@/lib/pricing';
+import type { Agent, Execution } from '@/types';
 
 export function DashboardPage() {
-  const { agents, metrics, escalations } = useAppStore();
+  const { agents, metrics, escalations, executions } = useAppStore();
   const navigate = useNavigate();
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+
+  // ─── Computações em runtime ─────────────────────────────────────────────
+  const computeCost = (e: Execution): number =>
+    resolveCost(e.cost ?? 0, e.tokensUsed, e.model, e.cacheReadTokens ?? 0);
+
+  const stats = useMemo(() => {
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const startToday = new Date();
+    startToday.setHours(0, 0, 0, 0);
+
+    const todayExecs = executions.filter(
+      (e) => new Date(e.timestamp).getTime() >= startToday.getTime(),
+    );
+    const last7Execs = executions.filter(
+      (e) => new Date(e.timestamp).getTime() >= now - 7 * day,
+    );
+
+    const costToday = todayExecs.reduce((s, e) => s + computeCost(e), 0);
+    const costLast7d = last7Execs.reduce((s, e) => s + computeCost(e), 0);
+    const avgRespToday = todayExecs.length > 0
+      ? todayExecs.reduce((s, e) => s + e.responseTime, 0) / todayExecs.length
+      : 0;
+    const tokensToday = todayExecs.reduce((s, e) => s + e.tokensUsed, 0);
+
+    // Top tool today
+    const toolCount: Record<string, number> = {};
+    for (const e of todayExecs) {
+      for (const t of e.toolsUsed ?? []) toolCount[t] = (toolCount[t] ?? 0) + 1;
+    }
+    const topToolToday = Object.entries(toolCount).sort((a, b) => b[1] - a[1])[0];
+
+    // Sparkline últimos 7 dias
+    const dayBuckets: Array<{ label: string; count: number }> = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      const start = d.getTime();
+      const end = start + day;
+      dayBuckets.push({
+        label: d.toLocaleDateString('pt-BR', { weekday: 'short' }).slice(0, 3),
+        count: executions.filter((e) => {
+          const ts = new Date(e.timestamp).getTime();
+          return ts >= start && ts < end;
+        }).length,
+      });
+    }
+    const maxBucket = Math.max(...dayBuckets.map((d) => d.count), 1);
+
+    // Tools usadas mais recentemente — proxy de saúde
+    const lastExecution = executions[0];
+    const lastExecutionAgo = lastExecution
+      ? Math.round((now - new Date(lastExecution.timestamp).getTime()) / 60000)
+      : null;
+
+    return {
+      costToday, costLast7d, avgRespToday, tokensToday,
+      topToolToday, dayBuckets, maxBucket,
+      lastExecutionAgo,
+      todayCount: todayExecs.length,
+    };
+  }, [executions]);
 
   const metricCards = [
     { icon: Bot, label: 'Colaboradores Ativos', value: metrics?.activeAgents ?? 0, trend: metrics?.trends.agents ?? 0, style: 'bg-brand/10 text-brand-bright' },
@@ -24,8 +88,8 @@ export function DashboardPage() {
 
   return (
     <>
-      {/* Metrics */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      {/* ─── KPIs hero (4 cards principais) ───────────────────────────────── */}
+      <div className="grid grid-cols-4 gap-3 mb-3">
         {metricCards.map((m) => {
           const Icon = m.icon;
           const isNeg = typeof m.trend === 'number' && m.trend < 0;
@@ -49,6 +113,95 @@ export function DashboardPage() {
             </div>
           );
         })}
+      </div>
+
+      {/* ─── KPIs operacionais (cards finos) ──────────────────────────────── */}
+      <div className="grid grid-cols-5 gap-3 mb-6">
+        <MicroCard
+          icon={<DollarSign size={13} />}
+          label="Custo hoje"
+          value={`$${stats.costToday.toFixed(3)}`}
+          sub={`R$ ${usdToBrl(stats.costToday).toFixed(2)}`}
+          color="brand"
+        />
+        <MicroCard
+          icon={<DollarSign size={13} />}
+          label="Custo 7d"
+          value={`$${stats.costLast7d.toFixed(2)}`}
+          sub={`R$ ${usdToBrl(stats.costLast7d).toFixed(2)}`}
+          color="brand"
+        />
+        <MicroCard
+          icon={<Clock size={13} />}
+          label="Tempo médio (hoje)"
+          value={stats.avgRespToday > 0 ? `${stats.avgRespToday.toFixed(1)}s` : '—'}
+          sub={`${stats.todayCount} turno${stats.todayCount !== 1 ? 's' : ''}`}
+          color="muted"
+        />
+        <MicroCard
+          icon={<Zap size={13} />}
+          label="Tokens hoje"
+          value={stats.tokensToday > 0 ? `${(stats.tokensToday / 1000).toFixed(1)}k` : '—'}
+          sub="Input + output"
+          color="muted"
+        />
+        <MicroCard
+          icon={<Wrench size={13} />}
+          label="Top tool hoje"
+          value={stats.topToolToday ? stats.topToolToday[0] : '—'}
+          sub={stats.topToolToday ? `${stats.topToolToday[1]}x` : 'Sem chamadas'}
+          color="green"
+          mono
+        />
+      </div>
+
+      {/* ─── Sparkline 7d ──────────────────────────────────────────────────── */}
+      <div className="bg-surface-2 border border-default rounded-[10px] p-5 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp size={14} className="text-brand-bright" />
+            <h3 className="text-[14px] font-bold text-creme">Atendimentos · últimos 7 dias</h3>
+          </div>
+          <div className="flex items-center gap-3 text-[11.5px] text-creme-faint">
+            {stats.lastExecutionAgo !== null && (
+              <span className="font-mono">
+                Último: {stats.lastExecutionAgo < 60 ? `${stats.lastExecutionAgo}min` : `${Math.floor(stats.lastExecutionAgo / 60)}h`} atrás
+              </span>
+            )}
+            <button
+              onClick={() => navigate('/analytics')}
+              className="font-semibold hover:text-brand-bright transition-colors"
+            >
+              Ver completo →
+            </button>
+          </div>
+        </div>
+        <div className="flex items-end gap-2 h-[80px]">
+          {stats.dayBuckets.map((d, i) => {
+            const heightPct = (d.count / stats.maxBucket) * 100;
+            const isToday = i === stats.dayBuckets.length - 1;
+            return (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
+                <div className="text-[10px] font-mono text-creme-faint group-hover:text-creme transition-colors">
+                  {d.count}
+                </div>
+                <div className="w-full bg-surface-1 rounded-t-md flex items-end" style={{ height: '50px' }}>
+                  <div
+                    className={`w-full rounded-t-md transition-all ${
+                      isToday
+                        ? 'bg-gradient-to-t from-brand to-brand-bright'
+                        : 'bg-gradient-to-t from-brand-dim/50 to-brand-dim/30'
+                    }`}
+                    style={{ height: `${heightPct}%` }}
+                  />
+                </div>
+                <div className={`text-[10px] font-mono ${isToday ? 'text-brand-bright font-bold' : 'text-creme-faint'}`}>
+                  {d.label}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Agents + Escalations */}
@@ -123,5 +276,42 @@ export function DashboardPage() {
         <AgentDetailModal agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
       )}
     </>
+  );
+}
+
+// ─── MicroCard reutilizável ────────────────────────────────────────────────
+
+const MICRO_BG = {
+  brand: 'bg-brand/10 text-brand-bright',
+  green: 'bg-semantic-green/10 text-semantic-green',
+  amber: 'bg-semantic-amber/10 text-semantic-amber',
+  muted: 'bg-surface-3 text-creme-mute',
+};
+
+function MicroCard({
+  icon, label, value, sub, color = 'muted', mono = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  sub?: string;
+  color?: keyof typeof MICRO_BG;
+  mono?: boolean;
+}) {
+  return (
+    <div className="bg-surface-2 border border-default rounded-[10px] p-3 hover:border-hover transition-all">
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className={`w-5 h-5 rounded-md flex items-center justify-center ${MICRO_BG[color]}`}>
+          {icon}
+        </span>
+        <span className="text-[10.5px] uppercase tracking-wider text-creme-faint font-bold truncate">
+          {label}
+        </span>
+      </div>
+      <div className={`text-[18px] font-extrabold text-creme leading-none mb-0.5 ${mono ? 'font-mono text-[14px]' : ''} truncate`}>
+        {value}
+      </div>
+      {sub && <div className="text-[10.5px] text-creme-faint truncate">{sub}</div>}
+    </div>
   );
 }

@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Settings, Database, Cable, ShieldCheck, HardDrive,
   CheckCircle2, XCircle, AlertTriangle, ExternalLink, Copy,
-  Server, KeyRound, Bot, Wrench,
+  Server, KeyRound, Bot, Wrench, Pencil,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
+import { WorkspaceEditModal } from '@/components/settings/WorkspaceEditModal';
+import { supabase } from '@/lib/supabase';
 
 /**
  * Configurações — visão operacional do sistema.
@@ -29,6 +31,10 @@ export function SettingsPage() {
   const supabaseConnected = !!env.supabaseUrl && !!env.supabaseKey;
   const activeWorkspace = workspaces[0]; // futuro: workspace selecionado por user
 
+  // Modal estado
+  const [showEditWorkspace, setShowEditWorkspace] = useState(false);
+  const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
+
   const copy = (value: string, label: string) => {
     navigator.clipboard.writeText(value);
     addToast(`${label} copiado`, 'green');
@@ -36,6 +42,44 @@ export function SettingsPage() {
 
   const mask = (s: string, visible = 6) =>
     s.length <= visible * 2 ? '•'.repeat(s.length) : `${s.slice(0, visible)}…${s.slice(-4)}`;
+
+  /**
+   * Testa cada integração com um ping leve. Resultado por toast.
+   * Observação: alguns testes só dão pra fazer client-side de forma limitada
+   * (ex: CRM) — pra teste de fato precisaria de endpoint admin no worker.
+   */
+  const testIntegration = async (name: string) => {
+    setTestingIntegration(name);
+    try {
+      let result: { ok: boolean; detail: string } = { ok: false, detail: '' };
+
+      if (name === 'Supabase') {
+        if (!supabase) {
+          result = { ok: false, detail: 'Sem cliente configurado' };
+        } else {
+          const start = Date.now();
+          const { error } = await supabase.from('agents').select('id', { count: 'exact', head: true }).limit(1);
+          result = error
+            ? { ok: false, detail: error.message }
+            : { ok: true, detail: `${Date.now() - start}ms` };
+        }
+      } else if (name === 'PostgREST self-hosted') {
+        const start = Date.now();
+        try {
+          await fetch('https://pg-staging.thribustech.com/', { mode: 'no-cors' });
+          result = { ok: true, detail: `${Date.now() - start}ms (no-cors)` };
+        } catch (err) {
+          result = { ok: false, detail: err instanceof Error ? err.message : 'erro' };
+        }
+      } else {
+        result = { ok: false, detail: 'Teste não implementado pra essa integração ainda' };
+      }
+
+      addToast(`${name}: ${result.ok ? '✓' : '✗'} ${result.detail}`, result.ok ? 'green' : 'red');
+    } finally {
+      setTestingIntegration(null);
+    }
+  };
 
   return (
     <>
@@ -78,6 +122,15 @@ export function SettingsPage() {
           icon={<Server size={14} />}
           title="Workspace ativo"
           subtitle={activeWorkspace ? activeWorkspace.name : 'Nenhum workspace cadastrado'}
+          action={activeWorkspace ? (
+            <button
+              onClick={() => setShowEditWorkspace(true)}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] font-semibold text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
+              title="Editar workspace"
+            >
+              <Pencil size={11} /> Editar
+            </button>
+          ) : undefined}
         >
           {activeWorkspace ? (
             <div className="space-y-2 text-[13px]">
@@ -137,12 +190,16 @@ export function SettingsPage() {
               url="cloud.supabase.com"
               status={supabaseConnected ? 'ok' : 'off'}
               detail={supabaseConnected ? `Schema: ${env.schema}` : 'Sem credenciais'}
+              onTest={() => testIntegration('Supabase')}
+              testing={testingIntegration === 'Supabase'}
             />
             <IntegrationRow
               name="Postgres self-hosted (Coolify)"
-              url="147.93.131.93:5433"
+              url="pg-staging.thribustech.com"
               status="ok"
-              detail="thribus_staging · M1+M2"
+              detail="thribus_staging · M1+M2+M3"
+              onTest={() => testIntegration('PostgREST self-hosted')}
+              testing={testingIntegration === 'PostgREST self-hosted'}
             />
             <IntegrationRow
               name="n8n"
@@ -232,11 +289,18 @@ export function SettingsPage() {
       <div className="mt-5 p-4 rounded-[10px] border border-dashed border-default text-[12.5px] text-creme-faint flex items-start gap-2.5">
         <Database size={14} className="text-creme-mute shrink-0 mt-0.5" />
         <div>
-          Configurações sensíveis (API keys, tokens, prompts de roteador) são gerenciadas no{' '}
-          <span className="font-semibold text-creme-dim">workspace</span> ou direto via SQL no Postgres self-hosted.
-          Edição inline no painel virá em breve junto da migração de produção do Supabase pro Postgres self-hosted.
+          Workspace agora pode ser <span className="font-semibold text-creme-dim">editado pelo botão acima</span>.
+          Credenciais são gravadas no Supabase managed e usadas pelo worker em runtime.
+          Pra editar diretamente no banco, use o SQL Editor do Supabase ou a skill <code className="font-mono">thribus-db</code>.
         </div>
       </div>
+
+      {showEditWorkspace && activeWorkspace && (
+        <WorkspaceEditModal
+          workspace={activeWorkspace}
+          onClose={() => setShowEditWorkspace(false)}
+        />
+      )}
     </>
   );
 }
@@ -244,12 +308,13 @@ export function SettingsPage() {
 // ─── Subcomponentes ────────────────────────────────────────────────────────
 
 function Section({
-  icon, title, subtitle, children,
+  icon, title, subtitle, children, action,
 }: {
   icon: React.ReactNode;
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
     <div className="bg-surface-2 border border-default rounded-[10px] p-5">
@@ -258,7 +323,10 @@ function Section({
           <span className="text-brand">{icon}</span>
           <h3 className="text-[14px] font-bold text-creme">{title}</h3>
         </div>
-        {subtitle && <span className="text-[11.5px] text-creme-faint">{subtitle}</span>}
+        <div className="flex items-center gap-2">
+          {subtitle && <span className="text-[11.5px] text-creme-faint">{subtitle}</span>}
+          {action}
+        </div>
       </div>
       {children}
     </div>
@@ -275,12 +343,14 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function IntegrationRow({
-  name, url, status, detail,
+  name, url, status, detail, onTest, testing,
 }: {
   name: string;
   url: string;
   status: 'ok' | 'warn' | 'off';
   detail: string;
+  onTest?: () => void;
+  testing?: boolean;
 }) {
   const statusColor = {
     ok:   { dot: 'bg-semantic-green',  text: 'text-semantic-green',  Icon: CheckCircle2 },
@@ -289,7 +359,7 @@ function IntegrationRow({
   }[status];
   const StatusIcon = statusColor.Icon;
   return (
-    <div className="flex items-center justify-between p-2 rounded-lg hover:bg-surface-hover transition-colors">
+    <div className="flex items-center justify-between p-2 rounded-lg hover:bg-surface-hover transition-colors group">
       <div className="min-w-0 flex items-center gap-2.5">
         <span className={`w-2 h-2 rounded-full ${statusColor.dot} shrink-0 shadow-[0_0_6px_currentColor] ${statusColor.text}`} />
         <div className="min-w-0">
@@ -299,8 +369,20 @@ function IntegrationRow({
           </div>
         </div>
       </div>
-      <div className={`text-[11.5px] font-mono ${statusColor.text} flex items-center gap-1 shrink-0 ml-3`}>
-        <StatusIcon size={11} /> {detail}
+      <div className="flex items-center gap-2 shrink-0 ml-3">
+        <div className={`text-[11.5px] font-mono ${statusColor.text} flex items-center gap-1`}>
+          <StatusIcon size={11} /> {detail}
+        </div>
+        {onTest && (
+          <button
+            onClick={onTest}
+            disabled={testing}
+            className="opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded-md text-[11px] font-semibold text-creme-mute hover:text-creme bg-surface-1 hover:bg-surface-3 transition-all disabled:opacity-50"
+            title="Testar conexão"
+          >
+            {testing ? '...' : 'Testar'}
+          </button>
+        )}
       </div>
     </div>
   );
