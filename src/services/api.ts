@@ -847,6 +847,104 @@ export const skillsApi = {
     const { error } = await supabase.from('agent_skills').delete().eq('id', agentSkillId);
     if (error) throw error;
   },
+
+  // ─── CRUD de skills (M3 — autoria) ────────────────────────────────────────
+
+  /**
+   * Cria nova skill. Por default `is_public=true` pra ficar visível no
+   * catálogo. Quando o user quiser privada (workspace_id setado), passar
+   * is_public=false.
+   *
+   * O slug deve ser único (constraint do DB). Validação de formato fica
+   * por conta do form.
+   */
+  async create(payload: {
+    slug: string;
+    name: string;
+    description?: string;
+    sector?: string;
+    icon?: string;
+    promptFragment: string;
+    requiredTools: string[];
+    isPublic?: boolean;
+    workspaceId?: string;
+    version?: string;
+  }): Promise<Skill> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { data, error } = await supabase
+      .from('skills')
+      .insert({
+        slug: payload.slug,
+        name: payload.name,
+        description: payload.description ?? '',
+        sector: payload.sector ?? null,
+        icon: payload.icon ?? null,
+        prompt_fragment: payload.promptFragment,
+        required_tools: payload.requiredTools,
+        is_public: payload.isPublic ?? true,
+        workspace_id: payload.workspaceId ?? null,
+        version: payload.version ?? '1.0.0',
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToSkill(data as SkillRow);
+  },
+
+  /**
+   * Atualiza skill existente. Bumpa o version automaticamente se o caller
+   * não passar — ajuda quem instalou a skill a saber que precisa testar.
+   */
+  async update(skillId: string, payload: Partial<{
+    name: string;
+    description: string;
+    sector: string | null;
+    icon: string | null;
+    promptFragment: string;
+    requiredTools: string[];
+    isPublic: boolean;
+    version: string;
+  }>): Promise<Skill> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const update: Record<string, unknown> = {};
+    if (payload.name !== undefined) update.name = payload.name;
+    if (payload.description !== undefined) update.description = payload.description;
+    if (payload.sector !== undefined) update.sector = payload.sector;
+    if (payload.icon !== undefined) update.icon = payload.icon;
+    if (payload.promptFragment !== undefined) update.prompt_fragment = payload.promptFragment;
+    if (payload.requiredTools !== undefined) update.required_tools = payload.requiredTools;
+    if (payload.isPublic !== undefined) update.is_public = payload.isPublic;
+    if (payload.version !== undefined) update.version = payload.version;
+
+    const { data, error } = await supabase
+      .from('skills')
+      .update(update)
+      .eq('id', skillId)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToSkill(data as SkillRow);
+  },
+
+  /**
+   * Deleta skill — só se não tiver instalações (FK cascade já removeria
+   * agent_skills relacionados, mas preferimos bloquear pra forçar o user
+   * desinstalar conscientemente antes).
+   */
+  async delete(skillId: string): Promise<void> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    // Conta instalações antes de deletar — UX honesta
+    const { count, error: countErr } = await supabase
+      .from('agent_skills')
+      .select('*', { count: 'exact', head: true })
+      .eq('skill_id', skillId);
+    if (countErr) throw countErr;
+    if ((count ?? 0) > 0) {
+      throw new Error(`Skill em uso por ${count} agente(s). Desinstale antes de deletar.`);
+    }
+    const { error } = await supabase.from('skills').delete().eq('id', skillId);
+    if (error) throw error;
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

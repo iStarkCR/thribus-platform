@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Sparkles, Bot, Wrench, Layers, Search, ChevronDown,
   CheckCircle2, Circle, Trash2, Power, FileText, Tag,
+  Plus, Pencil,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import type { Skill } from '@/types';
+import { SkillFormModal } from '@/components/skills/SkillFormModal';
 
 /**
  * Skills (M3) — catálogo + instalação por agente.
@@ -72,12 +74,35 @@ export function SkillsPage() {
     [installedForSelectedAgent],
   );
 
-  // ─── Empty state — schema não aplicado ────────────────────────────────────
+  // ─── CRUD modals ──────────────────────────────────────────────────────────
+  const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
+  const deleteSkill = useAppStore((s) => s.deleteSkill);
+
+  const openCreate = () => setModalMode('create');
+  const openEdit = () => setModalMode('edit');
+  const closeModal = () => setModalMode(null);
+
+  const handleDelete = async () => {
+    if (!selectedSkill) return;
+    if (!confirm(`Deletar a skill "${selectedSkill.name}"?\n\nEssa ação não pode ser desfeita. Skills instaladas em agentes precisam ser desinstaladas primeiro.`)) return;
+    const ok = await deleteSkill(selectedSkill.id);
+    if (ok) setSelectedSkillId(null);
+  };
+
+  // ─── Empty state — schema não aplicado OU sem skills criadas ─────────────
   if (skills.length === 0) {
     return (
       <>
-        <div className="flex items-center gap-2 text-[15px] font-bold text-creme mb-4">
-          <Sparkles size={16} className="text-creme-mute" /> Skills
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
+            <Sparkles size={16} className="text-creme-mute" /> Skills
+          </div>
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all"
+          >
+            <Plus size={13} /> Nova Skill
+          </button>
         </div>
 
         <div className="bg-surface-2 border border-default rounded-[10px] p-8 text-center">
@@ -92,11 +117,17 @@ export function SkillsPage() {
             que podem ser plugadas em qualquer agente — combinando prompt + tools +
             config sem precisar reescrever o prompt do zero.
           </p>
-          <p className="text-[12px] text-creme-faint mt-3">
-            Aplique a migration <code className="font-mono text-brand-dim">008_skills.sql</code> no banco
-            do worker pra habilitar.
-          </p>
+          <button
+            onClick={openCreate}
+            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all"
+          >
+            <Plus size={14} /> Criar primeira skill
+          </button>
         </div>
+
+        {modalMode && (
+          <SkillFormModal mode={modalMode} onClose={closeModal} />
+        )}
       </>
     );
   }
@@ -111,8 +142,18 @@ export function SkillsPage() {
           </span>
         </div>
 
-        {/* Seletor de agente */}
         <div className="flex items-center gap-2">
+          {/* Botão Nova Skill */}
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all"
+          >
+            <Plus size={13} /> Nova Skill
+          </button>
+
+          <span className="w-px h-5 bg-default mx-1" />
+
+          {/* Seletor de agente */}
           <span className="text-[12px] uppercase tracking-wider font-bold text-creme-faint">
             Agente alvo:
           </span>
@@ -171,7 +212,12 @@ export function SkillsPage() {
         {/* ─── Coluna 2: detalhe ────────────────────────────────────────── */}
         <div className="bg-surface-2 border border-default rounded-[10px] flex flex-col overflow-hidden">
           {selectedSkill ? (
-            <SkillDetail skill={selectedSkill} installedTools={selectedAgent?.tools ?? []} />
+            <SkillDetail
+              skill={selectedSkill}
+              installedTools={selectedAgent?.tools ?? []}
+              onEdit={openEdit}
+              onDelete={handleDelete}
+            />
           ) : (
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="text-center">
@@ -233,6 +279,15 @@ export function SkillsPage() {
           )}
         </div>
       </div>
+
+      {modalMode && (
+        <SkillFormModal
+          mode={modalMode}
+          skill={modalMode === 'edit' ? selectedSkill ?? undefined : undefined}
+          onClose={closeModal}
+          onSaved={(saved) => setSelectedSkillId(saved.id)}
+        />
+      )}
     </>
   );
 }
@@ -276,7 +331,14 @@ function SkillRow({
   );
 }
 
-function SkillDetail({ skill, installedTools }: { skill: Skill; installedTools: string[] }) {
+function SkillDetail({
+  skill, installedTools, onEdit, onDelete,
+}: {
+  skill: Skill;
+  installedTools: string[];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const installedToolsSet = new Set(installedTools);
   const missingTools = skill.requiredTools.filter((t) => !installedToolsSet.has(t));
   return (
@@ -286,7 +348,25 @@ function SkillDetail({ skill, installedTools }: { skill: Skill; installedTools: 
         <div className="flex items-start gap-3">
           <span className="text-[32px] leading-none shrink-0">{skill.icon ?? '🧩'}</span>
           <div className="flex-1 min-w-0">
-            <h3 className="text-[17px] font-bold text-creme">{skill.name}</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-[17px] font-bold text-creme">{skill.name}</h3>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={onEdit}
+                  className="p-1.5 rounded-md text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
+                  title="Editar skill"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  onClick={onDelete}
+                  className="p-1.5 rounded-md text-semantic-red/70 hover:text-semantic-red hover:bg-semantic-red/10 transition-colors"
+                  title="Deletar skill (precisa estar desinstalada)"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-2 mt-1">
               <code className="text-[11.5px] font-mono text-creme-faint">{skill.slug}</code>
               <span className="text-creme-faint">·</span>
@@ -296,6 +376,14 @@ function SkillDetail({ skill, installedTools }: { skill: Skill; installedTools: 
                   <span className="text-creme-faint">·</span>
                   <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-surface-3 text-[11px] font-mono text-creme-dim">
                     <Tag size={9} /> {skill.sector}
+                  </span>
+                </>
+              )}
+              {!skill.isPublic && (
+                <>
+                  <span className="text-creme-faint">·</span>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-semantic-amber/10 text-[11px] font-mono text-semantic-amber">
+                    privada
                   </span>
                 </>
               )}

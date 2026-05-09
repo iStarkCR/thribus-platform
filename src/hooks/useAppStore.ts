@@ -49,6 +49,10 @@ interface AppState {
   installSkill: (agentId: string, skillId: string) => Promise<void>;
   toggleSkill: (agentSkillId: string, agentId: string, enabled: boolean) => Promise<void>;
   uninstallSkill: (agentSkillId: string, agentId: string) => Promise<void>;
+  /** M4 — autoria. Cria nova skill no catálogo. */
+  createSkill: (payload: Parameters<typeof skillsApi.create>[0]) => Promise<Skill | null>;
+  updateSkill: (skillId: string, payload: Parameters<typeof skillsApi.update>[1]) => Promise<Skill | null>;
+  deleteSkill: (skillId: string) => Promise<boolean>;
 
   // Toast
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
@@ -211,6 +215,47 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (err) {
       console.error('uninstallSkill failed', err);
       get().addToast('Falha ao remover skill', 'red');
+    }
+  },
+
+  createSkill: async (payload) => {
+    try {
+      const created = await skillsApi.create(payload);
+      set((s) => ({ skills: [...s.skills, created] }));
+      get().addToast(`Skill "${created.name}" criada`, 'green');
+      return created;
+    } catch (err) {
+      console.error('createSkill failed', err);
+      const msg = err instanceof Error ? err.message : 'Falha ao criar skill';
+      get().addToast(msg.includes('duplicate key') ? 'Slug já existe' : 'Falha ao criar skill', 'red');
+      return null;
+    }
+  },
+
+  updateSkill: async (skillId, payload) => {
+    try {
+      const updated = await skillsApi.update(skillId, payload);
+      set((s) => ({ skills: s.skills.map((sk) => (sk.id === skillId ? updated : sk)) }));
+      get().addToast(`Skill "${updated.name}" atualizada`, 'green');
+      return updated;
+    } catch (err) {
+      console.error('updateSkill failed', err);
+      get().addToast('Falha ao atualizar skill', 'red');
+      return null;
+    }
+  },
+
+  deleteSkill: async (skillId) => {
+    try {
+      await skillsApi.delete(skillId);
+      set((s) => ({ skills: s.skills.filter((sk) => sk.id !== skillId) }));
+      get().addToast('Skill removida do catálogo', 'amber');
+      return true;
+    } catch (err) {
+      console.error('deleteSkill failed', err);
+      const msg = err instanceof Error ? err.message : 'Falha ao deletar skill';
+      get().addToast(msg, 'red');
+      return false;
     }
   },
 
