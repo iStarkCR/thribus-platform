@@ -134,6 +134,8 @@ export function TemplateFormModal({ mode, template, onClose, onSaved }: Props) {
     setSaving(true);
     let saved: AgentTemplate | null = null;
     if (mode === 'create') {
+      // Se for privado, vincula ao workspace ativo automaticamente
+      const activeWs = useAppStore.getState().workspaces[0]?.id;
       saved = await createTemplate({
         slug: slug.trim(),
         name: name.trim(),
@@ -144,6 +146,7 @@ export function TemplateFormModal({ mode, template, onClose, onSaved }: Props) {
         defaultModel,
         icon,
         isPublic,
+        workspaceId: !isPublic ? activeWs : undefined,
       });
     } else if (template) {
       saved = await updateTemplate(template.id, {

@@ -108,6 +108,10 @@ export interface AgentTemplate {
   defaultModel: AIModel | string;
   icon?: string;                   // emoji ou nome
   isPublic: boolean;
+  /** M4: se setado, template é privado deste workspace (forkado/custom). */
+  workspaceId?: string;
+  /** Heurística: agents que parecem ter sido criados a partir deste template. */
+  useCount?: number;
   createdAt?: string;
   updatedAt?: string;
 }
