@@ -53,6 +53,8 @@ interface AppState {
   createSkill: (payload: Parameters<typeof skillsApi.create>[0]) => Promise<Skill | null>;
   updateSkill: (skillId: string, payload: Parameters<typeof skillsApi.update>[1]) => Promise<Skill | null>;
   deleteSkill: (skillId: string) => Promise<boolean>;
+  /** M4 — marketplace. Forka skill pública pra workspace privado (editável). */
+  forkSkill: (skillId: string, workspaceId: string) => Promise<Skill | null>;
 
   // Toast
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
@@ -256,6 +258,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       const msg = err instanceof Error ? err.message : 'Falha ao deletar skill';
       get().addToast(msg, 'red');
       return false;
+    }
+  },
+
+  forkSkill: async (skillId, workspaceId) => {
+    try {
+      const forked = await skillsApi.fork(skillId, workspaceId);
+      set((s) => ({ skills: [...s.skills, forked] }));
+      get().addToast(`Skill forkada como "${forked.name}" — edite à vontade`, 'green');
+      return forked;
+    } catch (err) {
+      console.error('forkSkill failed', err);
+      get().addToast('Falha ao forkar skill', 'red');
+      return null;
     }
   },
 
