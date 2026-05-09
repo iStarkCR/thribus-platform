@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Save } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
 import { useAppStore } from '@/hooks/useAppStore';
+import { SaveAsTemplateModal } from './SaveAsTemplateModal';
 import type { Agent, AgentType, AIModel } from '@/types';
 
 interface Props {
@@ -28,6 +29,7 @@ export function AgentDetailModal({ agent, onClose }: Props) {
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false);
   const { updateAgent, deleteAgent, addToast, workspaces } = useAppStore();
 
   const dirty =
@@ -104,6 +106,14 @@ export function AgentDetailModal({ agent, onClose }: Props) {
             disabled={deleting || saving}
           >
             <Trash2 size={13} /> {deleting ? 'Removendo...' : 'Deletar'}
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => setShowSaveAsTemplate(true)}
+            disabled={saving || deleting}
+            title="Salvar este agente como template reutilizável"
+          >
+            <Save size={13} /> Salvar como template
           </button>
           <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
           <button className="btn btn-accent" onClick={handleSave} disabled={saving || deleting || !dirty}>
@@ -264,6 +274,26 @@ export function AgentDetailModal({ agent, onClose }: Props) {
           </div>
           <ToolSelector client={client} selected={tools} onChange={setTools} />
         </div>
+      )}
+
+      {showSaveAsTemplate && (
+        <SaveAsTemplateModal
+          agent={{
+            ...agent,
+            // Usa estado atual do form (não os valores originais do banco)
+            // — assim user pode tunar antes de salvar template
+            name,
+            client,
+            sector,
+            type,
+            model,
+            channel,
+            workspaceId,
+            systemPrompt: prompt,
+            tools,
+          }}
+          onClose={() => setShowSaveAsTemplate(false)}
+        />
       )}
     </Modal>
   );

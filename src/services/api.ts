@@ -975,6 +975,45 @@ export const templatesApi = {
     if (error) throw error;
     return data ? rowToTemplate(data as AgentTemplateRow) : null;
   },
+
+  /**
+   * Cria template a partir de payload arbitrário. Usado pelo "Salvar
+   * como template" no AgentDetailModal — operador refina um agent e
+   * salva o resultado como template reutilizável.
+   *
+   * Slug deve ser único (constraint do DB). Validação é responsabilidade
+   * do form que chama.
+   */
+  async create(payload: {
+    slug: string;
+    name: string;
+    sector: string;
+    description?: string;
+    basePrompt: string;
+    defaultTools: string[];
+    defaultModel: string;
+    icon?: string;
+    isPublic?: boolean;
+  }): Promise<AgentTemplate> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { data, error } = await supabase
+      .from('agent_templates')
+      .insert({
+        slug: payload.slug,
+        name: payload.name,
+        sector: payload.sector,
+        description: payload.description ?? '',
+        base_prompt: payload.basePrompt,
+        default_tools: payload.defaultTools,
+        default_model: payload.defaultModel,
+        icon: payload.icon ?? null,
+        is_public: payload.isPublic ?? true,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToTemplate(data as AgentTemplateRow);
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
