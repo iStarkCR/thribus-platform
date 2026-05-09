@@ -22,6 +22,7 @@ import {
   type InternalToolContext,
   type InternalToolResult,
 } from './internal.js';
+import { preflightCheck } from './preflight.js';
 
 const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS ?? 15_000);
 
@@ -81,6 +82,23 @@ export async function executeTool(
       output: result.output,
       error: result.error,
       conversationTransferred: result.conversationTransferred,
+      durationMs: Date.now() - start,
+    };
+  }
+
+  // ─── Preflight ────────────────────────────────────────────────────────────
+  // Validação determinística do input antes de chamar o endpoint. Se a tool
+  // tem regras conhecidas (ex: consultar_viabilidade precisa de rua+número),
+  // bloqueia a chamada e devolve erro estruturado pro LLM. Evita queimar uma
+  // chamada que sabemos que vai falhar (ex: Geogrid retornando "Error in workflow").
+  const preflight = preflightCheck(toolName, input);
+  if (!preflight.ok) {
+    console.warn(`[dispatcher] preflight blocked tool="${toolName}" reason="${preflight.reason}"`);
+    return {
+      toolCallId,
+      toolName,
+      output: preflight.output ?? JSON.stringify({ error: 'preflight_blocked' }),
+      error: preflight.reason,
       durationMs: Date.now() - start,
     };
   }
