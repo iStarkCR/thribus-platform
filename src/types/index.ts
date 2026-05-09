@@ -154,6 +154,8 @@ export interface Skill {
   isPublic: boolean;
   workspaceId?: string;                        // null = built-in/global
   version: string;                             // semver
+  /** M4 marketplace — quantos agentes têm essa skill instalada (computado em runtime). */
+  installCount?: number;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Sparkles, Bot, Wrench, Layers, Search, ChevronDown,
   CheckCircle2, Circle, Trash2, Power, FileText, Tag,
-  Plus, Pencil,
+  Plus, Pencil, GitFork, Globe, Lock, Users,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import type { Skill } from '@/types';
 import { SkillFormModal } from '@/components/skills/SkillFormModal';
+
+type Tab = 'marketplace' | 'private';
+type SortBy = 'popular' | 'recent' | 'name';
 
 /**
  * Skills (M3) — catálogo + instalação por agente.
@@ -30,6 +33,12 @@ export function SkillsPage() {
   const [search, setSearch] = useState('');
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string>(agents[0]?.id ?? '');
+  const [tab, setTab] = useState<Tab>('marketplace');
+  const [sortBy, setSortBy] = useState<SortBy>('popular');
+  const [sectorFilter, setSectorFilter] = useState<string>('');
+  const forkSkill = useAppStore((s) => s.forkSkill);
+  const workspaces = useAppStore((s) => s.workspaces);
+  const activeWorkspaceId = workspaces[0]?.id;
 
   // Quando seleciona agente, carrega skills instaladas
   useEffect(() => {
@@ -45,17 +54,73 @@ export function SkillsPage() {
     }
   }, [agents, selectedAgentId]);
 
-  // Filtragem por busca
+  // Filtragem por tab + busca + setor
   const filteredSkills = useMemo(() => {
-    if (!search.trim()) return skills;
-    const q = search.toLowerCase();
-    return skills.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.slug.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q),
-    );
-  }, [skills, search]);
+    let result = skills;
+
+    // Tab filter
+    if (tab === 'marketplace') {
+      result = result.filter((s) => s.isPublic);
+    } else {
+      result = result.filter((s) => !s.isPublic && s.workspaceId === activeWorkspaceId);
+    }
+
+    // Sector filter
+    if (sectorFilter) {
+      result = result.filter((s) => s.sector === sectorFilter);
+    }
+
+    // Search filter
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.slug.toLowerCase().includes(q) ||
+          s.description.toLowerCase().includes(q),
+      );
+    }
+
+    // Sort
+    if (sortBy === 'popular') {
+      result = [...result].sort((a, b) => (b.installCount ?? 0) - (a.installCount ?? 0));
+    } else if (sortBy === 'recent') {
+      result = [...result].sort((a, b) => {
+        const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return tb - ta;
+      });
+    } else {
+      result = [...result].sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    return result;
+  }, [skills, tab, search, sectorFilter, sortBy, activeWorkspaceId]);
+
+  // Setores únicos pra filtro
+  const availableSectors = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of skills) {
+      if (s.sector) set.add(s.sector);
+    }
+    return Array.from(set).sort();
+  }, [skills]);
+
+  // Stats das tabs
+  const marketplaceCount = useMemo(() => skills.filter((s) => s.isPublic).length, [skills]);
+  const privateCount = useMemo(
+    () => skills.filter((s) => !s.isPublic && s.workspaceId === activeWorkspaceId).length,
+    [skills, activeWorkspaceId],
+  );
+
+  const handleFork = async () => {
+    if (!selectedSkill || !activeWorkspaceId) return;
+    const forked = await forkSkill(selectedSkill.id, activeWorkspaceId);
+    if (forked) {
+      setTab('private');
+      setSelectedSkillId(forked.id);
+    }
+  };
 
   const selectedSkill = useMemo(
     () => skills.find((s) => s.id === selectedSkillId) ?? null,
@@ -134,16 +199,12 @@ export function SkillsPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
           <Sparkles size={16} className="text-creme-mute" /> Skills
-          <span className="ml-2 text-[12px] font-mono text-creme-faint">
-            {skills.length} disponíveis
-          </span>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Botão Nova Skill */}
           <button
             onClick={openCreate}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all"
@@ -153,7 +214,6 @@ export function SkillsPage() {
 
           <span className="w-px h-5 bg-default mx-1" />
 
-          {/* Seletor de agente */}
           <span className="text-[12px] uppercase tracking-wider font-bold text-creme-faint">
             Agente alvo:
           </span>
@@ -172,6 +232,49 @@ export function SkillsPage() {
               className="absolute right-2 top-1/2 -translate-y-1/2 text-creme-mute pointer-events-none"
             />
           </div>
+        </div>
+      </div>
+
+      {/* ─── Tabs marketplace / privadas ──────────────────────────────────── */}
+      <div className="flex items-center gap-1 mb-4 border-b border-default">
+        <TabButton
+          active={tab === 'marketplace'}
+          onClick={() => setTab('marketplace')}
+          icon={<Globe size={13} />}
+          label="Marketplace"
+          count={marketplaceCount}
+        />
+        <TabButton
+          active={tab === 'private'}
+          onClick={() => setTab('private')}
+          icon={<Lock size={13} />}
+          label="Minhas privadas"
+          count={privateCount}
+        />
+
+        <div className="ml-auto flex items-center gap-2 pb-1.5">
+          {/* Filtro por setor */}
+          <select
+            value={sectorFilter}
+            onChange={(e) => setSectorFilter(e.target.value)}
+            className="appearance-none pl-3 pr-8 py-1 rounded-md bg-surface-2 border border-default text-[12px] font-medium text-creme cursor-pointer focus:outline-none focus:border-brand"
+          >
+            <option value="">Todos setores</option>
+            {availableSectors.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          {/* Sort */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortBy)}
+            className="appearance-none pl-3 pr-8 py-1 rounded-md bg-surface-2 border border-default text-[12px] font-medium text-creme cursor-pointer focus:outline-none focus:border-brand"
+          >
+            <option value="popular">⭐ Mais instaladas</option>
+            <option value="recent">🆕 Recentes</option>
+            <option value="name">A→Z</option>
+          </select>
         </div>
       </div>
 
@@ -194,15 +297,26 @@ export function SkillsPage() {
 
           <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
             {filteredSkills.length === 0 ? (
-              <p className="text-[12px] text-creme-faint italic p-3">Nenhuma skill encontrada.</p>
+              <div className="p-4 text-center">
+                <p className="text-[12.5px] text-creme-faint italic mb-2">
+                  {tab === 'private' ? 'Você ainda não tem skills privadas.' : 'Nenhuma skill encontrada.'}
+                </p>
+                {tab === 'private' && (
+                  <p className="text-[11.5px] text-creme-faint">
+                    Forke uma skill do marketplace ou crie uma do zero (botão "Nova Skill").
+                  </p>
+                )}
+              </div>
             ) : (
-              filteredSkills.map((s) => (
+              filteredSkills.map((s, i) => (
                 <SkillRow
                   key={s.id}
                   skill={s}
                   selected={s.id === selectedSkillId}
                   installed={installedSkillIds.has(s.id)}
                   onClick={() => setSelectedSkillId(s.id)}
+                  showRank={sortBy === 'popular' && tab === 'marketplace'}
+                  rank={i + 1}
                 />
               ))
             )}
@@ -217,6 +331,7 @@ export function SkillsPage() {
               installedTools={selectedAgent?.tools ?? []}
               onEdit={openEdit}
               onDelete={handleDelete}
+              onFork={tab === 'marketplace' && activeWorkspaceId ? handleFork : undefined}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center p-8">
@@ -294,14 +409,47 @@ export function SkillsPage() {
 
 // ─── Subcomponentes ────────────────────────────────────────────────────────
 
+function TabButton({
+  active, onClick, icon, label, count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold transition-colors border-b-2 -mb-px ${
+        active
+          ? 'text-brand-bright border-brand'
+          : 'text-creme-mute hover:text-creme border-transparent'
+      }`}
+    >
+      {icon}
+      {label}
+      <span className={`text-[11px] font-mono px-1.5 py-px rounded-full ${
+        active ? 'bg-brand/15 text-brand-bright' : 'bg-surface-3 text-creme-faint'
+      }`}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
 function SkillRow({
-  skill, selected, installed, onClick,
+  skill, selected, installed, onClick, showRank, rank,
 }: {
   skill: Skill;
   selected: boolean;
   installed: boolean;
   onClick: () => void;
+  showRank?: boolean;
+  rank?: number;
 }) {
+  const installCount = skill.installCount ?? 0;
+  const isHot = installCount >= 3;
   return (
     <button
       onClick={onClick}
@@ -312,6 +460,13 @@ function SkillRow({
       }`}
     >
       <div className="flex items-start gap-2">
+        {showRank && rank !== undefined && (
+          <span className={`text-[10px] font-mono shrink-0 mt-1 w-5 text-center ${
+            rank <= 3 ? 'text-brand-bright font-bold' : 'text-creme-faint'
+          }`}>
+            #{rank}
+          </span>
+        )}
         <span className="text-[18px] leading-none shrink-0 mt-0.5">{skill.icon ?? '🧩'}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
@@ -321,9 +476,18 @@ function SkillRow({
             {installed && (
               <CheckCircle2 size={11} className="text-semantic-green shrink-0" />
             )}
+            {!skill.isPublic && (
+              <Lock size={10} className="text-semantic-amber shrink-0" />
+            )}
           </div>
-          <div className="text-[11px] text-creme-faint truncate font-mono mt-0.5">
-            {skill.slug} · v{skill.version}
+          <div className="text-[11px] text-creme-faint truncate font-mono mt-0.5 flex items-center gap-1.5">
+            <span>{skill.slug} · v{skill.version}</span>
+            {installCount > 0 && (
+              <span className={`flex items-center gap-0.5 ${isHot ? 'text-brand-bright' : ''}`}>
+                {isHot && '🔥'}
+                <Users size={9} /> {installCount}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -332,15 +496,17 @@ function SkillRow({
 }
 
 function SkillDetail({
-  skill, installedTools, onEdit, onDelete,
+  skill, installedTools, onEdit, onDelete, onFork,
 }: {
   skill: Skill;
   installedTools: string[];
   onEdit: () => void;
   onDelete: () => void;
+  onFork?: () => void;
 }) {
   const installedToolsSet = new Set(installedTools);
   const missingTools = skill.requiredTools.filter((t) => !installedToolsSet.has(t));
+  const installCount = skill.installCount ?? 0;
   return (
     <>
       {/* Header */}
@@ -351,6 +517,15 @@ function SkillDetail({
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-[17px] font-bold text-creme">{skill.name}</h3>
               <div className="flex items-center gap-1 shrink-0">
+                {onFork && (
+                  <button
+                    onClick={onFork}
+                    className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] font-semibold bg-brand/10 text-brand-bright hover:bg-brand/20 transition-colors"
+                    title="Forkar — duplica como skill privada do seu workspace pra editar"
+                  >
+                    <GitFork size={11} /> Fork
+                  </button>
+                )}
                 <button
                   onClick={onEdit}
                   className="p-1.5 rounded-md text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
@@ -367,7 +542,7 @@ function SkillDetail({
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <code className="text-[11.5px] font-mono text-creme-faint">{skill.slug}</code>
               <span className="text-creme-faint">·</span>
               <span className="text-[11.5px] font-mono text-brand-dim">v{skill.version}</span>
@@ -379,11 +554,26 @@ function SkillDetail({
                   </span>
                 </>
               )}
-              {!skill.isPublic && (
+              {skill.isPublic ? (
+                <>
+                  <span className="text-creme-faint">·</span>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-semantic-green/10 text-[11px] font-mono text-semantic-green">
+                    <Globe size={9} /> público
+                  </span>
+                </>
+              ) : (
                 <>
                   <span className="text-creme-faint">·</span>
                   <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-semantic-amber/10 text-[11px] font-mono text-semantic-amber">
-                    privada
+                    <Lock size={9} /> privada
+                  </span>
+                </>
+              )}
+              {installCount > 0 && (
+                <>
+                  <span className="text-creme-faint">·</span>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-brand/10 text-[11px] font-mono text-brand-bright">
+                    <Users size={9} /> {installCount} {installCount === 1 ? 'agente' : 'agentes'}
                   </span>
                 </>
               )}

@@ -767,18 +767,37 @@ function isMissingTable(err: unknown): boolean {
 }
 
 export const skillsApi = {
-  /** Lista skills disponíveis (apenas públicas por enquanto). */
+  /**
+   * Lista TODAS as skills (públicas + privadas). UI filtra por aba.
+   * Inclui contagem de instalações pra ranking de marketplace.
+   */
   async list(): Promise<Skill[]> {
     if (!supabase) return [];
     try {
       const { data, error } = await supabase
         .from('skills')
         .select('*')
-        .eq('is_public', true)
         .order('sector', { ascending: true, nullsFirst: false })
         .order('name', { ascending: true });
       if (error) throw error;
-      return (data as SkillRow[]).map(rowToSkill);
+
+      const skills = (data as SkillRow[]).map(rowToSkill);
+
+      // Pega contagem de instalações em batch (1 query agregada)
+      // Útil pra ranking "mais instaladas" no marketplace
+      try {
+        const { data: countData } = await supabase
+          .from('agent_skills')
+          .select('skill_id');
+        const counts: Record<string, number> = {};
+        for (const row of (countData ?? []) as Array<{ skill_id: string }>) {
+          counts[row.skill_id] = (counts[row.skill_id] ?? 0) + 1;
+        }
+        return skills.map((s) => ({ ...s, installCount: counts[s.id] ?? 0 }));
+      } catch {
+        // Se contagem falha, retorna sem ela — não é crítico
+        return skills.map((s) => ({ ...s, installCount: 0 }));
+      }
     } catch (err) {
       if (isMissingTable(err)) return [];
       throw err;
@@ -920,6 +939,48 @@ export const skillsApi = {
       .from('skills')
       .update(update)
       .eq('id', skillId)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToSkill(data as SkillRow);
+  },
+
+  /**
+   * Fork: duplica skill pública como privada de um workspace.
+   * Caso de uso: skill pública não bate 100% com o caso do user, ele forka
+   * e edita a versão privada sem afetar o original.
+   *
+   * Slug fica `<original>-fork-<timestamp>` pra evitar colisão. User pode
+   * renomear depois via update.
+   */
+  async fork(skillId: string, workspaceId: string): Promise<Skill> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { data: original, error: fetchErr } = await supabase
+      .from('skills')
+      .select('*')
+      .eq('id', skillId)
+      .single();
+    if (fetchErr) throw fetchErr;
+    const orig = original as SkillRow;
+
+    const ts = Date.now().toString(36);
+    const newSlug = `${orig.slug}-fork-${ts}`;
+
+    const { data, error } = await supabase
+      .from('skills')
+      .insert({
+        slug: newSlug,
+        name: `${orig.name} (fork)`,
+        description: orig.description,
+        sector: orig.sector,
+        icon: orig.icon,
+        prompt_fragment: orig.prompt_fragment,
+        required_tools: orig.required_tools,
+        config_schema: orig.config_schema,
+        is_public: false, // forks nascem privados
+        workspace_id: workspaceId,
+        version: '1.0.0', // reseta versionamento
+      })
       .select()
       .single();
     if (error) throw error;
