@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Agent, DashboardMetrics, Escalation, Execution, Tool, Workspace, CreateWorkspacePayload } from '@/types';
-import { agentsApi, dashboardApi, escalationsApi, executionsApi, toolsApi, workspacesApi, type CreateToolPayload } from '@/services/api';
+import type { Agent, AgentSkill, DashboardMetrics, Escalation, Execution, Skill, Tool, Workspace, CreateWorkspacePayload } from '@/types';
+import { agentsApi, dashboardApi, escalationsApi, executionsApi, skillsApi, toolsApi, workspacesApi, type CreateToolPayload } from '@/services/api';
 
 interface AppState {
   // Data
@@ -10,6 +10,10 @@ interface AppState {
   executions: Execution[];
   escalations: Escalation[];
   metrics: DashboardMetrics | null;
+  /** M3: catálogo de skills disponíveis. Carregado via initialize(). */
+  skills: Skill[];
+  /** M3: instalações de skill por agente — chave = agentId. Lazy. */
+  agentSkills: Record<string, Array<{ skill: Skill; instance: AgentSkill }>>;
 
   // UI
   loading: boolean;
@@ -39,6 +43,13 @@ interface AppState {
   updateWorkspace: (id: string, data: Partial<Workspace>) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
 
+  // Skill actions (M3)
+  loadSkills: () => Promise<void>;
+  loadAgentSkills: (agentId: string) => Promise<void>;
+  installSkill: (agentId: string, skillId: string) => Promise<void>;
+  toggleSkill: (agentSkillId: string, agentId: string, enabled: boolean) => Promise<void>;
+  uninstallSkill: (agentSkillId: string, agentId: string) => Promise<void>;
+
   // Toast
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
   removeToast: (id: string) => void;
@@ -51,6 +62,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   executions: [],
   escalations: [],
   metrics: null,
+  skills: [],
+  agentSkills: {},
   loading: true,
   currentPage: 'dashboard',
   toasts: [],
@@ -58,15 +71,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialize: async () => {
     set({ loading: true });
     try {
-      const [agents, tools, workspaces, executions, escalations, metrics] = await Promise.all([
+      const [agents, tools, workspaces, executions, escalations, metrics, skills] = await Promise.all([
         agentsApi.list(),
         toolsApi.list(),
         workspacesApi.list().catch(() => [] as Workspace[]),
         executionsApi.list(),
         escalationsApi.listPending(),
         dashboardApi.getMetrics(),
+        // skillsApi.list já degrada pra [] se schema não existe — não precisa catch
+        skillsApi.list(),
       ]);
-      set({ agents, tools, workspaces, executions, escalations, metrics, loading: false });
+      set({ agents, tools, workspaces, executions, escalations, metrics, skills, loading: false });
     } catch {
       set({ loading: false });
       get().addToast('Erro ao carregar dados', 'red');
@@ -153,6 +168,50 @@ export const useAppStore = create<AppState>((set, get) => ({
     await workspacesApi.delete(id);
     set({ workspaces: get().workspaces.filter((w) => w.id !== id) });
     get().addToast('Workspace removido', 'amber');
+  },
+
+  // ─── Skills (M3) ─────────────────────────────────────────────────────────
+  loadSkills: async () => {
+    const skills = await skillsApi.list();
+    set({ skills });
+  },
+
+  loadAgentSkills: async (agentId) => {
+    const list = await skillsApi.listByAgent(agentId);
+    set((s) => ({ agentSkills: { ...s.agentSkills, [agentId]: list } }));
+  },
+
+  installSkill: async (agentId, skillId) => {
+    try {
+      await skillsApi.install(agentId, skillId);
+      await get().loadAgentSkills(agentId);
+      get().addToast('Skill instalada', 'green');
+    } catch (err) {
+      console.error('installSkill failed', err);
+      get().addToast('Falha ao instalar skill', 'red');
+    }
+  },
+
+  toggleSkill: async (agentSkillId, agentId, enabled) => {
+    try {
+      await skillsApi.toggle(agentSkillId, enabled);
+      await get().loadAgentSkills(agentId);
+      get().addToast(enabled ? 'Skill ativada' : 'Skill desativada', enabled ? 'green' : 'amber');
+    } catch (err) {
+      console.error('toggleSkill failed', err);
+      get().addToast('Falha ao alterar skill', 'red');
+    }
+  },
+
+  uninstallSkill: async (agentSkillId, agentId) => {
+    try {
+      await skillsApi.uninstall(agentSkillId);
+      await get().loadAgentSkills(agentId);
+      get().addToast('Skill removida', 'amber');
+    } catch (err) {
+      console.error('uninstallSkill failed', err);
+      get().addToast('Falha ao remover skill', 'red');
+    }
   },
 
   addToast: (message, type = 'green') => {

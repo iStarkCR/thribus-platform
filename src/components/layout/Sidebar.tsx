@@ -1,8 +1,8 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
-  LayoutGrid, Bot, MessageSquare, Wrench, BarChart3,
-  Terminal, Settings, Building2, ChevronRight, Zap,
+  LayoutGrid, Bot, Wrench, BarChart3,
+  Terminal, Settings, Building2, ChevronRight, Zap, Sparkles,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -12,8 +12,8 @@ const NAV_ITEMS = [
     items: [
       { path: '/', label: 'Dashboard', icon: LayoutGrid },
       { path: '/agents', label: 'Colaboradores', icon: Bot, badge: true },
-      { path: '/conversations', label: 'Conversas', icon: MessageSquare, badgeCount: 47 },
       { path: '/tools', label: 'Ferramentas', icon: Wrench },
+      { path: '/skills', label: 'Skills', icon: Sparkles },
     ],
   },
   {
@@ -79,11 +79,6 @@ export function Sidebar() {
                   {item.badge && (
                     <span className="ml-auto text-[12px] font-semibold font-mono bg-brand/10 text-brand px-1.5 py-px rounded-full">
                       {agents.filter((a) => a.status === 'online').length}
-                    </span>
-                  )}
-                  {item.badgeCount && (
-                    <span className="ml-auto text-[12px] font-semibold font-mono bg-brand/10 text-brand px-1.5 py-px rounded-full">
-                      {item.badgeCount}
                     </span>
                   )}
                 </button>

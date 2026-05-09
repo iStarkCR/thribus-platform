@@ -33,6 +33,8 @@ import {
 } from './state-machine.js';
 import { buildHandoffSummary } from './handoff-summary.js';
 import { getToolInputSchema } from './tool-schemas.js';
+import { routeMessage } from './router.js';
+import { enrichWithSkills } from './skill-loader.js';
 
 const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 10);
 
@@ -253,9 +255,11 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   const start = Date.now();
   console.log(`[loop] start agentId=${job.agentId} leadId=${job.leadId}`);
 
-  // 1. Carrega configuração do agent Thribus
-  const agent = await db.agents.findById(job.agentId);
+  // 1. Carrega configuração do agent Thribus.
+  //    M2: pode ser sobrescrito pelo roteador se for 1ª msg da conversa.
+  let agent = await db.agents.findById(job.agentId);
   if (!agent) throw new Error(`Agent ${job.agentId} não encontrado no banco`);
+  let activeAgentId = job.agentId;
 
   // 1.5. Carrega workspace (multi-tenant)
   const workspace = agent.workspaceId
@@ -278,6 +282,52 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     customerPhone: job.customerPhone,
     customerName: job.customerName,
   });
+
+  // 5.1. M2 — Roteador multi-agente:
+  // Se conversa tem agent_id diferente do default (ex: foi transferida no
+  // turno anterior), usa esse. Senão, e se workspace tem router_config
+  // habilitado E é a 1ª msg da conversa, classifica intent e troca agente.
+  if (conversation.agentId !== job.agentId) {
+    // Conversa já está com outro agente (transferência prévia)
+    const transferredAgent = await db.agents.findById(conversation.agentId);
+    if (transferredAgent) {
+      console.log(`[loop] M2 conversa já transferida pra agent="${transferredAgent.name}" (${conversation.agentId})`);
+      agent = transferredAgent;
+      activeAgentId = conversation.agentId;
+    }
+  } else if (workspace?.routerConfig?.enabled) {
+    // Verifica se é a 1ª msg (sem mensagens prévias do user no DB)
+    const existingMsgs = await db.messages.listByConversation(conversation.id);
+    const isFirstUserMessage = existingMsgs.length === 0;
+    if (isFirstUserMessage) {
+      console.log(`[loop] M2 router enabled — classificando intent...`);
+      const decision = await routeMessage(
+        job.content,
+        workspace.routerConfig,
+        workspace.llmApiKey,
+      );
+      if (decision && decision.targetAgentId !== job.agentId) {
+        console.log(
+          `[loop] M2 router: intent="${decision.intent}" → agent=${decision.targetAgentId} (confidence=${decision.confidence}, ${decision.reasoning})`,
+        );
+        const routedAgent = await db.agents.findById(decision.targetAgentId);
+        if (routedAgent) {
+          await db.conversations.transferToAgent(
+            conversation.id,
+            decision.targetAgentId,
+            job.agentId,
+            `router: ${decision.reasoning}`,
+          );
+          agent = routedAgent;
+          activeAgentId = decision.targetAgentId;
+        } else {
+          console.warn(`[loop] M2 router escolheu agent_id=${decision.targetAgentId} mas não existe — segue com default`);
+        }
+      } else if (decision) {
+        console.log(`[loop] M2 router: intent="${decision.intent}" mantém agent default ${job.agentId}`);
+      }
+    }
+  }
 
   await db.messages.save({
     conversationId: conversation.id,
@@ -371,8 +421,25 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     }
   }
 
-  // 7. Carrega tool definitions
-  const toolRecords = await db.tools.listByAgent(job.agentId);
+  // 7. Carrega tool definitions (do agente ATIVO — pode ser o roteado pelo M2)
+  // ─── M3 runtime ─────────────────────────────────────────────────────────────
+  // Antes de buscar as tools, mescla o que vem das skills habilitadas.
+  // Quando M3_SKILLS_ENABLED=false (default), enrichWithSkills é no-op.
+  // Quando true, system_prompt ganha os fragments + tools list ganha os
+  // required_tools de cada skill (deduplicado).
+  const enriched = await enrichWithSkills({
+    agentId: activeAgentId,
+    systemPrompt: agent.systemPrompt,
+    tools: agent.tools,
+  });
+
+  if (enriched.enriched && enriched.appliedSkills.length > 0) {
+    // Substitui o agent in-memory pra refletir o prompt + tools enriquecidos.
+    // O DB não é alterado — é só o objeto local usado neste turno.
+    agent = { ...agent, systemPrompt: enriched.systemPrompt, tools: enriched.tools };
+  }
+
+  const toolRecords = await db.tools.listByAgent(activeAgentId);
   const toolDefs: ToolDefinition[] = toolRecords.map((t) => ({
     name: t.name,
     description: t.description,
@@ -434,7 +501,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   let totalTokensOut = 0;
   let cacheReadTokens = 0;
   let finalText: string | null = null;
-  let exitReason: 'resolved' | 'escalated' | 'failed' = 'failed';
+  let exitReason: 'resolved' | 'escalated' | 'failed' | 'transferred' = 'failed';
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     // Re-verifica botMode a cada iteração (humano pode assumir no meio)
@@ -509,7 +576,14 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
               durationMs: 0,
             };
           }
-          return executeTool(tc.id, tc.name, tc.input, job.agentId);
+          return executeTool(tc.id, tc.name, tc.input, activeAgentId, {
+            conversationId: conversation.id,
+            workspaceId: agent.workspaceId,
+            channel: job.channel,
+            sendMessage: async (content: string) => {
+              await crm.sendMessage(job.channel, job.leadId, content, workspace ?? undefined);
+            },
+          });
         }),
       );
 
@@ -544,6 +618,19 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
           content: r.output,
         })),
       });
+
+      // M2: detecta transferência via transferir_para_agente — interrompe turno
+      // O próximo turno (próxima msg do user) vai pegar o agente novo da
+      // conversation.agent_id atualizada.
+      const transferred = results.find((r) => r.conversationTransferred);
+      if (transferred?.conversationTransferred) {
+        const t = transferred.conversationTransferred;
+        console.log(`[loop] conversa transferida pra agent="${t.newAgentName}" (${t.newAgentId}) — encerrando turno atual`);
+        exitReason = 'transferred';
+        await persistState();
+        // Não escala humano — só passa pro próximo agente. Bot continua ativo.
+        return;
+      }
 
       // Escalonamento via tool
       const escalation = results.find((r) => r.toolName === 'escalar_humano');
@@ -750,12 +837,20 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     `[loop] done leadId=${job.leadId} status=${exitReason} tools=[${toolsUsed.join(',')}] tokens=${totalTokensIn + totalTokensOut} cacheRead=${cacheReadTokens} ms=${durationMs}`,
   );
 
+  // Mapeia 'transferred' (M2) pra 'resolved' no save — schema da execution
+  // tem 4 valores fixos. Conceitualmente, esse turno foi resolvido (passou pro
+  // agente certo); o próximo turno do user vai gerar nova execution pelo agente novo.
+  // Cast pra string burla narrowing — em runtime exitReason pode SIM ser 'transferred'
+  // se o code path do return early for tomado (TS não detecta porque tem mutation).
+  const persistedStatus = (exitReason as string) === 'transferred'
+    ? ('resolved' as const)
+    : exitReason;
   await db.executions.save({
-    agentId: job.agentId,
+    agentId: activeAgentId, // M2: stats vão pro agente que de fato atendeu
     conversationId: conversation.id,
     customerPhone: job.customerPhone,
     customerName: job.customerName,
-    status: exitReason,
+    status: persistedStatus,
     toolsUsed: [...new Set(toolsUsed)],
     responseTimeMs: durationMs,
     totalTokens: totalTokensIn + totalTokensOut,
@@ -765,7 +860,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   // Se escalou, registra na tabela escalations
   if (exitReason === 'escalated') {
     await db.escalations.create({
-      agentId: job.agentId,
+      agentId: activeAgentId, // M2: escalation atribuída ao agente que escalou
       conversationId: conversation.id,
       customerPhone: job.customerPhone,
       customerName: job.customerName,

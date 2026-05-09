@@ -16,6 +16,13 @@
 
 import { db } from '../db/index.js';
 import type { ToolAuthCredentials, ToolAuthType } from '../db/index.js';
+import {
+  executeInternal,
+  isInternalTool,
+  type InternalToolContext,
+  type InternalToolResult,
+} from './internal.js';
+import { preflightCheck } from './preflight.js';
 
 const TOOL_TIMEOUT_MS = Number(process.env.TOOL_TIMEOUT_MS ?? 15_000);
 
@@ -27,6 +34,8 @@ export interface ToolResult {
   output: string;       // serializado como string para passar ao Claude
   error?: string;
   durationMs: number;
+  /** M2: se preenchido, sinaliza ao loop que a conversa mudou de agente — interrompe turno. */
+  conversationTransferred?: { newAgentId: string; newAgentName: string };
 }
 
 interface ToolDef {
@@ -44,8 +53,55 @@ export async function executeTool(
   toolName: string,
   input: Record<string, unknown>,
   agentId: string,
+  /** M2: contexto da conversa pra internal tools (transferir_para_agente). */
+  internalCtx?: Omit<InternalToolContext, 'currentAgentId'>,
 ): Promise<ToolResult> {
   const start = Date.now();
+
+  // ─── Internal tools (M2) ───────────────────────────────────────────────────
+  // transferir_para_agente, etc — não batem em endpoint HTTP, executam dentro do worker
+  if (isInternalTool(toolName)) {
+    if (!internalCtx) {
+      return {
+        toolCallId,
+        toolName,
+        output: JSON.stringify({
+          erro: `Internal tool "${toolName}" requer contexto da conversa, mas o loop não passou.`,
+        }),
+        error: 'missing_internal_context',
+        durationMs: Date.now() - start,
+      };
+    }
+    const result: InternalToolResult = await executeInternal(toolName, input, {
+      ...internalCtx,
+      currentAgentId: agentId,
+    });
+    return {
+      toolCallId,
+      toolName,
+      output: result.output,
+      error: result.error,
+      conversationTransferred: result.conversationTransferred,
+      durationMs: Date.now() - start,
+    };
+  }
+
+  // ─── Preflight ────────────────────────────────────────────────────────────
+  // Validação determinística do input antes de chamar o endpoint. Se a tool
+  // tem regras conhecidas (ex: consultar_viabilidade precisa de rua+número),
+  // bloqueia a chamada e devolve erro estruturado pro LLM. Evita queimar uma
+  // chamada que sabemos que vai falhar (ex: Geogrid retornando "Error in workflow").
+  const preflight = preflightCheck(toolName, input);
+  if (!preflight.ok) {
+    console.warn(`[dispatcher] preflight blocked tool="${toolName}" reason="${preflight.reason}"`);
+    return {
+      toolCallId,
+      toolName,
+      output: preflight.output ?? JSON.stringify({ error: 'preflight_blocked' }),
+      error: preflight.reason,
+      durationMs: Date.now() - start,
+    };
+  }
 
   // Busca definição da tool no banco
   const toolDef = await db.tools.findByName(toolName, agentId);
