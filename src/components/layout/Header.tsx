@@ -9,6 +9,7 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   '/agents': { title: 'Colaboradores', subtitle: 'Gerencie todos os colaboradores digitais' },
   '/tools': { title: 'Ferramentas', subtitle: 'Gerencie as ferramentas disponíveis' },
   '/skills': { title: 'Skills', subtitle: 'Catálogo de habilidades empacotadas (M3)' },
+  '/templates': { title: 'Templates', subtitle: 'Templates pra criar agentes novos rápido (M1)' },
   '/analytics': { title: 'Métricas', subtitle: 'Performance e custo dos colaboradores' },
   '/logs': { title: 'Logs', subtitle: 'Histórico de execuções' },
   '/settings': { title: 'Configurações', subtitle: 'Configurações do sistema' },

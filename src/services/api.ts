@@ -1075,6 +1075,52 @@ export const templatesApi = {
     if (error) throw error;
     return rowToTemplate(data as AgentTemplateRow);
   },
+
+  /**
+   * Atualiza template — slug é imutável (preserva FKs lógicas se houver).
+   * Outros campos podem ser editados livremente.
+   */
+  async update(id: string, payload: Partial<{
+    name: string;
+    sector: string;
+    description: string;
+    basePrompt: string;
+    defaultTools: string[];
+    defaultModel: string;
+    icon: string | null;
+    isPublic: boolean;
+  }>): Promise<AgentTemplate> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const update: Record<string, unknown> = {};
+    if (payload.name !== undefined) update.name = payload.name;
+    if (payload.sector !== undefined) update.sector = payload.sector;
+    if (payload.description !== undefined) update.description = payload.description;
+    if (payload.basePrompt !== undefined) update.base_prompt = payload.basePrompt;
+    if (payload.defaultTools !== undefined) update.default_tools = payload.defaultTools;
+    if (payload.defaultModel !== undefined) update.default_model = payload.defaultModel;
+    if (payload.icon !== undefined) update.icon = payload.icon;
+    if (payload.isPublic !== undefined) update.is_public = payload.isPublic;
+
+    const { data, error } = await supabase
+      .from('agent_templates')
+      .update(update)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToTemplate(data as AgentTemplateRow);
+  },
+
+  /**
+   * Deleta template. Não tem FK pra agents — agentes criados a partir
+   * dele já são entidades independentes, então deletar não afeta os
+   * agentes existentes.
+   */
+  async delete(id: string): Promise<void> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { error } = await supabase.from('agent_templates').delete().eq('id', id);
+    if (error) throw error;
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Agent, AgentSkill, DashboardMetrics, Escalation, Execution, Skill, Tool, Workspace, CreateWorkspacePayload } from '@/types';
-import { agentsApi, dashboardApi, escalationsApi, executionsApi, skillsApi, toolsApi, workspacesApi, type CreateToolPayload } from '@/services/api';
+import type { Agent, AgentSkill, AgentTemplate, DashboardMetrics, Escalation, Execution, Skill, Tool, Workspace, CreateWorkspacePayload } from '@/types';
+import { agentsApi, dashboardApi, escalationsApi, executionsApi, skillsApi, templatesApi, toolsApi, workspacesApi, type CreateToolPayload } from '@/services/api';
 
 interface AppState {
   // Data
@@ -14,6 +14,8 @@ interface AppState {
   skills: Skill[];
   /** M3: instalações de skill por agente — chave = agentId. Lazy. */
   agentSkills: Record<string, Array<{ skill: Skill; instance: AgentSkill }>>;
+  /** M1: templates pra onboarding rápido de agentes. */
+  templates: AgentTemplate[];
 
   // UI
   loading: boolean;
@@ -56,6 +58,12 @@ interface AppState {
   /** M4 — marketplace. Forka skill pública pra workspace privado (editável). */
   forkSkill: (skillId: string, workspaceId: string) => Promise<Skill | null>;
 
+  /** M1 — gestão de templates. */
+  loadTemplates: () => Promise<void>;
+  createTemplate: (payload: Parameters<typeof templatesApi.create>[0]) => Promise<AgentTemplate | null>;
+  updateTemplate: (id: string, payload: Parameters<typeof templatesApi.update>[1]) => Promise<AgentTemplate | null>;
+  deleteTemplate: (id: string) => Promise<boolean>;
+
   // Toast
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
   removeToast: (id: string) => void;
@@ -70,6 +78,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   metrics: null,
   skills: [],
   agentSkills: {},
+  templates: [],
   loading: true,
   currentPage: 'dashboard',
   toasts: [],
@@ -77,7 +86,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialize: async () => {
     set({ loading: true });
     try {
-      const [agents, tools, workspaces, executions, escalations, metrics, skills] = await Promise.all([
+      const [agents, tools, workspaces, executions, escalations, metrics, skills, templates] = await Promise.all([
         agentsApi.list(),
         toolsApi.list(),
         workspacesApi.list().catch(() => [] as Workspace[]),
@@ -86,8 +95,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         dashboardApi.getMetrics(),
         // skillsApi.list já degrada pra [] se schema não existe — não precisa catch
         skillsApi.list(),
+        templatesApi.list().catch(() => [] as AgentTemplate[]),
       ]);
-      set({ agents, tools, workspaces, executions, escalations, metrics, skills, loading: false });
+      set({ agents, tools, workspaces, executions, escalations, metrics, skills, templates, loading: false });
     } catch {
       set({ loading: false });
       get().addToast('Erro ao carregar dados', 'red');
@@ -271,6 +281,56 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error('forkSkill failed', err);
       get().addToast('Falha ao forkar skill', 'red');
       return null;
+    }
+  },
+
+  // ─── M1 Templates (CRUD) ──────────────────────────────────────────────────
+  loadTemplates: async () => {
+    try {
+      const templates = await templatesApi.list();
+      set({ templates });
+    } catch (err) {
+      console.error('loadTemplates failed', err);
+    }
+  },
+
+  createTemplate: async (payload) => {
+    try {
+      const created = await templatesApi.create(payload);
+      set((s) => ({ templates: [...s.templates, created] }));
+      get().addToast(`Template "${created.name}" criado`, 'green');
+      return created;
+    } catch (err) {
+      console.error('createTemplate failed', err);
+      const msg = err instanceof Error ? err.message : 'Falha ao criar template';
+      get().addToast(msg.includes('duplicate key') ? 'Slug já existe' : 'Falha ao criar template', 'red');
+      return null;
+    }
+  },
+
+  updateTemplate: async (id, payload) => {
+    try {
+      const updated = await templatesApi.update(id, payload);
+      set((s) => ({ templates: s.templates.map((t) => (t.id === id ? updated : t)) }));
+      get().addToast(`Template "${updated.name}" atualizado`, 'green');
+      return updated;
+    } catch (err) {
+      console.error('updateTemplate failed', err);
+      get().addToast('Falha ao atualizar template', 'red');
+      return null;
+    }
+  },
+
+  deleteTemplate: async (id) => {
+    try {
+      await templatesApi.delete(id);
+      set((s) => ({ templates: s.templates.filter((t) => t.id !== id) }));
+      get().addToast('Template removido', 'amber');
+      return true;
+    } catch (err) {
+      console.error('deleteTemplate failed', err);
+      get().addToast('Falha ao deletar template', 'red');
+      return false;
     }
   },
 
