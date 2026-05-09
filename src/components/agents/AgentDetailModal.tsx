@@ -198,7 +198,7 @@ export function AgentDetailModal({ agent, onClose }: Props) {
             </label>
             <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
               <optgroup label="Anthropic Claude">
-                <option value="claude-sonnet-4-20250514">claude-sonnet-4 (recomendado)</option>
+                <option value="claude-sonnet-4-5-20250929">claude-sonnet-4 (recomendado)</option>
                 <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (rápido)</option>
                 <option value="claude-opus-4-6">claude-opus-4-6 (premium)</option>
               </optgroup>

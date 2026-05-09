@@ -5,8 +5,9 @@
 export type AgentStatus = 'online' | 'standby' | 'offline';
 export type AgentType = 'modular' | 'operacional' | 'enterprise';
 export type AIModel =
-  // Anthropic
-  | 'claude-sonnet-4-20250514'
+  // Anthropic — IDs verificados em maio/2026
+  | 'claude-sonnet-4-5-20250929'    // Sonnet 4.5 (recomendado)
+  | 'claude-3-5-sonnet-latest'      // alias estável (sempre o Sonnet atual)
   | 'claude-haiku-4-5-20251001'
   | 'claude-opus-4-6'
   // OpenAI
