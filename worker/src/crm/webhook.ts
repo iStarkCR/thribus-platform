@@ -144,10 +144,14 @@ export function createWebhookRouter(): Router {
       let finalContent = (message.content ?? '').trim();
 
       if (message.type === 'audio') {
-        // TexNet entrega áudio como data URI (data:audio/ogg;base64,...) ou URL
+        // TexNet entrega áudio como data URI (data:audio/ogg;base64,...) ou URL.
+        // No canal Evolution Web (texnet-testeti) chega data URI. No 360dialog
+        // (texnet-duall) o formato é diferente — observado em prod (lead Rita,
+        // canal texnet-duall, 09/05/2026). Quando cair no fallback, logamos o
+        // payload bruto pra descobrir o formato e implementar suporte.
         const audioSource = message.content;
         if (audioSource && (audioSource.startsWith('data:') || audioSource.startsWith('http'))) {
-          console.log(`[webhook] áudio detectado lead=${lead.id} — transcrevendo`);
+          console.log(`[webhook] áudio detectado lead=${lead.id} channel=${lead.channel} — transcrevendo`);
           const transcribed = await transcribeAudio(audioSource, workspace?.llmApiKey);
           if (transcribed) {
             finalContent = `[áudio do cliente] ${transcribed}`;
@@ -157,6 +161,15 @@ export function createWebhookRouter(): Router {
             console.warn(`[webhook] audio transcription falhou lead=${lead.id}`);
           }
         } else {
+          // Formato não suportado — log verboso pra investigar e implementar.
+          // Não vaza áudio inteiro (pode ser MB), mas mostra prefixo e tamanho.
+          const preview = typeof audioSource === 'string' ? audioSource.slice(0, 200) : `<${typeof audioSource}>`;
+          const totalLen = typeof audioSource === 'string' ? audioSource.length : 0;
+          console.warn(
+            `[webhook] AUDIO FORMATO NAO RECONHECIDO lead=${lead.id} channel=${lead.channel} ` +
+            `messageId=${message.id} contentType=${typeof audioSource} length=${totalLen} ` +
+            `preview="${preview}"`,
+          );
           finalContent = '[cliente enviou áudio — formato não reconhecido]';
         }
       } else if (!finalContent) {

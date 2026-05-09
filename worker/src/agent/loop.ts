@@ -39,6 +39,15 @@ import { enrichWithSkills } from './skill-loader.js';
 
 const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 10);
 
+/** Parse seguro: devolve o objeto se for JSON válido; senão devolve a string crua. */
+function tryParseJson(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return s;
+  }
+}
+
 // Anti-promise: detecta "vou X / um momento" — agente prometendo ação sem executar
 const PROMISE_PATTERNS = [
   /\bvou\s+(verificar|consultar|buscar|listar|realizar|fazer|chamar|acessar|pesquisar|conferir|cadastrar|criar|processar|enviar|abrir|gerar|providenciar|preparar|montar)\b/i,
@@ -498,6 +507,11 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   let circuitBreakerTripped = false; // se true, escala ao final do turno
   let promiseRetries = 0;
   const MAX_PROMISE_RETRIES = 1;
+  // Idempotência: se o LLM tentar a MESMA tool com EXATAMENTE o MESMO input
+  // que já rodou nesta sessão, devolvemos o output anterior + aviso —
+  // evita criar OSes duplicadas no IXC, gastar API n8n à toa e loop infinito
+  // do LLM "esperando confirmação". Key = toolName|JSON.stringify(input).
+  const calledTools = new Map<string, string>();
   let totalTokensIn = 0;
   let totalTokensOut = 0;
   let cacheReadTokens = 0;
@@ -577,6 +591,26 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
               durationMs: 0,
             };
           }
+
+          // Idempotência: se o LLM já chamou esta tool com este input nesta
+          // sessão, NÃO reexecuta. Devolve o output anterior + aviso pra ele
+          // usar o resultado e seguir o fluxo (em vez de re-chamar em loop).
+          const callKey = `${tc.name}|${JSON.stringify(tc.input)}`;
+          const previousOutput = calledTools.get(callKey);
+          if (previousOutput) {
+            console.warn(`[loop] tool="${tc.name}" chamada duplicada com mesmo input — devolvendo cache + aviso`);
+            return {
+              toolCallId: tc.id,
+              toolName: tc.name,
+              output: JSON.stringify({
+                _cached: true,
+                _aviso: `Esta tool já foi chamada nesta conversa com EXATAMENTE estes mesmos parâmetros e a operação foi concluída. NÃO chame de novo. Use o resultado abaixo e continue o fluxo (responda ao cliente com a confirmação).`,
+                resultado_anterior: tryParseJson(previousOutput),
+              }),
+              durationMs: 0,
+            };
+          }
+
           return executeTool(tc.id, tc.name, tc.input, activeAgentId, {
             conversationId: conversation.id,
             workspaceId: agent.workspaceId,
@@ -588,13 +622,25 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         }),
       );
 
-      for (const r of results) {
+      for (let ri = 0; ri < results.length; ri++) {
+        const r = results[ri];
+        const tc = response.toolCalls[ri];
         toolsUsed.push(r.toolName);
         if (r.error) {
           toolFailures[r.toolName] = (toolFailures[r.toolName] ?? 0) + 1;
           continue;
         }
         console.log(`[loop] tool="${r.toolName}" durationMs=${r.durationMs} ok`);
+
+        // Registra no map de idempotência (key = name|input). Próxima vez que
+        // o LLM tentar chamar com mesmo input, o pre-check em cima devolve
+        // o cache em vez de reexecutar.
+        if (tc) {
+          const callKey = `${tc.name}|${JSON.stringify(tc.input)}`;
+          if (!calledTools.has(callKey)) {
+            calledTools.set(callKey, r.output);
+          }
+        }
 
         // Atualiza state machine com base no output da tool
         const extracted = extractStateData(r.toolName, r.output);
@@ -641,6 +687,50 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         currentState = 'escalated';
         await persistState();
         break;
+      }
+
+      // Estado terminal alcançado (ex: 11_completed após criar_os_agendamento
+      // sucesso). Em vez de continuar o loop e deixar o LLM tentar mais tools
+      // (criando duplicatas no IXC), forçamos UMA chamada extra SEM tools pra
+      // ele gerar a confirmação ao cliente, enviamos, e quebramos o loop.
+      if (isTerminalState(currentState) && currentState !== 'escalated') {
+        console.log(`[loop] terminal state="${currentState}" alcançado — forçando resposta final sem tools`);
+        const finalResponse = await callLLM({
+          model: agent.model,
+          systemPrompt: `${agent.systemPrompt}\n\n${buildStateReminder(currentState, stateData)}\n\nIMPORTANTE: O atendimento foi concluído com sucesso. Envie AGORA a mensagem de confirmação final ao cliente com os dados do agendamento (data, horário, OS). NÃO chame mais tools — apenas responda em texto.`,
+          tools: [], // sem tools — força texto
+          messages,
+          apiKey: workspace?.llmApiKey,
+        });
+        totalTokensIn += finalResponse.usage.inputTokens;
+        totalTokensOut += finalResponse.usage.outputTokens;
+        cacheReadTokens += finalResponse.usage.cacheReadTokens;
+
+        if (finalResponse.text) {
+          finalText = finalResponse.text;
+          const connected = await crm.isChannelConnected(job.channel, workspace ?? undefined);
+          if (connected) {
+            const messagesToSend = extractMessages(finalText);
+            for (let i = 0; i < messagesToSend.length; i++) {
+              await crm.sendMessage(job.channel, job.leadId, messagesToSend[i], workspace ?? undefined);
+              if (i < messagesToSend.length - 1) {
+                await new Promise((r) => setTimeout(r, 600));
+              }
+            }
+            await db.messages.save({
+              conversationId: conversation.id,
+              role: 'assistant',
+              content: finalText,
+              tokensIn: totalTokensIn,
+              tokensOut: totalTokensOut,
+              cacheHit: cacheReadTokens > 0,
+            });
+          }
+          exitReason = 'resolved';
+          await persistState();
+          break;
+        }
+        // Sem texto e sem tools? Algo bem estranho. Deixa cair no fluxo padrão.
       }
 
       continue;
@@ -777,14 +867,15 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       // Auto-escalation por três gatilhos no mesmo turno:
       //   (a) Agente disse "vou passar pra time" → handoff intencional
       //   (b) Circuit breaker disparou (tool falhou 3x) → handoff por erro técnico
-      //   (c) Endereço sem cobertura → time pode oferecer alternativa (instalação
-      //       futura, parceria com outra prov, registro de interesse, etc)
+      //   (c) Viabilidade indisponível pelo Geogrid — agente diz que não conseguiu
+      //       verificar e o time confirma manualmente (pode ter cobertura via outra base
+      //       ou ser falso negativo do Geogrid; vale o time olhar antes de descartar).
       const reasonToEscalate = looksLikeEscalation(finalText)
         ? 'Bot encaminhou pro time (handoff detectado).'
         : circuitBreakerTripped
         ? 'Bot encaminhou pro time (problema técnico — tool falhou 3 vezes nesta conversa).'
         : currentState === 'sem_cobertura'
-        ? 'Endereço sem cobertura — time pode oferecer alternativa ou registrar interesse pra futura expansão.'
+        ? 'Viabilidade indisponível pelo Geogrid — confirmar manualmente se há cobertura no endereço.'
         : null;
 
       if (reasonToEscalate) {

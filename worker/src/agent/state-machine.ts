@@ -166,7 +166,7 @@ export function nextStateAfterTool(
     const lower = toolOutput.toLowerCase();
 
     if (toolName === 'consultar_viabilidade') {
-      if (lower.includes('sem cobertura')) return 'sem_cobertura';
+      if (lower.includes('viabilidade_indisponivel') || lower.includes('sem cobertura')) return 'sem_cobertura';
       if (lower.includes('cobertura disponível') || lower.includes('cobertura disponivel')) {
         return state.nextState;
       }
