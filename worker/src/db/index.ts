@@ -381,6 +381,79 @@ export const db = {
     },
   },
 
+  skills: {
+    /**
+     * Carrega skills habilitadas pra um agente. Retorna empty se:
+     *  - tabela `agent_skills` não existe (migration 008 não aplicada) — degrada
+     *    silenciosamente pra não bloquear o loop em ambientes sem M3
+     *  - agente não tem nenhuma skill instalada
+     *
+     * O retorno já vem com `prompt_fragment` e `required_tools` da skill base
+     * + `config` da instância (override do agent_skills.config sobre defaults).
+     */
+    async findEnabledByAgent(agentId: string): Promise<Array<{
+      skillId: string;
+      slug: string;
+      name: string;
+      promptFragment: string;
+      requiredTools: string[];
+      config: Record<string, unknown>;
+      version: string;
+    }>> {
+      if (!supabase) return [];
+
+      try {
+        // Join via FK — pega skill + config do agent_skill numa query só
+        const { data, error } = await supabase
+          .from('agent_skills')
+          .select(`
+            config,
+            enabled,
+            skills:skill_id (
+              id,
+              slug,
+              name,
+              prompt_fragment,
+              required_tools,
+              version
+            )
+          `)
+          .eq('agent_id', agentId)
+          .eq('enabled', true);
+
+        if (error) {
+          // Tabela não existe → migration 008 não foi aplicada ainda. Não é fatal.
+          if (error.code === '42P01' || /relation .* does not exist/i.test(error.message ?? '')) {
+            console.warn('[db.skills] tabela agent_skills não existe (migration 008 não aplicada). Skills desabilitadas.');
+            return [];
+          }
+          throw error;
+        }
+
+        return (data ?? [])
+          .map((row) => {
+            // skills vem como objeto único quando o relacionamento é 1:1 via FK,
+            // mas o supabase-js pode retornar como array dependendo do hint
+            const skill = Array.isArray(row.skills) ? row.skills[0] : row.skills;
+            if (!skill) return null;
+            return {
+              skillId: skill.id as string,
+              slug: skill.slug as string,
+              name: skill.name as string,
+              promptFragment: (skill.prompt_fragment as string) ?? '',
+              requiredTools: (skill.required_tools as string[]) ?? [],
+              config: (row.config as Record<string, unknown>) ?? {},
+              version: (skill.version as string) ?? '1.0.0',
+            };
+          })
+          .filter((s): s is NonNullable<typeof s> => s !== null);
+      } catch (err) {
+        console.warn('[db.skills] falha ao carregar skills, prosseguindo sem:', err);
+        return [];
+      }
+    },
+  },
+
   conversations: {
     async findOrCreate(opts: {
       externalId: string;

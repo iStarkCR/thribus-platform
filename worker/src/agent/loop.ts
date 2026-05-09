@@ -34,6 +34,7 @@ import {
 import { buildHandoffSummary } from './handoff-summary.js';
 import { getToolInputSchema } from './tool-schemas.js';
 import { routeMessage } from './router.js';
+import { enrichWithSkills } from './skill-loader.js';
 
 const MAX_TOOL_ITERATIONS = Number(process.env.MAX_TOOL_ITERATIONS ?? 10);
 
@@ -421,6 +422,23 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   }
 
   // 7. Carrega tool definitions (do agente ATIVO — pode ser o roteado pelo M2)
+  // ─── M3 runtime ─────────────────────────────────────────────────────────────
+  // Antes de buscar as tools, mescla o que vem das skills habilitadas.
+  // Quando M3_SKILLS_ENABLED=false (default), enrichWithSkills é no-op.
+  // Quando true, system_prompt ganha os fragments + tools list ganha os
+  // required_tools de cada skill (deduplicado).
+  const enriched = await enrichWithSkills({
+    agentId: activeAgentId,
+    systemPrompt: agent.systemPrompt,
+    tools: agent.tools,
+  });
+
+  if (enriched.enriched && enriched.appliedSkills.length > 0) {
+    // Substitui o agent in-memory pra refletir o prompt + tools enriquecidos.
+    // O DB não é alterado — é só o objeto local usado neste turno.
+    agent = { ...agent, systemPrompt: enriched.systemPrompt, tools: enriched.tools };
+  }
+
   const toolRecords = await db.tools.listByAgent(activeAgentId);
   const toolDefs: ToolDefinition[] = toolRecords.map((t) => ({
     name: t.name,
