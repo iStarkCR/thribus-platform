@@ -7,6 +7,7 @@ import { ToolsPage } from '@/pages/ToolsPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { WorkspacesPage } from '@/pages/WorkspacesPage';
 import { SkillsPage } from '@/pages/SkillsPage';
+import { TemplatesPage } from '@/pages/TemplatesPage';
 import { MetricsPage } from '@/pages/MetricsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { ToastContainer } from '@/components/shared/ToastContainer';
@@ -27,6 +28,7 @@ export function App() {
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/tools" element={<ToolsPage />} />
           <Route path="/skills" element={<SkillsPage />} />
+          <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/analytics" element={<MetricsPage />} />
           <Route path="/logs" element={<LogsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
