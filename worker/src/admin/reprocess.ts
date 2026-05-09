@@ -21,11 +21,14 @@
 import { Router, type Request, type Response } from 'express';
 import express from 'express';
 import * as crm from '../crm/dispatcher.js';
+import * as texnet from '../crm/client.js';
 import { bufferEnqueue } from '../agent/buffer.js';
 import { db } from '../db/index.js';
 
 interface ReprocessRequest {
   leadId?: string;
+  /** Alternativa a leadId — passa o telefone e o worker resolve o leadId via TexNet */
+  phone?: string;
   channel?: string;
 }
 
@@ -50,12 +53,16 @@ export function createAdminRouter(): Router {
 
       // ─── Validação do payload ──────────────────────────────────────────
       const body = req.body as ReprocessRequest;
-      if (!body.leadId || !body.channel) {
-        res.status(400).json({ error: 'leadId e channel obrigatórios' });
+      if (!body.channel) {
+        res.status(400).json({ error: 'channel obrigatório' });
+        return;
+      }
+      if (!body.leadId && !body.phone) {
+        res.status(400).json({ error: 'leadId ou phone obrigatório' });
         return;
       }
 
-      console.log(`[admin] reprocess-lead requested leadId=${body.leadId} channel=${body.channel}`);
+      console.log(`[admin] reprocess-lead requested leadId=${body.leadId ?? '-'} phone=${body.phone ?? '-'} channel=${body.channel}`);
 
       try {
         // ─── Resolve agent + workspace pelo channel ────────────────────────
@@ -68,8 +75,31 @@ export function createAdminRouter(): Router {
           ? await db.workspaces.findById(agent.workspaceId).catch(() => null)
           : null;
 
+        // ─── Resolve leadId via phone se necessário ────────────────────────
+        let resolvedLeadId = body.leadId;
+        if (!resolvedLeadId && body.phone) {
+          const cfg = texnet.configFromWorkspace(workspace ?? undefined);
+          // Sanitiza phone (remove não-dígitos, garante DDI 55)
+          const digits = body.phone.replace(/\D/g, '');
+          const normalized = digits.startsWith('55') ? digits : `55${digits}`;
+          const candidates = await texnet.leads.list(
+            { search: normalized, channel: body.channel, limit: 5 },
+            cfg,
+          );
+          // Match exato pra evitar pegar lead errado em caso de ambiguidade
+          const exact = candidates.find((l) => l.phone === normalized);
+          if (!exact) {
+            res.status(404).json({
+              error: `nenhum lead com phone ${normalized} no channel ${body.channel}`,
+              tried: candidates.map((l) => ({ id: l.id, phone: l.phone, name: l.name })),
+            });
+            return;
+          }
+          resolvedLeadId = exact.id;
+        }
+
         // ─── Busca lead atualizado com mensagens via TexNet ────────────────
-        const fullLead = await crm.getLead(body.channel, body.leadId, workspace ?? undefined);
+        const fullLead = await crm.getLead(body.channel, resolvedLeadId!, workspace ?? undefined);
 
         // ─── Pega última mensagem inbound de texto ─────────────────────────
         const inboundMessages = (fullLead.messages ?? [])

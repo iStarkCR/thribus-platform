@@ -112,10 +112,11 @@ export const leads = {
     return req<Lead>('GET', `/leads/${id}`, undefined, cfg);
   },
 
-  async list(opts: { channel?: string; limit?: number } = {}, cfg?: TexNetConfig): Promise<Lead[]> {
+  async list(opts: { channel?: string; limit?: number; search?: string } = {}, cfg?: TexNetConfig): Promise<Lead[]> {
     const params = new URLSearchParams();
     if (opts.channel) params.set('channel', opts.channel);
     if (opts.limit) params.set('limit', String(opts.limit));
+    if (opts.search) params.set('search', opts.search);
     const qs = params.toString();
     const path = qs ? `/leads?${qs}` : '/leads';
     const result = await req<Lead[] | { data: Lead[] }>('GET', path, undefined, cfg);
