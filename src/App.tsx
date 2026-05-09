@@ -6,6 +6,7 @@ import { AgentsPage } from '@/pages/AgentsPage';
 import { ToolsPage } from '@/pages/ToolsPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { WorkspacesPage } from '@/pages/WorkspacesPage';
+import { SkillsPage } from '@/pages/SkillsPage';
 import { PlaceholderPage } from '@/pages/PlaceholderPage';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -24,6 +25,7 @@ export function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/tools" element={<ToolsPage />} />
+          <Route path="/skills" element={<SkillsPage />} />
           <Route path="/conversations" element={<PlaceholderPage title="Conversas" description="Integração com Talki em desenvolvimento." icon="chat" />} />
           <Route path="/analytics" element={<PlaceholderPage title="Analytics" description="Módulo de métricas avançadas em desenvolvimento." icon="chart" />} />
           <Route path="/logs" element={<LogsPage />} />

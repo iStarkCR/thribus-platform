@@ -11,12 +11,14 @@
 
 import type {
   Agent,
+  AgentSkill,
   AgentTemplate,
   CreateAgentPayload,
   CreateWorkspacePayload,
   DashboardMetrics,
   Escalation,
   Execution,
+  Skill,
   TestAgentPayload,
   TestAgentResponse,
   Tool,
@@ -693,6 +695,163 @@ function rowToTemplate(r: AgentTemplateRow): AgentTemplate {
     updatedAt: r.updated_at,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SKILLS (M3 — empacotamento reutilizável)
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface SkillRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  sector: string | null;
+  icon: string | null;
+  prompt_fragment: string;
+  required_tools: string[];
+  config_schema: Record<string, unknown>;
+  is_public: boolean;
+  workspace_id: string | null;
+  version: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AgentSkillRow {
+  id: string;
+  agent_id: string;
+  skill_id: string;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  installed_at: string;
+}
+
+function rowToSkill(r: SkillRow): Skill {
+  return {
+    id: r.id,
+    slug: r.slug,
+    name: r.name,
+    description: r.description,
+    sector: r.sector ?? undefined,
+    icon: r.icon ?? undefined,
+    promptFragment: r.prompt_fragment,
+    requiredTools: r.required_tools ?? [],
+    configSchema: r.config_schema ?? {},
+    isPublic: r.is_public,
+    workspaceId: r.workspace_id ?? undefined,
+    version: r.version,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+function rowToAgentSkill(r: AgentSkillRow): AgentSkill {
+  return {
+    id: r.id,
+    agentId: r.agent_id,
+    skillId: r.skill_id,
+    config: r.config ?? {},
+    enabled: r.enabled,
+    installedAt: r.installed_at,
+  };
+}
+
+/**
+ * Quando a migration 008 não foi aplicada, queries da skill quebram com
+ * "relation does not exist". A UI degrada pra catálogo vazio em vez de
+ * propagar erro — assim o painel funciona normalmente em ambientes sem M3.
+ */
+function isMissingTable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  return /relation .* does not exist/i.test(msg) || /could not find the table/i.test(msg);
+}
+
+export const skillsApi = {
+  /** Lista skills disponíveis (apenas públicas por enquanto). */
+  async list(): Promise<Skill[]> {
+    if (!supabase) return [];
+    try {
+      const { data, error } = await supabase
+        .from('skills')
+        .select('*')
+        .eq('is_public', true)
+        .order('sector', { ascending: true, nullsFirst: false })
+        .order('name', { ascending: true });
+      if (error) throw error;
+      return (data as SkillRow[]).map(rowToSkill);
+    } catch (err) {
+      if (isMissingTable(err)) return [];
+      throw err;
+    }
+  },
+
+  /** Skills instaladas num agente — retorna [{skill, instance}, ...]. */
+  async listByAgent(agentId: string): Promise<Array<{ skill: Skill; instance: AgentSkill }>> {
+    if (!supabase) return [];
+    try {
+      const { data, error } = await supabase
+        .from('agent_skills')
+        .select(`
+          id, agent_id, skill_id, config, enabled, installed_at,
+          skills:skill_id (*)
+        `)
+        .eq('agent_id', agentId);
+      if (error) throw error;
+      return ((data ?? []) as Array<AgentSkillRow & { skills: SkillRow | SkillRow[] }>)
+        .map((row) => {
+          const skillRow = Array.isArray(row.skills) ? row.skills[0] : row.skills;
+          if (!skillRow) return null;
+          return {
+            skill: rowToSkill(skillRow),
+            instance: rowToAgentSkill(row),
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+    } catch (err) {
+      if (isMissingTable(err)) return [];
+      throw err;
+    }
+  },
+
+  /** Instala uma skill num agente (idempotente — upsert em (agent_id, skill_id)). */
+  async install(agentId: string, skillId: string): Promise<AgentSkill> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { data, error } = await supabase
+      .from('agent_skills')
+      .upsert(
+        { agent_id: agentId, skill_id: skillId, enabled: true, config: {} },
+        { onConflict: 'agent_id,skill_id' },
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToAgentSkill(data as AgentSkillRow);
+  },
+
+  /** Toggle enabled — desativa skill sem desinstalar. */
+  async toggle(agentSkillId: string, enabled: boolean): Promise<AgentSkill> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { data, error } = await supabase
+      .from('agent_skills')
+      .update({ enabled })
+      .eq('id', agentSkillId)
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToAgentSkill(data as AgentSkillRow);
+  },
+
+  /** Desinstala completamente — remove do agent_skills. */
+  async uninstall(agentSkillId: string): Promise<void> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { error } = await supabase.from('agent_skills').delete().eq('id', agentSkillId);
+    if (error) throw error;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT TEMPLATES API
+// ═══════════════════════════════════════════════════════════════════════════
 
 export const templatesApi = {
   /** Lista templates públicos pro catálogo. */

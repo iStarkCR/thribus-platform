@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   LayoutGrid, Bot, MessageSquare, Wrench, BarChart3,
-  Terminal, Settings, Building2, ChevronRight, Zap,
+  Terminal, Settings, Building2, ChevronRight, Zap, Sparkles,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
       { path: '/agents', label: 'Colaboradores', icon: Bot, badge: true },
       { path: '/conversations', label: 'Conversas', icon: MessageSquare, badgeCount: 47 },
       { path: '/tools', label: 'Ferramentas', icon: Wrench },
+      { path: '/skills', label: 'Skills', icon: Sparkles },
     ],
   },
   {

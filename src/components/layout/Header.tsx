@@ -8,6 +8,7 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   '/': { title: 'Dashboard', subtitle: 'Visão geral dos colaboradores digitais' },
   '/agents': { title: 'Colaboradores', subtitle: 'Gerencie todos os colaboradores digitais' },
   '/tools': { title: 'Ferramentas', subtitle: 'Gerencie as ferramentas disponíveis' },
+  '/skills': { title: 'Skills', subtitle: 'Catálogo de habilidades empacotadas (M3)' },
   '/conversations': { title: 'Conversas', subtitle: 'Histórico de atendimentos' },
   '/analytics': { title: 'Analytics', subtitle: 'Métricas e performance' },
   '/logs': { title: 'Logs', subtitle: 'Histórico de execuções' },
