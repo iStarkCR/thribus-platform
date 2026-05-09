@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Building2, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Building2, Plus, Pencil, Trash2, Network } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { WorkspaceModal } from '@/components/workspaces/WorkspaceModal';
+import { RouterConfigModal } from '@/components/workspaces/RouterConfigModal';
 import type { Workspace } from '@/types';
 
 export function WorkspacesPage() {
@@ -9,6 +10,7 @@ export function WorkspacesPage() {
   const deleteWorkspace = useAppStore((s) => s.deleteWorkspace);
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState<Workspace | null>(null);
+  const [routerEditing, setRouterEditing] = useState<Workspace | null>(null);
 
   const handleDelete = async (ws: Workspace) => {
     if (!confirm(`Remover workspace "${ws.name}"? Agents vinculados ficam sem workspace mas não são apagados.`)) return;
@@ -53,6 +55,17 @@ export function WorkspacesPage() {
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
+                    onClick={() => setRouterEditing(w)}
+                    className={`p-1 ${
+                      w.routerConfig?.enabled
+                        ? 'text-brand-bright hover:text-brand'
+                        : 'text-creme-faint hover:text-creme'
+                    }`}
+                    title={w.routerConfig?.enabled ? 'Roteador ativo — editar' : 'Configurar roteador multi-agente (M2)'}
+                  >
+                    <Network size={13} />
+                  </button>
+                  <button
                     onClick={() => setEditing(w)}
                     className="text-creme-faint hover:text-creme p-1"
                     title="Editar"
@@ -86,6 +99,16 @@ export function WorkspacesPage() {
                     <span className="font-mono text-brand">{w.talkiRequiredLabel}</span>
                   </div>
                 )}
+                {w.routerConfig?.enabled && (
+                  <div className="flex items-center justify-between text-creme-mute">
+                    <span className="flex items-center gap-1">
+                      <Network size={11} className="text-brand-bright" /> Router:
+                    </span>
+                    <span className="font-mono text-brand-bright">
+                      {Object.keys(w.routerConfig.intents ?? {}).length} intents
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="mt-2.5 pt-2.5 border-t border-default text-[12px] font-mono text-creme-faint truncate" title={w.id}>
                 {w.id}
@@ -97,6 +120,7 @@ export function WorkspacesPage() {
 
       {showNew && <WorkspaceModal onClose={() => setShowNew(false)} />}
       {editing && <WorkspaceModal workspace={editing} onClose={() => setEditing(null)} />}
+      {routerEditing && <RouterConfigModal workspace={routerEditing} onClose={() => setRouterEditing(null)} />}
     </>
   );
 }
