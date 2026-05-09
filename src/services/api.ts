@@ -675,6 +675,7 @@ interface AgentTemplateRow {
   default_model: string;
   icon: string | null;
   is_public: boolean;
+  workspace_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -691,6 +692,7 @@ function rowToTemplate(r: AgentTemplateRow): AgentTemplate {
     defaultModel: r.default_model,
     icon: r.icon ?? undefined,
     isPublic: r.is_public,
+    workspaceId: r.workspace_id ?? undefined,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -1013,17 +1015,48 @@ export const skillsApi = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const templatesApi = {
-  /** Lista templates públicos pro catálogo. */
+  /**
+   * Lista TODOS os templates (públicos + privados). UI filtra por aba.
+   * Inclui useCount heurístico (agents matching sector + tools).
+   */
   async list(): Promise<AgentTemplate[]> {
     if (!supabase) return [];
-    const { data, error } = await supabase
-      .from('agent_templates')
-      .select('*')
-      .eq('is_public', true)
-      .order('sector', { ascending: true })
-      .order('name', { ascending: true });
-    if (error) throw error;
-    return (data as AgentTemplateRow[]).map(rowToTemplate);
+    try {
+      const { data, error } = await supabase
+        .from('agent_templates')
+        .select('*')
+        .order('sector', { ascending: true })
+        .order('name', { ascending: true });
+      if (error) throw error;
+      const templates = (data as AgentTemplateRow[]).map(rowToTemplate);
+
+      // useCount: agents que parecem ter sido criados deste template.
+      // Heurística: mesmo sector + mesmas tools default. Não é 100% preciso
+      // mas dá ordem de grandeza pra ranking de "mais usado".
+      try {
+        const { data: agentsData } = await supabase
+          .from('agents')
+          .select('sector, tools');
+        const counts: Record<string, number> = {};
+        for (const t of templates) {
+          const matches = (agentsData ?? []).filter((a) => {
+            const ag = a as { sector?: string; tools?: string[] };
+            if (ag.sector !== t.sector) return false;
+            const aTools = JSON.stringify((ag.tools ?? []).slice().sort());
+            const tTools = JSON.stringify(t.defaultTools.slice().sort());
+            return aTools === tTools;
+          });
+          counts[t.id] = matches.length;
+        }
+        return templates.map((t) => ({ ...t, useCount: counts[t.id] ?? 0 }));
+      } catch {
+        return templates.map((t) => ({ ...t, useCount: 0 }));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (/relation .* does not exist/i.test(msg)) return [];
+      throw err;
+    }
   },
 
   async get(idOrSlug: string): Promise<AgentTemplate | null> {
@@ -1055,6 +1088,7 @@ export const templatesApi = {
     defaultModel: string;
     icon?: string;
     isPublic?: boolean;
+    workspaceId?: string;
   }): Promise<AgentTemplate> {
     if (!supabase) throw new Error('Supabase não configurado');
     const { data, error } = await supabase
@@ -1069,6 +1103,44 @@ export const templatesApi = {
         default_model: payload.defaultModel,
         icon: payload.icon ?? null,
         is_public: payload.isPublic ?? true,
+        workspace_id: payload.workspaceId ?? null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return rowToTemplate(data as AgentTemplateRow);
+  },
+
+  /**
+   * Fork: duplica template público como privado de um workspace.
+   * Igual padrão do skillsApi.fork — slug auto-gerado pra evitar colisão.
+   */
+  async fork(templateId: string, workspaceId: string): Promise<AgentTemplate> {
+    if (!supabase) throw new Error('Supabase não configurado');
+    const { data: original, error: fetchErr } = await supabase
+      .from('agent_templates')
+      .select('*')
+      .eq('id', templateId)
+      .single();
+    if (fetchErr) throw fetchErr;
+    const orig = original as AgentTemplateRow;
+
+    const ts = Date.now().toString(36);
+    const newSlug = `${orig.slug}-fork-${ts}`;
+
+    const { data, error } = await supabase
+      .from('agent_templates')
+      .insert({
+        slug: newSlug,
+        name: `${orig.name} (fork)`,
+        sector: orig.sector,
+        description: orig.description,
+        base_prompt: orig.base_prompt,
+        default_tools: orig.default_tools,
+        default_model: orig.default_model,
+        icon: orig.icon,
+        is_public: false, // forks nascem privados
+        workspace_id: workspaceId,
       })
       .select()
       .single();

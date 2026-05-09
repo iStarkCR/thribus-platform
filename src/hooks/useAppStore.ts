@@ -63,6 +63,8 @@ interface AppState {
   createTemplate: (payload: Parameters<typeof templatesApi.create>[0]) => Promise<AgentTemplate | null>;
   updateTemplate: (id: string, payload: Parameters<typeof templatesApi.update>[1]) => Promise<AgentTemplate | null>;
   deleteTemplate: (id: string) => Promise<boolean>;
+  /** M4 — marketplace. Forka template público pra workspace privado. */
+  forkTemplate: (templateId: string, workspaceId: string) => Promise<AgentTemplate | null>;
 
   // Toast
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
@@ -331,6 +333,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error('deleteTemplate failed', err);
       get().addToast('Falha ao deletar template', 'red');
       return false;
+    }
+  },
+
+  forkTemplate: async (templateId, workspaceId) => {
+    try {
+      const forked = await templatesApi.fork(templateId, workspaceId);
+      set((s) => ({ templates: [...s.templates, forked] }));
+      get().addToast(`Template forkado como "${forked.name}" — edite à vontade`, 'green');
+      return forked;
+    } catch (err) {
+      console.error('forkTemplate failed', err);
+      get().addToast('Falha ao forkar template', 'red');
+      return null;
     }
   },
 
