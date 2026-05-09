@@ -106,14 +106,22 @@ const SCHEMAS: Record<string, SchemaSpec> = {
     required: ['os_id', 'cliente_id', 'contrato_id', 'data_reservada', 'periodo'],
   },
 
-  // Tool de escalação (quando existe explicitamente)
+  // Tool de escalação humana (internal — handler em tools/internal.ts).
+  // Usar SEMPRE que decidir passar a conversa pra um humano. NÃO basta
+  // anunciar em texto — chamar a tool é o que efetivamente move o lead pra
+  // fila aguardando, desvincula responsável e desativa o bot na conversa.
   escalar_humano: {
     properties: {
       motivo: {
         type: 'string',
-        description: 'Motivo da escalação (curto). Ex: "cliente solicitou", "erro técnico repetido".',
+        description:
+          'Motivo curto e objetivo da escalação (1 frase). Vai pra nota interna ' +
+          'pro time saber por que a conversa caiu na fila. Ex: "cliente quer ' +
+          'condição especial — sem autonomia pra negociar", "viabilidade ' +
+          'indisponível, validar manualmente", "cliente solicitou atendente humano".',
       },
     },
+    required: ['motivo'],
   },
 
   // ─── Multi-agent routing (M2) ────────────────────────────────────────────────

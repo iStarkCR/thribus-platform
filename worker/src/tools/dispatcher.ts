@@ -36,6 +36,8 @@ export interface ToolResult {
   durationMs: number;
   /** M2: se preenchido, sinaliza ao loop que a conversa mudou de agente — interrompe turno. */
   conversationTransferred?: { newAgentId: string; newAgentName: string };
+  /** Se preenchido, sinaliza ao loop que o LLM pediu handoff humano — interrompe e escala. */
+  escalated?: { motivo: string };
 }
 
 interface ToolDef {
@@ -82,6 +84,7 @@ export async function executeTool(
       output: result.output,
       error: result.error,
       conversationTransferred: result.conversationTransferred,
+      escalated: result.escalated,
       durationMs: Date.now() - start,
     };
   }

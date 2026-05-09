@@ -67,19 +67,41 @@ function looksLikePromise(text: string): boolean {
 // Auto-escalation: detecta quando o agente está encaminhando pra humano.
 // Quando detectado, o worker automaticamente:
 //   1. Envia a mensagem ao cliente (resposta normal)
-//   2. Chama crm.escalateToHuman() — botMode=false + atribui agente
+//   2. Chama crm.escalateToHuman() — botMode=false + stage=aguardando + responsibleId=null
 //   3. Marca state=escalated → triggers cleanup do histórico
-const ESCALATION_PATTERNS = [
-  /\bpassar\s+(voc[eê]|vc)\s+para\s+(o\s+)?time/i,
-  /\bvou\s+passar\s+(voc[eê]|vc)\s+(para|pra)/i,
-  /\bdirecionar\s+(voc[eê]|vc)?\s*(para|pra)\s+(o\s+)?time/i,
-  /\bvou\s+direcionar\s+(voc[eê]|vc)?\s*(para|pra)/i,
-  /\balgu[eé]m\s+do\s+(nosso\s+)?time\s+vai/i,
-  /\bencaminhar\s+(voc[eê]|vc)?\s*(para|pra)\s+(o\s+)?time/i,
+//
+// Safety net: o caminho preferencial é o LLM chamar a tool `escalar_humano`.
+// Estes patterns existem pra cobrir o caso "fala mas não age" — quando o LLM
+// anuncia o handoff em texto sem chamar a tool. Cobertura precisa ser ampla:
+// o prompt sugere frases como "vou te conectar com nosso time" / "alguém vai
+// falar com você", e variantes com "te"/"lhe" como objeto direto eram
+// invisíveis pros patterns antigos (que esperavam apenas "você"/"vc").
+export const ESCALATION_PATTERNS = [
+  // (1) Verbo de handoff (passar/conectar/direcionar/encaminhar/transferir),
+  //     com pronome objeto opcional (você/vc/te/lhe), preposição (para/pra/pro/com),
+  //     e destino (time/equipe/atendente/consultor/comercial/responsável/setor).
+  //     Cobre: "vou passar você para o time", "deixa eu te passar para o time
+  //     comercial", "vou te conectar com nosso time", "encaminhar pra equipe",
+  //     "transferir pra um atendente".
+  /\b(passar|conectar|direcionar|encaminhar|transferir)(\s+(voc[eê]|vc|te|lhe))?\s+(com\s+|a\s+)?(para|pra|pro)\s+(o\s+|um\s+|uma\s+|nosso\s+|nossa\s+)?(time|equipe|atendente|consultor|comercial|respons[áa]vel|setor)/i,
+
+  // (2) "vou te/lhe + verbo de handoff" — captura o caso clássico pt-BR
+  //     "vou te conectar com nosso time agora" mesmo se o destino já matched
+  //     no padrão (1). Defensivo contra variantes truncadas.
+  /\bvou\s+(te|lhe)\s+(passar|conectar|direcionar|encaminhar|transferir)\b/i,
+
+  // (3) "alguém (do nosso time) vai (falar|atender|conversar)" — variante
+  //     com sujeito "alguém". O original exigia "do nosso time"; agora é opcional.
+  /\balgu[eé]m\s+(do\s+(nosso\s+)?time\s+)?vai\s+(falar|te\s+atender|atend|conversar|entrar\s+em\s+contato)/i,
+
+  // (4) "equipe/time vai te (atender|chamar|atender|responder)"
+  /\b(equipe|time)\s+vai\s+(te|lhe)?\s*(atender|chamar|responder|entrar\s+em\s+contato)/i,
+
+  // (5) "equipe será notificada" — original
   /\bequipe\s+ser[áa]\s+notificad/i,
 ];
 
-function looksLikeEscalation(text: string): boolean {
+export function looksLikeEscalation(text: string): boolean {
   return ESCALATION_PATTERNS.some((p) => p.test(text));
 }
 
@@ -679,10 +701,26 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         return;
       }
 
-      // Escalonamento via tool
-      const escalation = results.find((r) => r.toolName === 'escalar_humano');
-      if (escalation) {
-        await crm.escalateToHuman(job.channel, job.leadId, workspace ?? undefined);
+      // Escalonamento via tool — internal `escalar_humano` seta result.escalated.
+      // O loop centraliza o handoff via handoffToHuman (nota interna +
+      // botMode=false + stage=aguardando + responsibleId=null) — assim
+      // a internal tool fica enxuta e auditável (só registra o motivo).
+      const escalation = results.find((r) => r.escalated);
+      if (escalation?.escalated) {
+        console.log(`[loop] tool escalar_humano chamada motivo="${escalation.escalated.motivo}"`);
+        await handoffToHuman({
+          channel: job.channel,
+          leadId: job.leadId,
+          workspace: workspace ?? null,
+          agent: { name: agent.name },
+          customerName: job.customerName,
+          customerPhone: job.customerPhone,
+          currentState,
+          stateData,
+          toolsUsed,
+          lastAgentReply: undefined,
+          reason: escalation.escalated.motivo,
+        });
         exitReason = 'escalated';
         currentState = 'escalated';
         await persistState();

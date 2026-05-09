@@ -1,16 +1,16 @@
 /**
  * Internal tools — tools tratadas DENTRO do worker, sem chamada HTTP.
  *
- * Algumas tools precisam mexer no estado da conversa (DB) e não fazem
+ * Algumas tools precisam mexer no estado da conversa (DB/CRM) e não fazem
  * sentido como HTTP endpoint externo. Este módulo registra os handlers
  * e o dispatcher delega pra cá quando reconhece o nome.
  *
  * Hoje:
  *  - transferir_para_agente (M2): muda conversation.agent_id pra outro
  *    agente do mesmo workspace
- *
- * Futuro:
- *  - escalar_humano (caso fosse internal — hoje vai pro n8n)
+ *  - escalar_humano: marca a conversa pra handoff. O loop ao detectar o
+ *    flag `escalated` no result chama `handoffToHuman` (nota interna +
+ *    botMode=false + stage=aguardando + responsibleId=null).
  */
 
 import { db, type AgentRole } from '../db/index.js';
@@ -29,12 +29,15 @@ export interface InternalToolResult {
   output: string;
   /** Sinaliza ao loop que a conversa mudou de dono — interrompe o turno atual. */
   conversationTransferred?: { newAgentId: string; newAgentName: string };
+  /** Sinaliza ao loop que o LLM pediu handoff humano — interrompe e escala. */
+  escalated?: { motivo: string };
   error?: string;
 }
 
 /** Lista os nomes de tools tratadas internamente. */
 export const INTERNAL_TOOL_NAMES = new Set<string>([
   'transferir_para_agente',
+  'escalar_humano',
 ]);
 
 export function isInternalTool(name: string): boolean {
@@ -53,6 +56,8 @@ export async function executeInternal(
   switch (toolName) {
     case 'transferir_para_agente':
       return transferirParaAgente(input, ctx);
+    case 'escalar_humano':
+      return escalarHumano(input, ctx);
     default:
       return {
         output: JSON.stringify({ error: `Internal tool "${toolName}" não implementada.` }),
@@ -145,6 +150,33 @@ async function transferirParaAgente(
         'Transferência concluída. Pare de responder agora — o próximo agente assume a conversa no próximo turno.',
     }),
     conversationTransferred: { newAgentId: target.id, newAgentName: target.name },
+  };
+}
+
+/**
+ * escalar_humano — sinaliza ao loop que o LLM decidiu passar pra humano.
+ *
+ * NÃO chama crm.escalateToHuman aqui — o loop centraliza o handoff via
+ * `handoffToHuman` (nota interna + botMode=false + stage=aguardando +
+ * responsibleId=null). Aqui só validamos o motivo e marcamos o flag.
+ *
+ * O LLM ainda recebe um output útil pra parar de gerar texto neste turno.
+ */
+async function escalarHumano(
+  input: Record<string, unknown>,
+  _ctx: InternalToolContext,
+): Promise<InternalToolResult> {
+  const motivo = String(input.motivo ?? '').trim().slice(0, 500) ||
+    'Handoff solicitado pelo agente sem motivo explícito.';
+
+  return {
+    output: JSON.stringify({
+      sucesso: true,
+      info_pro_llm:
+        'Handoff humano registrado. Pare de responder agora — a conversa foi passada pro time. Não envie mais mensagens neste turno.',
+      motivo,
+    }),
+    escalated: { motivo },
   };
 }
 
