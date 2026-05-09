@@ -1,0 +1,93 @@
+# ══════════════════════════════════════════════════════
+# PostgREST self-hosted — Thribus Tech
+# ══════════════════════════════════════════════════════
+# Expõe o thribus_staging (e futuros DBs) como API REST compatível com
+# Supabase. O painel e o worker podem conectar usando supabase-js
+# apontando pra esta URL.
+#
+# Coolify deployment:
+#   1. Criar novo "Service" no Coolify (Tipo: Docker Compose)
+#   2. Apontar pra este arquivo OU colar conteúdo direto
+#   3. Setar env vars (ver `.env.example` neste mesmo dir)
+#   4. Configurar domínio (ex: pg-staging.thribustech.com.br) → port 3000
+#
+# Notas:
+#   - PGRST_DB_URI usa o nome do container do Postgres do Coolify (não localhost)
+#   - PGRST_DB_SCHEMAS lista schemas expostos. Hoje só `public`.
+#   - PGRST_DB_ANON_ROLE é o role usado pra requests SEM JWT
+# ══════════════════════════════════════════════════════
+
+services:
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: thribus-postgrest
+    restart: unless-stopped
+    environment:
+      # ── Coolify magic: domínio público ─────────────────────────────────────
+      # Coolify substitui SERVICE_FQDN_<servicename>_<port> por uma URL completa.
+      # Pra setar um domínio fixo, defina como env var no Coolify Service:
+      #   SERVICE_FQDN_POSTGREST_3000=https://pg.thribustech.com.br
+      # Sem isso, Coolify gera FQDN aleatório (ok pra dev mas não persistente).
+      # Após Save, Coolify automaticamente cria a rota Traefik pro container.
+      SERVICE_FQDN_POSTGREST_3000: ${SERVICE_FQDN_POSTGREST_3000}
+
+      # Connection — usa role authenticator (não postgres superuser).
+      # Substitua <pg-container> pelo hostname do Postgres na rede do Coolify.
+      # Se Postgres estiver em outro Docker network, use o IP interno.
+      PGRST_DB_URI: ${PGRST_DB_URI}
+
+      # Roles
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+
+      # JWT — secret HS256 compartilhado com painel/worker
+      PGRST_JWT_SECRET: ${PG_JWT_SECRET}
+      # Tokens dos usuários autenticados terão `role` claim → SET ROLE
+      PGRST_JWT_AUD: ""
+
+      # Server
+      PGRST_SERVER_PORT: 3000
+      # Pool — começa com 10 conexões. Ajustar conforme tráfego.
+      PGRST_DB_POOL: 10
+      PGRST_DB_POOL_TIMEOUT: 10
+
+      # Logging — útil pra debug, baixar pra "warn" em prod
+      PGRST_LOG_LEVEL: info
+
+      # Pre-request hook (opcional — pode ser usado pra rate limit, audit)
+      # PGRST_DB_PRE_REQUEST: public.pre_request
+
+      # OpenAPI — serve docs em /
+      PGRST_OPENAPI_MODE: follow-privileges
+
+    # NÃO bindar porta no host — Coolify roteia via Traefik.
+    # `expose` só publica porta na rede Docker interna; o Traefik do Coolify
+    # acessa via DNS interno + roteamento por subdomain configurado nos Domains.
+    # Bindar host port causa conflito (ex: 3000/3001 já em uso por outro service).
+    expose:
+      - "3000"
+
+    # Sem healthcheck custom: a imagem postgrest/postgrest:v12.2.3 é
+    # distroless (não tem sh nem wget/curl), então qualquer healthcheck
+    # via shell dá "exec format error" e marca o container como unhealthy
+    # mesmo com o serviço rodando perfeitamente.
+    #
+    # Como substituto:
+    #   - PostgREST tem retry interno se o DB cair → não precisa restart externo
+    #   - Coolify + Traefik detectam 5xx do endpoint quando o domínio
+    #     for configurado → é o "healthcheck real" via tráfego
+    #   - Em caso de auth failure o processo sai com exit≠0 → Docker reinicia
+    #     normalmente (restart: unless-stopped)
+    #
+    # Se quiser healthcheck programático no futuro, troca a imagem por
+    # `postgrest/postgrest:v12.2.3-alpine` (com shell) ou usa o admin server
+    # do PostgREST (`PGRST_ADMIN_SERVER_PORT=3001` + curl externo).
+
+    # Conecta na mesma rede do Postgres do Coolify pra resolver o hostname.
+    # Substitua pelo nome real da network (ver `docker network ls` na VPS).
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    external: true
