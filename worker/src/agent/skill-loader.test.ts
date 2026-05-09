@@ -18,8 +18,7 @@ const mockSkills: Array<{
   version: string;
 }> = [];
 
-// @ts-expect-error — override de módulo via import.meta.env trick não rola em ESM,
-// vamos mockar via re-export depois. Simplificando: monkey-patch direto após import.
+// Monkey-patch direto após import — simples e funciona em ESM.
 import { enrichWithSkills } from './skill-loader.js';
 import { db } from '../db/index.js';
 
