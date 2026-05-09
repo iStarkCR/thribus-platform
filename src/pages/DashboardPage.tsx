@@ -3,22 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   Bot, MessageSquare, CheckCircle, ArrowUpRight, ChevronRight,
-  AlertTriangle, Users, Activity, Shield, Calendar, Check, X,
+  AlertTriangle, Users,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { AgentCard } from '@/components/agents/AgentCard';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
-import type { Agent, ExecutionStatus } from '@/types';
-
-const STATUS_CONFIG: Record<ExecutionStatus, { icon: typeof Check; label: string; color: string }> = {
-  resolved: { icon: Check, label: 'Resolvido', color: 'text-semantic-green' },
-  escalated: { icon: ArrowUpRight, label: 'Escalado', color: 'text-semantic-amber' },
-  failed: { icon: X, label: 'Falha', color: 'text-semantic-red' },
-  running: { icon: Activity, label: 'Executando', color: 'text-semantic-blue' },
-};
+import type { Agent } from '@/types';
 
 export function DashboardPage() {
-  const { agents, metrics, escalations, executions } = useAppStore();
+  const { agents, metrics, escalations } = useAppStore();
   const navigate = useNavigate();
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
 
@@ -123,62 +116,6 @@ export function DashboardPage() {
               </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* Executions table */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
-            <Activity size={16} className="text-creme-mute" /> Execuções Recentes
-          </div>
-          <button onClick={() => navigate('/logs')} className="text-[13px] text-creme-mute font-semibold hover:text-brand-bright transition-colors flex items-center gap-1">
-            Ver todas <ChevronRight size={12} />
-          </button>
-        </div>
-
-        <div className="bg-surface-2 border border-default rounded-[10px] overflow-hidden">
-          <div className="grid grid-cols-[2.2fr_1.2fr_.8fr_.7fr_.7fr_.6fr] px-5 py-2.5 bg-surface-1 border-b border-default">
-            {['Colaborador', 'Status', 'Tools', 'Tempo', 'Tokens', 'Há'].map((h) => (
-              <div key={h} className="text-[12px] font-bold uppercase tracking-wider text-creme-faint">{h}</div>
-            ))}
-          </div>
-          {executions.length === 0 && (
-            <div className="px-5 py-12 text-center">
-              <p className="text-[13.5px] text-creme-mute">Nenhuma execução registrada ainda</p>
-              <p className="text-[12.5px] text-creme-faint mt-1">As execuções vão aparecer aqui quando o worker começar a processar mensagens</p>
-            </div>
-          )}
-          {executions.map((e) => {
-            const sc = STATUS_CONFIG[e.status];
-            const StatusIcon = sc.icon;
-            const isSupport = e.agentName.includes('Suporte');
-            return (
-              <div key={e.id} className="grid grid-cols-[2.2fr_1.2fr_.8fr_.7fr_.7fr_.6fr] px-5 py-3 border-b border-default last:border-b-0 items-center hover:bg-surface-hover transition-colors cursor-pointer">
-                <div className="flex items-center gap-2.5">
-                  <div className={clsx(
-                    'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
-                    isSupport ? 'bg-brand/10 text-brand-bright' : 'bg-semantic-blue/10 text-semantic-blue',
-                  )}>
-                    {isSupport ? <Shield size={13} /> : <Calendar size={13} />}
-                  </div>
-                  <div>
-                    <div className="text-[14.5px] font-semibold text-creme">{e.agentName}</div>
-                    <div className="text-[12.5px] text-creme-faint">{e.clientName} · {e.customerName}</div>
-                  </div>
-                </div>
-                <div className={clsx('flex items-center gap-1.5 text-[13.5px] font-semibold', sc.color)}>
-                  <StatusIcon size={13} /> {sc.label}
-                </div>
-                <div className="text-xs font-mono text-brand">{e.toolsUsed.length} tools</div>
-                <div className="text-xs font-mono text-creme-dim">{e.responseTime}s</div>
-                <div className="text-xs font-mono text-creme-dim">{e.tokensUsed.toLocaleString()}</div>
-                <div className="text-[13px] font-mono text-creme-faint">
-                  {Math.round((Date.now() - new Date(e.timestamp).getTime()) / 60000)} min
-                </div>
-              </div>
-            );
-          })}
         </div>
       </div>
 
