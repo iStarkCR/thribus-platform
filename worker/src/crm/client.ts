@@ -126,6 +126,7 @@ export const leads = {
   async update(id: string, data: Partial<{
     name: string; email: string; value: number;
     notes: string; tags: string[]; stage: LeadStage;
+    responsibleId: string | null;
   }>, cfg?: TexNetConfig): Promise<Lead> {
     return req<Lead>('PATCH', `/leads/${id}`, data, cfg);
   },
@@ -270,19 +271,27 @@ export async function escalateToHuman(leadId: string, channel: string, cfg?: Tex
   // 1. Bot para de responder
   await leads.setBotMode(leadId, false, cfg);
 
-  // 2. Move pra fila aguardando (stage=aguardando) e remove responsável (null)
-  // O endpoint update aceita stage; pra remover responsibleId enviamos null via assign.
+  // 2. Move pra fila aguardando + desvincula responsável NUMA ÚNICA chamada PATCH.
+  // Antes usávamos assign('') mas TexNet rejeita string vazia (responsibleId é
+  // obrigatório no endpoint /assign). PATCH /leads/:id com responsibleId: null
+  // funciona pra ambos numa atomic op.
   try {
-    await leads.update(leadId, { stage: 'aguardando' }, cfg);
+    await leads.update(
+      leadId,
+      { stage: 'aguardando', responsibleId: null },
+      cfg,
+    );
+    console.log(`[crm] lead ${leadId} → stage=aguardando, responsibleId=null`);
   } catch (err) {
-    console.warn(`[crm] falha ao mover lead ${leadId} pra aguardando:`, (err as Error).message);
-  }
-  try {
-    // Limpa atribuição mandando responsibleId vazio
-    await leads.assign(leadId, '', cfg);
-  } catch (err) {
-    // Se a API rejeitar string vazia, tenta null literal via PATCH bruto
-    console.warn(`[crm] unassign via assign('') falhou pra lead ${leadId}:`, (err as Error).message);
+    // Fallback: se a API recusar o PATCH combinado, tenta passos separados
+    console.warn(`[crm] update combinado falhou pra lead ${leadId}:`, (err as Error).message);
+    try {
+      await leads.update(leadId, { stage: 'aguardando' }, cfg);
+    } catch (e2) {
+      console.warn(`[crm] update stage=aguardando falhou:`, (e2 as Error).message);
+    }
+    // Não tentamos assign('') — sabidamente falha. Lead fica com responsável
+    // anterior; a fila pode filtrar por stage=aguardando e ignorar atribuição.
   }
 
   // 3. Mensagem ao cliente
@@ -290,5 +299,5 @@ export async function escalateToHuman(leadId: string, channel: string, cfg?: Tex
     'Vou passar você para o time responsável agora mesmo. Já já alguém vai te direcionar para concluir o atendimento! 🙌',
     cfg,
   );
-  console.log(`[crm] lead ${leadId} escalado pra fila aguardando (sem responsável)`);
+  console.log(`[crm] lead ${leadId} escalado pra fila aguardando`);
 }
