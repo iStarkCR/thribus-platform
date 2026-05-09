@@ -23,7 +23,7 @@ export function NewAgentModal({ onClose }: Props) {
   const [client, setClient] = useState('');
   const [type, setType] = useState<AgentType>('modular');
   const [role, setRole] = useState<AgentRole | ''>('');
-  const [model, setModel] = useState<AIModel>('claude-sonnet-4-20250514');
+  const [model, setModel] = useState<AIModel>('claude-sonnet-4-5-20250929');
   const [channel, setChannel] = useState('');
   const [prompt, setPrompt] = useState('');
   const [tools, setTools] = useState<string[]>([]);
@@ -218,7 +218,7 @@ export function NewAgentModal({ onClose }: Props) {
               <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Modelo de IA</label>
               <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
                 <optgroup label="Anthropic Claude">
-                  <option value="claude-sonnet-4-20250514">claude-sonnet-4 (recomendado)</option>
+                  <option value="claude-sonnet-4-5-20250929">claude-sonnet-4 (recomendado)</option>
                   <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (rápido)</option>
                   <option value="claude-opus-4-6">claude-opus-4-6 (premium)</option>
                 </optgroup>

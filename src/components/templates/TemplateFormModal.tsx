@@ -32,7 +32,7 @@ const SUGGESTED_ICONS = ['🎯', '🛠️', '💰', '📞', '🤝', '🎓', '�
 
 const MODELS: AIModel[] = [
   'gpt-4o-mini', 'gpt-4o', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5',
-  'claude-haiku-4-5-20251001', 'claude-sonnet-4-20250514', 'claude-opus-4-6',
+  'claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929', 'claude-opus-4-6',
 ];
 
 export function TemplateFormModal({ mode, template, onClose, onSaved }: Props) {
