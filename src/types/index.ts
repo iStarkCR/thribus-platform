@@ -9,8 +9,9 @@ export type AIModel =
   // ⚠️ Mantenha sincronizado com src/lib/models.ts (fonte única de verdade
   //    pra dropdowns + pricing). Adicionar ID aqui sem testar contra
   //    /v1/models do provedor quebra o worker em runtime com 404.
-  | 'claude-sonnet-4-5-20250929'    // Sonnet 4.5 (recomendado)
-  | 'claude-haiku-4-5-20251001'
+  | 'claude-opus-4-7'               // Opus 4.7 (premium — análise/retenção/auditoria)
+  | 'claude-sonnet-4-5-20250929'    // Sonnet 4.5 (recomendado — uso geral)
+  | 'claude-haiku-4-5-20251001'     // Haiku 4.5 (rápido/barato — alta volumetria)
   // OpenAI
   | 'gpt-5'
   | 'gpt-5-mini'

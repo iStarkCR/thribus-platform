@@ -37,6 +37,13 @@ export interface ModelOption {
 export const MODEL_OPTIONS: ModelOption[] = [
   // ─── Anthropic ─────────────────────────────────────────────────────────────
   {
+    id: 'claude-opus-4-7',
+    label: 'claude-opus-4-7',
+    badge: 'premium',
+    provider: 'anthropic',
+    verified: true,
+  },
+  {
     id: 'claude-sonnet-4-5-20250929',
     label: 'claude-sonnet-4-5',
     badge: 'recomendado',
@@ -50,10 +57,11 @@ export const MODEL_OPTIONS: ModelOption[] = [
     provider: 'anthropic',
     verified: true,
   },
+  // Nota: `claude-opus-4-7` retorna sem date suffix (ID canônico atual
+  // da Anthropic). Verificado válido contra /v1/messages em 2026-05-09.
+  //
   // Removido em 2026-05-09: o alias `claude-3-5-sonnet-latest` foi
-  // descontinuado pela Anthropic (3.5 Sonnet deprecated). Retorna 404
-  // em runtime. Pra modelo "estável", usar `claude-sonnet-4-5-20250929`
-  // direto até que a Anthropic publique um alias 4.5+ ou similar.
+  // descontinuado pela Anthropic (3.5 Sonnet deprecated). Retorna 404.
 
   // ─── OpenAI ────────────────────────────────────────────────────────────────
   { id: 'gpt-5',       label: 'gpt-5',                        provider: 'openai', verified: true },
