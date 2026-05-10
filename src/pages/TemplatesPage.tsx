@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Layout, Plus, Search, Pencil, Trash2, Wrench, Tag,
-  Users, FileText, Globe, Lock, ChevronRight, GitFork,
+  Users, FileText, Globe, Lock, ChevronRight, GitFork, Flame,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -301,7 +301,7 @@ function TemplateCard({
                 <>
                   <span>·</span>
                   <span className={`inline-flex items-center gap-0.5 ${isHot ? 'text-brand-bright' : ''}`}>
-                    {isHot && '🔥 '}
+                    {isHot && <Flame size={9} className="text-semantic-amber" />}
                     <Users size={9} /> {useCount} {useCount === 1 ? 'agente' : 'agentes'}
                   </span>
                 </>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Trash2, Save } from 'lucide-react';
+import { Trash2, Save, AlertTriangle } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -214,9 +214,12 @@ export function AgentDetailModal({ agent, onClose }: Props) {
               </optgroup>
             </select>
             {modelIsLegacy && (
-              <p className="mt-1 text-[11px] text-amber-400">
-                ⚠ Modelo salvo no banco (<code className="font-mono">{agent.model}</code>) não é mais suportado.
-                Selecionei <code className="font-mono">{model}</code> como fallback — clique em Salvar pra atualizar.
+              <p className="flex items-start gap-1.5 mt-1 text-[11px] text-amber-400">
+                <AlertTriangle size={11} className="shrink-0 mt-0.5" />
+                <span>
+                  Modelo salvo no banco (<code className="font-mono">{agent.model}</code>) não é mais suportado.
+                  Selecionei <code className="font-mono">{model}</code> como fallback — clique em Salvar pra atualizar.
+                </span>
               </p>
             )}
           </div>

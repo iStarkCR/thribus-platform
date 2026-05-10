@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Sparkles, Bot, Wrench, Layers, Search, ChevronDown,
   CheckCircle2, Circle, Trash2, Power, FileText, Tag,
-  Plus, Pencil, GitFork, Globe, Lock, Users,
+  Plus, Pencil, GitFork, Globe, Lock, Users, Flame,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import type { Skill } from '@/types';
@@ -484,7 +484,7 @@ function SkillRow({
             <span>{skill.slug} · v{skill.version}</span>
             {installCount > 0 && (
               <span className={`flex items-center gap-0.5 ${isHot ? 'text-brand-bright' : ''}`}>
-                {isHot && '🔥'}
+                {isHot && <Flame size={9} className="text-semantic-amber" />}
                 <Users size={9} /> {installCount}
               </span>
             )}

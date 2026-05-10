@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, FileText } from 'lucide-react';
+import {
+  Sparkles, FileText, Lightbulb,
+  Target, Wrench, DollarSign, HandshakeIcon, Bot,
+  type LucideIcon,
+} from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -11,12 +15,12 @@ interface Props {
   onClose: () => void;
 }
 
-const ROLE_OPTIONS: Array<{ value: AgentRole; label: string; icon: string }> = [
-  { value: 'sales', label: 'Vendas', icon: '🎯' },
-  { value: 'support', label: 'Suporte', icon: '🛠️' },
-  { value: 'finance', label: 'Financeiro', icon: '💰' },
-  { value: 'retention', label: 'Retenção', icon: '🤝' },
-  { value: 'generic', label: 'Genérico', icon: '🤖' },
+const ROLE_OPTIONS: Array<{ value: AgentRole; label: string; Icon: LucideIcon; tint: string }> = [
+  { value: 'sales',     label: 'Vendas',     Icon: Target,        tint: 'text-semantic-green' },
+  { value: 'support',   label: 'Suporte',    Icon: Wrench,        tint: 'text-semantic-blue' },
+  { value: 'finance',   label: 'Financeiro', Icon: DollarSign,    tint: 'text-semantic-amber' },
+  { value: 'retention', label: 'Retenção',   Icon: HandshakeIcon, tint: 'text-brand-bright' },
+  { value: 'generic',   label: 'Genérico',   Icon: Bot,           tint: 'text-creme-mute' },
 ];
 
 export function NewAgentModal({ onClose }: Props) {
@@ -170,9 +174,12 @@ export function NewAgentModal({ onClose }: Props) {
       ) : (
         <div className="space-y-4">
           {selectedTemplate && selectedTemplate !== 'blank' && (
-            <div className="text-[12.5px] text-brand-bright bg-brand/10 border border-brand/30 rounded-lg px-3 py-2">
-              ✨ Template <span className="font-bold">{templates.find((t) => t.slug === selectedTemplate)?.name}</span> aplicado.
-              Customize abaixo conforme o cliente.
+            <div className="flex items-center gap-2 text-[12.5px] text-brand-bright bg-brand/10 border border-brand/30 rounded-lg px-3 py-2">
+              <Sparkles size={13} className="shrink-0" />
+              <span>
+                Template <span className="font-bold">{templates.find((t) => t.slug === selectedTemplate)?.name}</span> aplicado.
+                Customize abaixo conforme o cliente.
+              </span>
             </div>
           )}
 
@@ -184,7 +191,7 @@ export function NewAgentModal({ onClose }: Props) {
               <option value="">— sem papel definido —</option>
               {ROLE_OPTIONS.map((r) => (
                 <option key={r.value} value={r.value}>
-                  {r.icon}  {r.label}
+                  {r.label}
                 </option>
               ))}
             </select>
@@ -254,8 +261,11 @@ export function NewAgentModal({ onClose }: Props) {
               placeholder="Descreva o comportamento, identidade, fluxo padrão e regras de escalonamento do colaborador..."
             />
             {selectedTemplate && selectedTemplate !== 'blank' && prompt.includes('{') && (
-              <p className="text-[12px] text-creme-faint mt-1">
-                💡 Substitua os marcadores entre chaves (ex: <span className="font-mono">{'{NOME_AGENTE}'}</span>) pelos valores reais do cliente.
+              <p className="flex items-start gap-1.5 text-[12px] text-creme-faint mt-1">
+                <Lightbulb size={12} className="shrink-0 mt-0.5 text-semantic-amber" />
+                <span>
+                  Substitua os marcadores entre chaves (ex: <span className="font-mono">{'{NOME_AGENTE}'}</span>) pelos valores reais do cliente.
+                </span>
               </p>
             )}
           </div>
