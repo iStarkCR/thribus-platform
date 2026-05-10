@@ -50,13 +50,10 @@ export const MODEL_OPTIONS: ModelOption[] = [
     provider: 'anthropic',
     verified: true,
   },
-  {
-    id: 'claude-3-5-sonnet-latest',
-    label: 'claude-3-5-sonnet-latest',
-    badge: 'alias estável',
-    provider: 'anthropic',
-    verified: true,
-  },
+  // Removido em 2026-05-09: o alias `claude-3-5-sonnet-latest` foi
+  // descontinuado pela Anthropic (3.5 Sonnet deprecated). Retorna 404
+  // em runtime. Pra modelo "estável", usar `claude-sonnet-4-5-20250929`
+  // direto até que a Anthropic publique um alias 4.5+ ou similar.
 
   // ─── OpenAI ────────────────────────────────────────────────────────────────
   { id: 'gpt-5',       label: 'gpt-5',                        provider: 'openai', verified: true },

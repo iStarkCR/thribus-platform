@@ -10,7 +10,6 @@ export type AIModel =
   //    pra dropdowns + pricing). Adicionar ID aqui sem testar contra
   //    /v1/models do provedor quebra o worker em runtime com 404.
   | 'claude-sonnet-4-5-20250929'    // Sonnet 4.5 (recomendado)
-  | 'claude-3-5-sonnet-latest'      // alias estável (sempre o Sonnet atual)
   | 'claude-haiku-4-5-20251001'
   // OpenAI
   | 'gpt-5'

@@ -19,7 +19,6 @@ interface ModelPrice {
 const PRICING: Record<AIModel, ModelPrice> = {
   // ─── Anthropic ─────────────────────────────────────────────────────────────
   'claude-sonnet-4-5-20250929': { input: 3.00,  output: 15.00, cachedInput: 0.30 },
-  'claude-3-5-sonnet-latest':  { input: 3.00,  output: 15.00, cachedInput: 0.30 },
   'claude-haiku-4-5-20251001':{ input: 1.00,  output:  5.00, cachedInput: 0.10 },
 
   // ─── OpenAI ────────────────────────────────────────────────────────────────
