@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
   BarChart3, TrendingUp, TrendingDown, Activity, Zap,
-  Clock, Wrench, Users, DollarSign, CheckCircle2,
+  Clock, Wrench, Users, DollarSign, CheckCircle2, AlertTriangle, XCircle,
+  Cpu, Database,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { resolveCost, usdToBrl } from '@/lib/pricing';
@@ -122,6 +123,37 @@ export function MetricsPage() {
 
   const maxDayCount = Math.max(...dailyBuckets.map((d) => d.count), 1);
 
+  // ─── Breakdown por modelo (cost por model) ─────────────────────────────────
+  const byModel = useMemo(() => {
+    const acc: Record<string, { count: number; cost: number; tokens: number }> = {};
+    for (const e of executions.filter((x) => inRange(x.timestamp, range))) {
+      const key = (e.model as string) || 'desconhecido';
+      if (!acc[key]) acc[key] = { count: 0, cost: 0, tokens: 0 };
+      acc[key].count++;
+      acc[key].cost += computeCost(e);
+      acc[key].tokens += e.tokensUsed;
+    }
+    return Object.entries(acc)
+      .map(([model, data]) => ({ model, ...data }))
+      .sort((a, b) => b.cost - a.cost);
+  }, [executions, range]);
+
+  // ─── Cache efficiency ──────────────────────────────────────────────────────
+  const cacheStats = useMemo(() => {
+    const inSel = executions.filter((x) => inRange(x.timestamp, range));
+    const cached = inSel.reduce((s, e) => s + (e.cacheReadTokens ?? 0), 0);
+    const total = inSel.reduce((s, e) => s + e.tokensUsed, 0) + cached;
+    const pct = total > 0 ? (cached / total) * 100 : 0;
+    // Estimativa de economia: cache_read custa ~10% do input normal pra Anthropic
+    // (90% off). Pra Sonnet 4.5: input $3/M, cache_read $0.30/M → economia $2.70/M.
+    // Heurística simplificada: assume Sonnet 4.5 e calcula economia bruta.
+    const savedUsd = (cached / 1_000_000) * 2.70;
+    return { cached, total, pct, savedUsd };
+  }, [executions, range]);
+
+  // ─── Linha de custo diário (SVG sparkline) ─────────────────────────────────
+  const maxDayCost = Math.max(...dailyBuckets.map((d) => d.cost), 0.0001);
+
   return (
     <>
       <div className="flex items-center justify-between mb-4">
@@ -223,6 +255,172 @@ export function MetricsPage() {
         </div>
       </div>
 
+      {/* ─── Linha de custo diário (SVG) ───────────────────────────────── */}
+      <div className="bg-surface-2 border border-default rounded-[10px] p-5 mb-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <DollarSign size={14} className="text-semantic-red" />
+            <h3 className="text-[14px] font-bold text-creme">Custo diário</h3>
+          </div>
+          <span className="text-[12px] text-creme-faint font-mono">
+            pico: ${maxDayCost.toFixed(2)}
+          </span>
+        </div>
+        {dailyBuckets.length > 0 ? (
+          <svg viewBox={`0 0 ${dailyBuckets.length * 60} 100`} className="w-full h-[140px]" preserveAspectRatio="none">
+            {/* Linha de custo */}
+            <polyline
+              fill="none"
+              stroke="rgb(239 68 68)"
+              strokeWidth="2"
+              points={dailyBuckets.map((d, i) => {
+                const x = i * 60 + 30;
+                const y = 90 - (d.cost / maxDayCost) * 80;
+                return `${x},${y}`;
+              }).join(' ')}
+            />
+            {/* Area fill sob a linha */}
+            <polygon
+              fill="rgb(239 68 68 / 0.1)"
+              points={[
+                `${30},${90}`,
+                ...dailyBuckets.map((d, i) => {
+                  const x = i * 60 + 30;
+                  const y = 90 - (d.cost / maxDayCost) * 80;
+                  return `${x},${y}`;
+                }),
+                `${(dailyBuckets.length - 1) * 60 + 30},${90}`,
+              ].join(' ')}
+            />
+            {/* Pontos */}
+            {dailyBuckets.map((d, i) => {
+              const x = i * 60 + 30;
+              const y = 90 - (d.cost / maxDayCost) * 80;
+              return (
+                <g key={d.date}>
+                  <circle cx={x} cy={y} r="3" fill="rgb(239 68 68)" />
+                  <text x={x} y={98} fontSize="9" textAnchor="middle" fill="rgb(160 160 160)" fontFamily="monospace">
+                    {d.label}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        ) : (
+          <p className="text-[13px] text-creme-faint italic">Sem dados no período.</p>
+        )}
+      </div>
+
+      {/* ─── Linha 3 — Status breakdown + Modelo breakdown + Cache efficiency ─ */}
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        {/* Status breakdown — barra segmentada */}
+        <div className="bg-surface-2 border border-default rounded-[10px] p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity size={14} className="text-brand" />
+            <h3 className="text-[14px] font-bold text-creme">Status · {range.label}</h3>
+          </div>
+          {stats.total > 0 ? (
+            <>
+              <div className="h-2 rounded-full overflow-hidden flex bg-surface-1 mb-3">
+                {stats.resolved > 0 && (
+                  <div
+                    className="bg-semantic-green"
+                    style={{ width: `${(stats.resolved / stats.total) * 100}%` }}
+                    title={`${stats.resolved} resolvidos`}
+                  />
+                )}
+                {stats.escalated > 0 && (
+                  <div
+                    className="bg-semantic-amber"
+                    style={{ width: `${(stats.escalated / stats.total) * 100}%` }}
+                    title={`${stats.escalated} escalados`}
+                  />
+                )}
+                {stats.failed > 0 && (
+                  <div
+                    className="bg-semantic-red"
+                    style={{ width: `${(stats.failed / stats.total) * 100}%` }}
+                    title={`${stats.failed} falhas`}
+                  />
+                )}
+              </div>
+              <div className="space-y-1.5 text-[12.5px]">
+                <StatusRow icon={<CheckCircle2 size={11} />} color="text-semantic-green" label="Resolvidos" count={stats.resolved} total={stats.total} />
+                <StatusRow icon={<AlertTriangle size={11} />} color="text-semantic-amber" label="Escalados" count={stats.escalated} total={stats.total} />
+                <StatusRow icon={<XCircle size={11} />} color="text-semantic-red" label="Falhas" count={stats.failed} total={stats.total} />
+              </div>
+            </>
+          ) : (
+            <p className="text-[13px] text-creme-faint italic">Sem execuções no período.</p>
+          )}
+        </div>
+
+        {/* Modelo breakdown */}
+        <div className="bg-surface-2 border border-default rounded-[10px] p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Cpu size={14} className="text-brand" />
+            <h3 className="text-[14px] font-bold text-creme">Custo por modelo</h3>
+          </div>
+          {byModel.length === 0 ? (
+            <p className="text-[13px] text-creme-faint italic">Sem dados.</p>
+          ) : (
+            <div className="space-y-2">
+              {byModel.slice(0, 5).map((m) => {
+                const max = byModel[0].cost || 1;
+                const pct = (m.cost / max) * 100;
+                return (
+                  <div key={m.model} className="space-y-1">
+                    <div className="flex items-center justify-between text-[12px]">
+                      <span className="font-mono text-creme-dim truncate" title={m.model}>
+                        {m.model.replace('claude-', '').replace('-20250929', '').replace('-20251001', '').slice(0, 22)}
+                      </span>
+                      <span className="font-mono text-semantic-red shrink-0 ml-2">${m.cost.toFixed(3)}</span>
+                    </div>
+                    <div className="h-1.5 bg-surface-1 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-semantic-red/40 to-semantic-red rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="text-[10.5px] text-creme-faint font-mono">
+                      {m.count} exec · {(m.tokens / 1000).toFixed(1)}k tok
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Cache efficiency */}
+        <div className="bg-gradient-to-br from-semantic-green/10 to-transparent border border-semantic-green/20 rounded-[10px] p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Database size={14} className="text-semantic-green" />
+            <h3 className="text-[14px] font-bold text-creme">Eficiência do cache</h3>
+          </div>
+          <div className="text-[36px] font-extrabold text-semantic-green leading-none mb-1 font-mono">
+            {cacheStats.pct.toFixed(1)}%
+          </div>
+          <p className="text-[11.5px] text-creme-faint mb-3">
+            de tokens lidos do cache (Anthropic, ~90% off)
+          </p>
+          <div className="space-y-1 text-[12px] font-mono">
+            <div className="flex justify-between">
+              <span className="text-creme-faint">Cached:</span>
+              <span className="text-creme-dim">{(cacheStats.cached / 1000).toFixed(1)}k tok</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-creme-faint">Total:</span>
+              <span className="text-creme-dim">{(cacheStats.total / 1000).toFixed(1)}k tok</span>
+            </div>
+            <div className="flex justify-between pt-1.5 border-t border-default">
+              <span className="text-semantic-green">Economia est.:</span>
+              <span className="text-semantic-green font-bold">${cacheStats.savedUsd.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ─── Top tools + Top agentes (lado a lado) ──────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-surface-2 border border-default rounded-[10px] p-5">
@@ -307,6 +505,30 @@ const ACCENT_ICON: Record<Accent, string> = {
   muted: 'bg-surface-3 text-creme-mute',
   danger: 'bg-semantic-red/15 text-semantic-red',
 };
+
+// ─── StatusRow — helper pra linha de status no breakdown ──────────────────
+function StatusRow({
+  icon, color, label, count, total,
+}: {
+  icon: React.ReactNode;
+  color: string;
+  label: string;
+  count: number;
+  total: number;
+}) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  return (
+    <div className="flex items-center justify-between">
+      <span className={`flex items-center gap-1.5 ${color}`}>
+        {icon}
+        <span>{label}</span>
+      </span>
+      <span className="font-mono text-creme-dim">
+        {count} <span className="text-creme-faint">({pct}%)</span>
+      </span>
+    </div>
+  );
+}
 
 function KpiCard({
   icon,
