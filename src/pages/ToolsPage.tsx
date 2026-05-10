@@ -207,15 +207,24 @@ export function ToolsPage() {
             </div>
           )}
 
-          {/* Pastas por escopo */}
-          <div className="space-y-3">
+          {/* Pastas por escopo — grid 2 cols quando colapsadas, ocupa largura cheia quando expandida */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 auto-rows-min">
             {grouped.map(([scopeKey, { name: scopeName, tools: list, isExtra }]) => {
               const isOpen = !collapsed.has(scopeKey);
               const isGlobal = scopeKey === 'global';
               const FolderIcon = isOpen ? FolderOpen : Folder;
               const isEmpty = list.length === 0;
+              // Pasta expandida com muitas ferramentas ocupa largura cheia
+              // pra dar espaço pros cards internos respirarem
+              const expandedWide = isOpen && list.length >= 4;
               return (
-                <div key={scopeKey} className="bg-surface-1 border border-default rounded-[10px] overflow-hidden">
+                <div
+                  key={scopeKey}
+                  className={clsx(
+                    'bg-surface-1 border border-default rounded-[10px] overflow-hidden',
+                    expandedWide && 'lg:col-span-2',
+                  )}
+                >
                   {/* Header — toggle */}
                   <div className="w-full flex items-center hover:bg-surface-hover transition-colors">
                     <button
@@ -273,7 +282,16 @@ export function ToolsPage() {
                     </div>
                   )}
                   {isOpen && !isEmpty && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3 bg-surface-0/50">
+                    <div
+                      className={clsx(
+                        'grid gap-2.5 p-3 bg-surface-0/50',
+                        // Pasta expandida wide (4+ tools, col-span-2): mais colunas internas
+                        expandedWide
+                          ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                          // Pasta em coluna normal (1 col-span): 2 cards lado a lado
+                          : 'grid-cols-1 sm:grid-cols-2',
+                      )}
+                    >
                       {list.map((t) => {
                         const iconKey = getToolIcon(t.name);
                         const Icon = ICON_MAP[iconKey] || Server;

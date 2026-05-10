@@ -8,12 +8,64 @@ import { useAppStore } from '@/hooks/useAppStore';
 import { resolveCost } from '@/lib/pricing';
 import type { Execution, ExecutionStatus } from '@/types';
 
-const STATUS_CONFIG: Record<ExecutionStatus, { icon: typeof Check; label: string; color: string; bg: string }> = {
-  resolved: { icon: Check, label: 'Resolvido', color: 'text-semantic-green', bg: 'bg-semantic-green/10' },
-  escalated: { icon: ArrowUpRight, label: 'Escalado', color: 'text-semantic-amber', bg: 'bg-semantic-amber/10' },
-  failed: { icon: X, label: 'Falha', color: 'text-semantic-red', bg: 'bg-semantic-red/10' },
-  running: { icon: Activity, label: 'Executando', color: 'text-semantic-blue', bg: 'bg-semantic-blue/10' },
+const STATUS_CONFIG: Record<ExecutionStatus, {
+  icon: typeof Check;
+  label: string;
+  color: string;
+  bg: string;
+  /** Borda esquerda colorida (4px) — sinaliza importância da row no scan visual */
+  borderLeft: string;
+  /** Background tonal sutil aplicado na row inteira */
+  rowBg: string;
+}> = {
+  resolved: {
+    icon: Check, label: 'Resolvido',
+    color: 'text-semantic-green', bg: 'bg-semantic-green/10',
+    borderLeft: 'border-l-semantic-green', rowBg: 'hover:bg-semantic-green/[0.04]',
+  },
+  escalated: {
+    icon: ArrowUpRight, label: 'Escalado',
+    color: 'text-semantic-amber', bg: 'bg-semantic-amber/10',
+    borderLeft: 'border-l-semantic-amber', rowBg: 'bg-semantic-amber/[0.03] hover:bg-semantic-amber/[0.07]',
+  },
+  failed: {
+    icon: X, label: 'Falha',
+    color: 'text-semantic-red', bg: 'bg-semantic-red/10',
+    borderLeft: 'border-l-semantic-red', rowBg: 'bg-semantic-red/[0.04] hover:bg-semantic-red/[0.08]',
+  },
+  running: {
+    icon: Activity, label: 'Executando',
+    color: 'text-semantic-blue', bg: 'bg-semantic-blue/10',
+    borderLeft: 'border-l-semantic-blue', rowBg: 'bg-semantic-blue/[0.03] hover:bg-semantic-blue/[0.07]',
+  },
 };
+
+/** Formata timestamp como "HH:mm" se hoje, "DD/MM HH:mm" se outro dia. */
+function formatLogTime(ts: string): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.getDate() === now.getDate()
+    && d.getMonth() === now.getMonth()
+    && d.getFullYear() === now.getFullYear();
+  if (sameDay) {
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function shortModel(model: string | undefined): string {
+  if (!model) return '—';
+  // claude-sonnet-4-5-20250929 → sonnet-4-5
+  // claude-haiku-4-5-20251001 → haiku-4-5
+  // claude-opus-4-7 → opus-4-7
+  // gpt-4o-mini → gpt-4o-mini
+  if (model.startsWith('claude-')) {
+    const parts = model.split('-');
+    // claude-{family}-{ver}-{ver}-{date?}
+    return parts.slice(1, 4).join('-');
+  }
+  return model;
+}
 
 type StatusFilter = 'all' | ExecutionStatus;
 
@@ -92,11 +144,11 @@ export function LogsPage() {
             {(totalTokens / 1000).toFixed(1)}<span className="text-[14px] text-creme-mute">k</span>
           </div>
         </div>
-        <div className="bg-surface-2 border border-default rounded-[10px] p-4">
+        <div className="bg-gradient-to-br from-semantic-red/12 to-semantic-red/4 border border-semantic-red/30 rounded-[10px] p-4">
           <div className="text-[12px] uppercase tracking-wider text-creme-faint font-bold mb-1">
             Custo Total
           </div>
-          <div className="text-[24px] font-extrabold text-creme tracking-tight font-mono">
+          <div className="text-[24px] font-extrabold text-semantic-red tracking-tight font-mono">
             $<span>{totalCost.toFixed(4)}</span>
           </div>
           <div className="text-[10px] text-creme-faint mt-1">
@@ -165,11 +217,11 @@ export function LogsPage() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table — colunas: Colaborador, Status, Modelo, Tools, Tempo, Tokens, Cache, Custo, Quando */}
       <div className="bg-surface-2 border border-default rounded-[10px] overflow-hidden">
-        <div className="grid grid-cols-[2.2fr_1.2fr_.9fr_.7fr_.7fr_.7fr_.6fr] px-5 py-2.5 bg-surface-1 border-b border-default">
-          {['Colaborador', 'Status', 'Tools', 'Tempo', 'Tokens', 'Custo', 'Há'].map((h) => (
-            <div key={h} className="text-[12px] font-bold uppercase tracking-wider text-creme-faint">
+        <div className="grid grid-cols-[2fr_1.1fr_.9fr_.6fr_.6fr_.7fr_.6fr_.7fr_.7fr] px-5 py-2.5 bg-surface-1 border-b border-default border-l-4 border-l-transparent">
+          {['Colaborador', 'Status', 'Modelo', 'Tools', 'Tempo', 'Tokens', 'Cache', 'Custo', 'Quando'].map((h) => (
+            <div key={h} className="text-[11.5px] font-bold uppercase tracking-wider text-creme-faint">
               {h}
             </div>
           ))}
@@ -188,10 +240,16 @@ export function LogsPage() {
           const sc = STATUS_CONFIG[e.status];
           const StatusIcon = sc.icon;
           const isSupport = e.agentName.includes('Suporte');
+          const cacheTokens = e.cacheReadTokens ?? 0;
+          const hasCache = cacheTokens > 0;
           return (
             <div
               key={e.id}
-              className="grid grid-cols-[2.2fr_1.2fr_.9fr_.7fr_.7fr_.7fr_.6fr] px-5 py-3 border-b border-default last:border-b-0 items-center hover:bg-surface-hover transition-colors"
+              className={clsx(
+                'grid grid-cols-[2fr_1.1fr_.9fr_.6fr_.6fr_.7fr_.6fr_.7fr_.7fr] px-5 py-3 border-b border-default last:border-b-0 items-center transition-colors border-l-4',
+                sc.borderLeft,
+                sc.rowBg,
+              )}
             >
               <div className="flex items-center gap-2.5">
                 <div
@@ -203,26 +261,40 @@ export function LogsPage() {
                   {isSupport ? <Shield size={13} /> : <Calendar size={13} />}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[14.5px] font-semibold text-creme truncate">
+                  <div className="text-[14px] font-semibold text-creme truncate">
                     {e.agentName}
                   </div>
-                  <div className="text-[12.5px] text-creme-faint truncate">
+                  <div className="text-[12px] text-creme-faint truncate">
                     {e.clientName} · {e.customerName}
                   </div>
                 </div>
               </div>
-              <div className={clsx('flex items-center gap-1.5 text-[13.5px] font-semibold', sc.color)}>
+              <div className={clsx('flex items-center gap-1.5 text-[13px] font-semibold', sc.color)}>
                 <span className={clsx('w-6 h-6 rounded-md flex items-center justify-center', sc.bg)}>
                   <StatusIcon size={12} />
                 </span>
                 {sc.label}
               </div>
-              <div className="text-xs font-mono text-brand">{e.toolsUsed.length} tools</div>
+              <div className="text-[11.5px] font-mono text-creme-dim truncate" title={e.model || '—'}>
+                {shortModel(e.model)}
+              </div>
+              <div className="text-xs font-mono text-brand">
+                {e.toolsUsed.length > 0 ? `${e.toolsUsed.length}` : '—'}
+              </div>
               <div className="text-xs font-mono text-creme-dim">{e.responseTime}s</div>
               <div className="text-xs font-mono text-creme-dim">{e.tokensUsed.toLocaleString()}</div>
+              <div
+                className={clsx(
+                  'text-xs font-mono',
+                  hasCache ? 'text-semantic-green' : 'text-creme-faint',
+                )}
+                title={hasCache ? `${cacheTokens.toLocaleString()} tokens lidos do cache` : 'Sem cache hit'}
+              >
+                {hasCache ? `${(cacheTokens / 1000).toFixed(1)}k` : '—'}
+              </div>
               <div className="text-xs font-mono text-creme-dim">${computeCost(e).toFixed(4)}</div>
-              <div className="text-[13px] font-mono text-creme-faint">
-                {Math.round((Date.now() - new Date(e.timestamp).getTime()) / 60000)}m
+              <div className="text-[12px] font-mono text-creme-faint" title={new Date(e.timestamp).toLocaleString('pt-BR')}>
+                {formatLogTime(e.timestamp)}
               </div>
             </div>
           );
