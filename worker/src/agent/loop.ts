@@ -35,6 +35,7 @@ import {
 import { buildHandoffSummary } from './handoff-summary.js';
 import { getToolInputSchema } from './tool-schemas.js';
 import { pickApiKey, pickApiKeyByProvider } from '../llm/keys.js';
+import { calculateCost } from '../llm/cost.js';
 import { routeMessage } from './router.js';
 import { enrichWithSkills } from './skill-loader.js';
 
@@ -541,6 +542,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   let totalTokensIn = 0;
   let totalTokensOut = 0;
   let cacheReadTokens = 0;
+  let totalCostUsd = 0;
   let finalText: string | null = null;
   let exitReason: 'resolved' | 'escalated' | 'failed' | 'transferred' = 'failed';
 
@@ -587,6 +589,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     totalTokensIn += response.usage.inputTokens;
     totalTokensOut += response.usage.outputTokens;
     cacheReadTokens += response.usage.cacheReadTokens;
+    totalCostUsd += calculateCost(response.usage, agent.model);
 
     // ── Tool use ──────────────────────────────────────────────────────────
     if (response.stopReason === 'tool_use' && response.toolCalls.length > 0) {
@@ -747,6 +750,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         totalTokensIn += finalResponse.usage.inputTokens;
         totalTokensOut += finalResponse.usage.outputTokens;
         cacheReadTokens += finalResponse.usage.cacheReadTokens;
+        totalCostUsd += calculateCost(finalResponse.usage, agent.model);
 
         if (finalResponse.text) {
           finalText = finalResponse.text;
@@ -980,7 +984,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
 
   const durationMs = Date.now() - start;
   console.log(
-    `[loop] done leadId=${job.leadId} status=${exitReason} tools=[${toolsUsed.join(',')}] tokens=${totalTokensIn + totalTokensOut} cacheRead=${cacheReadTokens} ms=${durationMs}`,
+    `[loop] done leadId=${job.leadId} status=${exitReason} tools=[${toolsUsed.join(',')}] tokens=${totalTokensIn + totalTokensOut} cacheRead=${cacheReadTokens} cost=$${totalCostUsd.toFixed(5)} ms=${durationMs}`,
   );
 
   // Mapeia 'transferred' (M2) pra 'resolved' no save — schema da execution
@@ -1001,6 +1005,9 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     responseTimeMs: durationMs,
     totalTokens: totalTokensIn + totalTokensOut,
     cacheReadTokens,
+    // Cost EXATO — soma das 4 categorias de tokens (input/output/cache_read/cache_creation)
+    // × pricing por categoria. Frontend usa direto (sem estimar) via `resolveCost`.
+    costUsd: totalCostUsd,
   });
 
   // Se escalou, registra na tabela escalations
