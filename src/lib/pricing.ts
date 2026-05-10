@@ -30,42 +30,62 @@ const PRICING: Record<AIModel, ModelPrice> = {
   'gpt-4o-mini':              { input: 0.15,  output:  0.60 },
 };
 
-// Heurística: turnos típicos têm ~80% input / ~20% output.
-// Em conversas com tools, o ratio fica perto disso por causa do system prompt
-// que é grande e repetido (input alto) vs respostas curtas pro WhatsApp (output baixo).
-const INPUT_RATIO = 0.8;
-const OUTPUT_RATIO = 0.2;
+// Heurística pra split input/output dentro de `total_tokens`.
+//
+// IMPORTANTE: `total_tokens` no DB do worker é apenas (input_uncached + output_tokens) —
+// NÃO inclui `cache_read_tokens` (vem em coluna separada). Cache_read é input cacheado
+// cobrado a parte (~10% do input normal pra Anthropic).
+//
+// Pra Bianca/agentes conversacionais pt-BR no WhatsApp:
+// - input_uncached é sempre maior (histórico crescente, msg do user)
+// - output é pequeno (~50-300 tokens — resposta curta pra WhatsApp)
+// - Ratio 85/15 reflete melhor que 80/20 do design original
+const INPUT_RATIO = 0.85;
+const OUTPUT_RATIO = 0.15;
 
 /**
- * Estima o custo em USD de uma execução a partir do total de tokens e do modelo.
+ * Estima o custo em USD de uma execução a partir dos tokens reportados pelo worker.
  *
- * - Se `cacheReadTokens` é informado e o modelo suporta cache (Anthropic),
- *   aplica desconto de 90% sobre os tokens cacheados.
- * - Quando não há ratio in/out separado, assume 80/20.
+ * Fórmula:
+ *   custo = input_uncached × $input  +  cache_read × $cachedInput  +  output × $output
  *
- * Erro esperado: ±15% pra mais ou pra menos vs cálculo exato. Suficiente pra
- * margem operacional / dashboard.
+ * Onde:
+ *   - `total_tokens` (param) = input_uncached + output (NÃO inclui cache_read)
+ *   - `cache_read_tokens` (param) = input cacheado, cobrado separado a $cachedInput/MTok
+ *
+ * Anthropic models têm `cachedInput` no PRICING (~10% do input). OpenAI não tem
+ * preço diferenciado pra cache (a API faz desconto automático invisível >1024 tok),
+ * então pra OpenAI tratamos cache_read como input normal (sem desconto).
+ *
+ * Esta função SUBESTIMA ainda em relação ao real porque NÃO contabiliza
+ * `cache_creation_input_tokens` (Anthropic cobra 25% mais caro que input ao criar
+ * o cache). Quando o worker passar a calcular custo exato e gravar em
+ * `executions.cost_usd`, o `resolveCost` usa o valor real direto do DB.
+ *
+ * Erro esperado vs cobrança real: -30% a +10% (subestima se cache_creation é
+ * frequente, ok caso contrário). Ordem de magnitude correta.
  */
 export function estimateCost(
   totalTokens: number,
   model: AIModel | string | undefined,
   cacheReadTokens = 0,
 ): number {
-  if (!totalTokens || totalTokens <= 0) return 0;
+  if ((!totalTokens || totalTokens <= 0) && (!cacheReadTokens || cacheReadTokens <= 0)) return 0;
   const price = (model && PRICING[model as AIModel]) || PRICING['gpt-4o-mini'];
 
-  const inputTokens  = totalTokens * INPUT_RATIO;
-  const outputTokens = totalTokens * OUTPUT_RATIO;
+  const inputUncached = Math.max(totalTokens, 0) * INPUT_RATIO;
+  const output        = Math.max(totalTokens, 0) * OUTPUT_RATIO;
 
-  // Cache hit: reduz custo de input em 90% pros tokens cacheados (Anthropic)
-  const cachedTokens = price.cachedInput ? Math.min(cacheReadTokens, inputTokens) : 0;
-  const uncachedInput = Math.max(inputTokens - cachedTokens, 0);
+  // Cache_read é input cacheado, cobrado a parte. Sem cap em totalTokens — o DB
+  // mostra empíricamente cache_read MAIOR que total_tokens em conversas com
+  // system prompt grande (Bianca: 4.4M total vs 6.9M cache_read em 30d).
+  const cachedRate = price.cachedInput ?? price.input; // OpenAI não tem cached: usa input
+  const cachedCost = (Math.max(cacheReadTokens, 0) / 1_000_000) * cachedRate;
 
-  const inputCost  = (uncachedInput / 1_000_000) * price.input
-                   + (cachedTokens   / 1_000_000) * (price.cachedInput ?? price.input);
-  const outputCost = (outputTokens / 1_000_000) * price.output;
+  const inputCost  = (inputUncached / 1_000_000) * price.input;
+  const outputCost = (output / 1_000_000) * price.output;
 
-  return inputCost + outputCost;
+  return inputCost + cachedCost + outputCost;
 }
 
 /**

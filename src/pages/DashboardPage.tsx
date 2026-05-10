@@ -3,52 +3,56 @@ import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   Bot, MessageSquare, CheckCircle, ArrowUpRight, ChevronRight,
-  AlertTriangle, Users, DollarSign, Clock, Zap, Wrench, TrendingUp,
+  DollarSign, Clock, Zap, Wrench, TrendingUp, TrendingDown,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { AgentCard } from '@/components/agents/AgentCard';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
 import { resolveCost, usdToBrl } from '@/lib/pricing';
+import { resolveRange, previousPeriod, inRange, type RangeKey } from '@/lib/dateRanges';
+import { DateRangeFilter } from '@/components/shared/DateRangeFilter';
 import type { Agent, Execution } from '@/types';
 
 export function DashboardPage() {
-  const { agents, metrics, escalations, executions } = useAppStore();
+  const { agents, metrics, executions } = useAppStore();
   const navigate = useNavigate();
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [rangeKey, setRangeKey] = useState<RangeKey>('today');
+  const range = resolveRange(rangeKey);
+  const prevRange = previousPeriod(range);
 
   // ─── Computações em runtime ─────────────────────────────────────────────
   const computeCost = (e: Execution): number =>
     resolveCost(e.cost ?? 0, e.tokensUsed, e.model, e.cacheReadTokens ?? 0);
 
   const stats = useMemo(() => {
-    const now = Date.now();
     const day = 24 * 60 * 60 * 1000;
-    const startToday = new Date();
-    startToday.setHours(0, 0, 0, 0);
+    const inSel = (e: Execution) => inRange(e.timestamp, range);
+    const inPrev = (e: Execution) => inRange(e.timestamp, prevRange);
 
-    const todayExecs = executions.filter(
-      (e) => new Date(e.timestamp).getTime() >= startToday.getTime(),
-    );
-    const last7Execs = executions.filter(
-      (e) => new Date(e.timestamp).getTime() >= now - 7 * day,
-    );
+    const selectedExecs = executions.filter(inSel);
+    const prevExecs = executions.filter(inPrev);
 
-    const costToday = todayExecs.reduce((s, e) => s + computeCost(e), 0);
-    const costLast7d = last7Execs.reduce((s, e) => s + computeCost(e), 0);
-    const avgRespToday = todayExecs.length > 0
-      ? todayExecs.reduce((s, e) => s + e.responseTime, 0) / todayExecs.length
+    const cost = selectedExecs.reduce((s, e) => s + computeCost(e), 0);
+    const prevCost = prevExecs.reduce((s, e) => s + computeCost(e), 0);
+    const costDelta = prevCost > 0 ? ((cost - prevCost) / prevCost) * 100 : null;
+
+    const avgResp = selectedExecs.length > 0
+      ? selectedExecs.reduce((s, e) => s + e.responseTime, 0) / selectedExecs.length
       : 0;
-    const tokensToday = todayExecs.reduce((s, e) => s + e.tokensUsed, 0);
+    const tokens = selectedExecs.reduce((s, e) => s + e.tokensUsed, 0);
 
-    // Top tool today
+    // Top tool no período
     const toolCount: Record<string, number> = {};
-    for (const e of todayExecs) {
+    for (const e of selectedExecs) {
       for (const t of e.toolsUsed ?? []) toolCount[t] = (toolCount[t] ?? 0) + 1;
     }
-    const topToolToday = Object.entries(toolCount).sort((a, b) => b[1] - a[1])[0];
+    const topTool = Object.entries(toolCount).sort((a, b) => b[1] - a[1])[0];
 
-    // Sparkline últimos 7 dias
+    // Sparkline — últimos 7 dias (sempre 7d, independente do filtro principal,
+    // pra dar contexto histórico curto)
     const dayBuckets: Array<{ label: string; count: number }> = [];
+    const now = Date.now();
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
@@ -65,19 +69,19 @@ export function DashboardPage() {
     }
     const maxBucket = Math.max(...dayBuckets.map((d) => d.count), 1);
 
-    // Tools usadas mais recentemente — proxy de saúde
     const lastExecution = executions[0];
     const lastExecutionAgo = lastExecution
       ? Math.round((now - new Date(lastExecution.timestamp).getTime()) / 60000)
       : null;
 
     return {
-      costToday, costLast7d, avgRespToday, tokensToday,
-      topToolToday, dayBuckets, maxBucket,
+      cost, prevCost, costDelta,
+      avgResp, tokens,
+      topTool, dayBuckets, maxBucket,
       lastExecutionAgo,
-      todayCount: todayExecs.length,
+      selectedCount: selectedExecs.length,
     };
-  }, [executions]);
+  }, [executions, range, prevRange]);
 
   const metricCards = [
     { icon: Bot, label: 'Colaboradores Ativos', value: metrics?.activeAgents ?? 0, trend: metrics?.trends.agents ?? 0, style: 'bg-brand/10 text-brand-bright' },
@@ -88,6 +92,15 @@ export function DashboardPage() {
 
   return (
     <>
+      {/* ─── Header com filtro temporal ─────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-[15px] font-bold text-creme">
+          Visão geral
+          <span className="text-[12px] font-normal text-creme-faint ml-2">· {range.label}</span>
+        </div>
+        <DateRangeFilter value={rangeKey} onChange={setRangeKey} />
+      </div>
+
       {/* ─── KPIs hero (4 cards principais) ───────────────────────────────── */}
       <div className="grid grid-cols-4 gap-3 mb-3">
         {metricCards.map((m) => {
@@ -117,45 +130,45 @@ export function DashboardPage() {
 
       {/* ─── KPIs operacionais (cards finos) ──────────────────────────────── */}
       <div className="grid grid-cols-5 gap-3 mb-6">
-        <MicroCard
-          icon={<DollarSign size={13} />}
-          label="Custo hoje"
-          value={`$${stats.costToday.toFixed(3)}`}
-          sub={`R$ ${usdToBrl(stats.costToday).toFixed(2)}`}
-          color="brand"
+        <CostMicroCard
+          label={`Custo · ${range.label}`}
+          value={`$${stats.cost.toFixed(stats.cost < 1 ? 3 : 2)}`}
+          sub={`R$ ${usdToBrl(stats.cost).toFixed(2)}`}
+          delta={stats.costDelta}
+          deltaContext={`vs ${prevRange.label.toLowerCase()}`}
         />
         <MicroCard
           icon={<DollarSign size={13} />}
-          label="Custo 7d"
-          value={`$${stats.costLast7d.toFixed(2)}`}
-          sub={`R$ ${usdToBrl(stats.costLast7d).toFixed(2)}`}
-          color="brand"
+          label="Custo período anterior"
+          value={`$${stats.prevCost.toFixed(stats.prevCost < 1 ? 3 : 2)}`}
+          sub={prevRange.label}
+          color="muted"
         />
         <MicroCard
           icon={<Clock size={13} />}
-          label="Tempo médio (hoje)"
-          value={stats.avgRespToday > 0 ? `${stats.avgRespToday.toFixed(1)}s` : '—'}
-          sub={`${stats.todayCount} turno${stats.todayCount !== 1 ? 's' : ''}`}
+          label="Tempo médio"
+          value={stats.avgResp > 0 ? `${stats.avgResp.toFixed(1)}s` : '—'}
+          sub={`${stats.selectedCount} turno${stats.selectedCount !== 1 ? 's' : ''}`}
           color="muted"
         />
         <MicroCard
           icon={<Zap size={13} />}
-          label="Tokens hoje"
-          value={stats.tokensToday > 0 ? `${(stats.tokensToday / 1000).toFixed(1)}k` : '—'}
-          sub="Input + output"
+          label="Tokens"
+          value={stats.tokens > 0 ? `${(stats.tokens / 1000).toFixed(1)}k` : '—'}
+          sub="input + output"
           color="muted"
         />
         <MicroCard
           icon={<Wrench size={13} />}
-          label="Top tool hoje"
-          value={stats.topToolToday ? stats.topToolToday[0] : '—'}
-          sub={stats.topToolToday ? `${stats.topToolToday[1]}x` : 'Sem chamadas'}
+          label="Top tool"
+          value={stats.topTool ? stats.topTool[0] : '—'}
+          sub={stats.topTool ? `${stats.topTool[1]}x` : 'Sem chamadas'}
           color="green"
           mono
         />
       </div>
 
-      {/* ─── Sparkline 7d ──────────────────────────────────────────────────── */}
+      {/* ─── Sparkline 7d (sempre 7d pra histórico curto) ──────────────── */}
       <div className="bg-surface-2 border border-default rounded-[10px] p-5 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -204,72 +217,33 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Agents + Escalations */}
-      <div className="grid grid-cols-[1fr_360px] gap-4 mb-6">
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
-              <Bot size={16} className="text-creme-mute" /> Colaboradores Digitais
+      {/* ─── Colaboradores Digitais (largura cheia) ───────────────────────── */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
+            <Bot size={16} className="text-creme-mute" /> Colaboradores Digitais
+          </div>
+          <button onClick={() => navigate('/agents')} className="text-[13px] text-creme-mute font-semibold hover:text-brand-bright transition-colors flex items-center gap-1">
+            Ver todos <ChevronRight size={12} />
+          </button>
+        </div>
+        {agents.length === 0 ? (
+          <div className="bg-surface-2 border border-default rounded-[10px] px-8 py-12 text-center">
+            <div className="w-12 h-12 rounded-xl bg-surface-3 border border-default flex items-center justify-center mx-auto mb-3">
+              <Bot size={20} className="text-creme-faint" />
             </div>
-            <button onClick={() => navigate('/agents')} className="text-[13px] text-creme-mute font-semibold hover:text-brand-bright transition-colors flex items-center gap-1">
-              Ver todos <ChevronRight size={12} />
+            <p className="text-[13.5px] text-creme-mute mb-3">Ainda não há colaboradores digitais</p>
+            <button onClick={() => navigate('/agents')} className="text-[13px] text-brand-bright font-semibold hover:underline">
+              Criar primeiro colaborador →
             </button>
           </div>
-          {agents.length === 0 ? (
-            <div className="bg-surface-2 border border-default rounded-[10px] px-8 py-12 text-center">
-              <div className="w-12 h-12 rounded-xl bg-surface-3 border border-default flex items-center justify-center mx-auto mb-3">
-                <Bot size={20} className="text-creme-faint" />
-              </div>
-              <p className="text-[13.5px] text-creme-mute mb-3">Ainda não há colaboradores digitais</p>
-              <button onClick={() => navigate('/agents')} className="text-[13px] text-brand-bright font-semibold hover:underline">
-                Criar primeiro colaborador →
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2.5">
-              {agents.map((a) => (
-                <AgentCard key={a.id} agent={a} onClick={() => setSelectedAgent(a)} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Escalations */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
-              <AlertTriangle size={16} className="text-creme-mute" /> Escalamentos Pendentes
-            </div>
-          </div>
-          <div className="bg-surface-2 border border-default rounded-[10px] overflow-hidden">
-            <div className="px-4 py-3 border-b border-default flex items-center justify-between">
-              <span className="text-xs font-bold text-creme flex items-center gap-1.5">
-                <Users size={14} className="text-creme-mute" /> Aguardando Humano
-              </span>
-              <span className="chip chip-amber">{escalations.length} pendentes</span>
-            </div>
-            {escalations.length === 0 && (
-              <div className="px-6 py-10 text-center">
-                <p className="text-[13px] text-creme-faint">Nenhum escalonamento pendente</p>
-              </div>
-            )}
-            {escalations.map((e) => (
-              <div key={e.id} className="px-4 py-3 border-b border-default last:border-b-0 flex items-start gap-2.5 hover:bg-surface-hover transition-colors cursor-pointer">
-                <div className="w-7 h-7 rounded-md bg-semantic-amber/10 text-semantic-amber flex items-center justify-center shrink-0">
-                  <AlertTriangle size={13} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-creme">{e.customerName}</div>
-                  <div className="text-[13px] text-creme-mute truncate">{e.reason}</div>
-                </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className="text-[12px] font-mono text-creme-faint">{e.waitTime < 60 ? `${e.waitTime} min` : `${Math.floor(e.waitTime / 60)}h ${e.waitTime % 60}m`}</span>
-                  <span className="chip chip-amber">{e.agentName.includes('Suporte') ? 'N1' : 'Agend'}</span>
-                </div>
-              </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2.5">
+            {agents.map((a) => (
+              <AgentCard key={a.id} agent={a} onClick={() => setSelectedAgent(a)} />
             ))}
           </div>
-        </div>
+        )}
       </div>
 
       {selectedAgent && (
@@ -312,6 +286,51 @@ function MicroCard({
         {value}
       </div>
       {sub && <div className="text-[10.5px] text-creme-faint truncate">{sub}</div>}
+    </div>
+  );
+}
+
+// ─── Card especial pra Custo — vermelho + delta MoM ────────────────────────
+function CostMicroCard({
+  label, value, sub, delta, deltaContext,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  /** % vs período anterior. null = sem dados pra comparar. */
+  delta: number | null;
+  deltaContext?: string;
+}) {
+  // Pra custo: ↑ é ruim (vermelho), ↓ é bom (verde)
+  const deltaIsBad = delta !== null && delta > 0;
+  const deltaColor = delta === null
+    ? ''
+    : deltaIsBad
+      ? 'text-semantic-red'
+      : 'text-semantic-green';
+  const DeltaIcon = delta !== null && delta < 0 ? TrendingDown : TrendingUp;
+
+  return (
+    <div className="bg-gradient-to-br from-semantic-red/12 to-semantic-red/4 border border-semantic-red/30 rounded-[10px] p-3 hover:border-semantic-red/50 transition-all">
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="w-5 h-5 rounded-md bg-semantic-red/15 text-semantic-red flex items-center justify-center">
+          <DollarSign size={13} />
+        </span>
+        <span className="text-[10.5px] uppercase tracking-wider text-creme-faint font-bold truncate">
+          {label}
+        </span>
+      </div>
+      <div className="text-[18px] font-extrabold text-semantic-red leading-none mb-0.5 truncate">
+        {value}
+      </div>
+      {sub && <div className="text-[10.5px] text-creme-faint truncate">{sub}</div>}
+      {delta !== null && (
+        <div className={`flex items-center gap-1 mt-1 text-[10.5px] font-mono font-semibold ${deltaColor}`}>
+          <DeltaIcon size={10} />
+          <span>{delta > 0 ? '+' : ''}{delta.toFixed(1)}%</span>
+          {deltaContext && <span className="text-creme-faint font-normal text-[9.5px] truncate">{deltaContext}</span>}
+        </div>
+      )}
     </div>
   );
 }
