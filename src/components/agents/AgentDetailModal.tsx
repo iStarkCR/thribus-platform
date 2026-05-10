@@ -5,6 +5,7 @@ import { ToolSelector } from '@/components/tools/ToolSelector';
 import { useAppStore } from '@/hooks/useAppStore';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
 import type { Agent, AgentType, AIModel } from '@/types';
+import { groupedModelOptions, isValidModel, modelLabel, safeModel } from '@/lib/models';
 
 interface Props {
   agent: Agent;
@@ -21,7 +22,11 @@ export function AgentDetailModal({ agent, onClose }: Props) {
   const [client, setClient] = useState(agent.client);
   const [sector, setSector] = useState(agent.sector);
   const [type, setType] = useState<AgentType>(agent.type);
-  const [model, setModel] = useState<AIModel>(agent.model);
+  // Sanitiza: se o agent tiver um ID legacy/inválido (ex: claude-sonnet-4-20250514
+  // que parou Bianca em produção), o select renderizaria vazio e o save gravaria
+  // string inválida no DB. safeModel() força fallback pro default.
+  const [model, setModel] = useState<AIModel>(safeModel(agent.model));
+  const modelIsLegacy = !isValidModel(agent.model);
   const [channel, setChannel] = useState(agent.channel ?? '');
   const [workspaceId, setWorkspaceId] = useState(agent.workspaceId ?? '');
   const [prompt, setPrompt] = useState(agent.systemPrompt);
@@ -198,18 +203,22 @@ export function AgentDetailModal({ agent, onClose }: Props) {
             </label>
             <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
               <optgroup label="Anthropic Claude">
-                <option value="claude-sonnet-4-5-20250929">claude-sonnet-4 (recomendado)</option>
-                <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (rápido)</option>
-                <option value="claude-opus-4-6">claude-opus-4-6 (premium)</option>
+                {groupedModelOptions().anthropic.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
+                ))}
               </optgroup>
               <optgroup label="OpenAI GPT">
-                <option value="gpt-5">gpt-5</option>
-                <option value="gpt-5-mini">gpt-5-mini (rápido)</option>
-                <option value="gpt-5-nano">gpt-5-nano (mais barato)</option>
-                <option value="gpt-4o">gpt-4o</option>
-                <option value="gpt-4o-mini">gpt-4o-mini</option>
+                {groupedModelOptions().openai.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
+                ))}
               </optgroup>
             </select>
+            {modelIsLegacy && (
+              <p className="mt-1 text-[11px] text-amber-400">
+                ⚠ Modelo salvo no banco (<code className="font-mono">{agent.model}</code>) não é mais suportado.
+                Selecionei <code className="font-mono">{model}</code> como fallback — clique em Salvar pra atualizar.
+              </p>
+            )}
           </div>
 
           <div>

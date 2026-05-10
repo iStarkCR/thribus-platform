@@ -81,7 +81,10 @@ interface WorkspaceRow {
   id: string;
   name: string;
   llm_provider: 'openai' | 'anthropic';
+  /** @deprecated mantido pra retrocompat — use anthropic_api_key/openai_api_key */
   llm_api_key: string | null;
+  anthropic_api_key: string | null;
+  openai_api_key: string | null;
   crm_provider: 'talki' | 'texnet' | null;
   crm_base_url: string | null;
   crm_account_id: string | null;
@@ -100,6 +103,8 @@ function rowToWorkspace(r: WorkspaceRow): Workspace {
     name: r.name,
     llmProvider: r.llm_provider,
     llmApiKey: r.llm_api_key ?? undefined,
+    anthropicApiKey: r.anthropic_api_key ?? undefined,
+    openaiApiKey: r.openai_api_key ?? undefined,
     crmProvider: r.crm_provider ?? undefined,
     crmBaseUrl: r.crm_base_url ?? undefined,
     crmAccountId: r.crm_account_id ?? undefined,
@@ -613,6 +618,8 @@ export const workspacesApi = {
         name: payload.name,
         llm_provider: payload.llmProvider,
         llm_api_key: payload.llmApiKey ?? null,
+        anthropic_api_key: payload.anthropicApiKey ?? null,
+        openai_api_key: payload.openaiApiKey ?? null,
         crm_provider: payload.crmProvider ?? null,
         crm_base_url: payload.crmBaseUrl ?? null,
         crm_account_id: payload.crmAccountId ?? null,
@@ -634,6 +641,8 @@ export const workspacesApi = {
     if (payload.name !== undefined) update.name = payload.name;
     if (payload.llmProvider !== undefined) update.llm_provider = payload.llmProvider;
     if (payload.llmApiKey !== undefined) update.llm_api_key = payload.llmApiKey || null;
+    if (payload.anthropicApiKey !== undefined) update.anthropic_api_key = payload.anthropicApiKey || null;
+    if (payload.openaiApiKey !== undefined) update.openai_api_key = payload.openaiApiKey || null;
     if (payload.crmProvider !== undefined) update.crm_provider = payload.crmProvider || null;
     if (payload.crmBaseUrl !== undefined) update.crm_base_url = payload.crmBaseUrl || null;
     if (payload.crmAccountId !== undefined) update.crm_account_id = payload.crmAccountId || null;

@@ -5,11 +5,13 @@
 export type AgentStatus = 'online' | 'standby' | 'offline';
 export type AgentType = 'modular' | 'operacional' | 'enterprise';
 export type AIModel =
-  // Anthropic — IDs verificados em maio/2026
+  // Anthropic — IDs verificados em maio/2026.
+  // ⚠️ Mantenha sincronizado com src/lib/models.ts (fonte única de verdade
+  //    pra dropdowns + pricing). Adicionar ID aqui sem testar contra
+  //    /v1/models do provedor quebra o worker em runtime com 404.
   | 'claude-sonnet-4-5-20250929'    // Sonnet 4.5 (recomendado)
   | 'claude-3-5-sonnet-latest'      // alias estável (sempre o Sonnet atual)
   | 'claude-haiku-4-5-20251001'
-  | 'claude-opus-4-6'
   // OpenAI
   | 'gpt-5'
   | 'gpt-5-mini'
@@ -69,7 +71,16 @@ export interface Workspace {
   id: string;
   name: string;
   llmProvider: LLMProvider;
+  /**
+   * @deprecated use `anthropicApiKey` ou `openaiApiKey`. Mantido pra
+   * retrocompat — o worker ainda lê como fallback se a chave do provider
+   * específico não estiver setada.
+   */
   llmApiKey?: string;
+  /** API key Anthropic — usada quando agent.model começa com "claude-". */
+  anthropicApiKey?: string;
+  /** API key OpenAI — usada quando agent.model começa com "gpt-"/"o1-"/"o3-". */
+  openaiApiKey?: string;
   crmProvider?: CRMProvider;
   crmBaseUrl?: string;
   crmAccountId?: string;

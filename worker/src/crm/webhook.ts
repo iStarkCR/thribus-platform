@@ -17,6 +17,7 @@ import express, { Router, type Request, type Response } from 'express';
 import { bufferEnqueue } from '../agent/buffer.js';
 import { db } from '../db/index.js';
 import { transcribeAudio } from '../media/transcribe.js';
+import { pickApiKeyByProvider } from '../llm/keys.js';
 
 // ─── Tipos do payload TexNet ──────────────────────────────────────────────────
 
@@ -152,7 +153,10 @@ export function createWebhookRouter(): Router {
         const audioSource = message.content;
         if (audioSource && (audioSource.startsWith('data:') || audioSource.startsWith('http'))) {
           console.log(`[webhook] áudio detectado lead=${lead.id} channel=${lead.channel} — transcrevendo`);
-          const transcribed = await transcribeAudio(audioSource, workspace?.llmApiKey);
+          // Whisper é sempre OpenAI — usa a chave OpenAI específica, não o
+          // legacy llmApiKey (que pode estar setado pra Anthropic em workspaces
+          // que rodam Claude no agente principal).
+          const transcribed = await transcribeAudio(audioSource, pickApiKeyByProvider('openai', workspace));
           if (transcribed) {
             finalContent = `[áudio do cliente] ${transcribed}`;
             console.log(`[webhook] audio transcribed lead=${lead.id} chars=${transcribed.length}`);

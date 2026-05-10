@@ -49,7 +49,16 @@ export interface WorkspaceRecord {
   id: string;
   name: string;
   llmProvider: 'openai' | 'anthropic';
+  /**
+   * @deprecated — usar `anthropicApiKey` ou `openaiApiKey`. Mantido como
+   * fallback pra retrocompat (workspaces antigos) — o helper `pickApiKey`
+   * usa essa coluna se a chave do provider específico estiver vazia.
+   */
   llmApiKey?: string;
+  /** API key Anthropic — usada pra modelos com prefixo claude-. */
+  anthropicApiKey?: string;
+  /** API key OpenAI — usada pra modelos com prefixo gpt-, o1-, o3-, whisper-, tts-. */
+  openaiApiKey?: string;
   crmProvider?: 'talki' | 'texnet';
   crmBaseUrl?: string;
   crmAccountId?: string;
@@ -130,6 +139,8 @@ function rowToWorkspace(data: Record<string, unknown>): WorkspaceRecord {
     name: data.name as string,
     llmProvider: data.llm_provider as 'openai' | 'anthropic',
     llmApiKey: (data.llm_api_key as string | null) ?? undefined,
+    anthropicApiKey: (data.anthropic_api_key as string | null) ?? undefined,
+    openaiApiKey: (data.openai_api_key as string | null) ?? undefined,
     crmProvider: (data.crm_provider as 'talki' | 'texnet' | null) ?? undefined,
     crmBaseUrl: (data.crm_base_url as string | null) ?? undefined,
     crmAccountId: (data.crm_account_id as string | null) ?? undefined,

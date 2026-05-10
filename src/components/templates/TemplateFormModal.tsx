@@ -4,7 +4,8 @@ import {
   CheckCircle2, AlertCircle, Loader2, Layout,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
-import type { AgentTemplate, AIModel } from '@/types';
+import type { AgentTemplate } from '@/types';
+import { MODEL_OPTIONS, modelLabel, safeModel } from '@/lib/models';
 
 /**
  * Modal pra criar/editar AgentTemplate (M1).
@@ -30,10 +31,8 @@ const SECTORS = ['isp', 'clinica', 'ecommerce', 'imobiliaria', 'educacao', 'outr
 
 const SUGGESTED_ICONS = ['🎯', '🛠️', '💰', '📞', '🤝', '🎓', '🏥', '🏪', '🏘️', '✨', '⚡', '🔧'];
 
-const MODELS: AIModel[] = [
-  'gpt-4o-mini', 'gpt-4o', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5',
-  'claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929', 'claude-opus-4-6',
-];
+// Modelos vêm do registry central (src/lib/models.ts) — fonte única de
+// verdade pra dropdowns. Não duplique aqui.
 
 export function TemplateFormModal({ mode, template, onClose, onSaved }: Props) {
   const tools = useAppStore((s) => s.tools);
@@ -49,7 +48,9 @@ export function TemplateFormModal({ mode, template, onClose, onSaved }: Props) {
   const [customIcon, setCustomIcon] = useState('');
   const [basePrompt, setBasePrompt] = useState(template?.basePrompt ?? '');
   const [defaultTools, setDefaultTools] = useState<string[]>(template?.defaultTools ?? []);
-  const [defaultModel, setDefaultModel] = useState<string>(template?.defaultModel ?? 'gpt-4o-mini');
+  // safeModel: se o template tiver um ID legacy, fallback pro default em vez
+  // de deixar o select vazio e gravar string inválida ao salvar.
+  const [defaultModel, setDefaultModel] = useState<string>(safeModel(template?.defaultModel));
   const [isPublic, setIsPublic] = useState(template?.isPublic ?? true);
 
   const [saving, setSaving] = useState(false);
@@ -305,8 +306,8 @@ export function TemplateFormModal({ mode, template, onClose, onSaved }: Props) {
                   onChange={(e) => setDefaultModel(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-default text-[12.5px] text-creme font-mono focus:outline-none focus:border-brand"
                 >
-                  {MODELS.map((m) => (
-                    <option key={m} value={m}>{m}</option>
+                  {MODEL_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
                   ))}
                 </select>
               </div>

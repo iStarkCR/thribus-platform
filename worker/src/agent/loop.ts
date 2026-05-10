@@ -34,6 +34,7 @@ import {
 } from './state-machine.js';
 import { buildHandoffSummary } from './handoff-summary.js';
 import { getToolInputSchema } from './tool-schemas.js';
+import { pickApiKey, pickApiKeyByProvider } from '../llm/keys.js';
 import { routeMessage } from './router.js';
 import { enrichWithSkills } from './skill-loader.js';
 
@@ -333,10 +334,13 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     const isFirstUserMessage = existingMsgs.length === 0;
     if (isFirstUserMessage) {
       console.log(`[loop] M2 router enabled — classificando intent...`);
+      // Roteador usa um modelo dedicado (default gpt-4o-mini) — pickApiKey
+      // escolhe a chave correta baseada nesse model, não no agent.model.
+      const routerModel = workspace.routerConfig.model || 'gpt-4o-mini';
       const decision = await routeMessage(
         job.content,
         workspace.routerConfig,
-        workspace.llmApiKey,
+        pickApiKey(routerModel, workspace),
       );
       if (decision && decision.targetAgentId !== job.agentId) {
         console.log(
@@ -575,7 +579,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       systemPrompt: augmentedSystemPrompt,
       tools: toolDefs,
       messages,
-      apiKey: workspace?.llmApiKey,
+      apiKey: pickApiKey(agent.model, workspace),
       forceTool,
       forceToolName,
     });
@@ -738,7 +742,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
           systemPrompt: `${agent.systemPrompt}\n\n${buildStateReminder(currentState, stateData)}\n\nIMPORTANTE: O atendimento foi concluído com sucesso. Envie AGORA a mensagem de confirmação final ao cliente com os dados do agendamento (data, horário, OS). NÃO chame mais tools — apenas responda em texto.`,
           tools: [], // sem tools — força texto
           messages,
-          apiKey: workspace?.llmApiKey,
+          apiKey: pickApiKey(agent.model, workspace),
         });
         totalTokensIn += finalResponse.usage.inputTokens;
         totalTokensOut += finalResponse.usage.outputTokens;
@@ -851,8 +855,10 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         const msg = messagesToSend[i];
         // Primeira mensagem em áudio se opt-in; restantes em texto
         if (i === 0 && wantAudioReply) {
+          // TTS é sempre OpenAI — pickApiKeyByProvider escolhe a chave OpenAI
+          // direto, sem inferir do agent.model (que pode ser claude-*).
           const audio = await generateSpeech(msg, {
-            apiKey: workspace?.llmApiKey,
+            apiKey: pickApiKeyByProvider('openai', workspace),
             voice: 'nova',
             format: 'opus',
           });

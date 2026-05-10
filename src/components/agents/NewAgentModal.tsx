@@ -5,6 +5,7 @@ import { ToolSelector } from '@/components/tools/ToolSelector';
 import { useAppStore } from '@/hooks/useAppStore';
 import { agentsApi, templatesApi } from '@/services/api';
 import type { AgentRole, AgentTemplate, AgentType, AIModel } from '@/types';
+import { DEFAULT_MODEL, groupedModelOptions, modelLabel } from '@/lib/models';
 
 interface Props {
   onClose: () => void;
@@ -23,7 +24,7 @@ export function NewAgentModal({ onClose }: Props) {
   const [client, setClient] = useState('');
   const [type, setType] = useState<AgentType>('modular');
   const [role, setRole] = useState<AgentRole | ''>('');
-  const [model, setModel] = useState<AIModel>('claude-sonnet-4-5-20250929');
+  const [model, setModel] = useState<AIModel>(DEFAULT_MODEL);
   const [channel, setChannel] = useState('');
   const [prompt, setPrompt] = useState('');
   const [tools, setTools] = useState<string[]>([]);
@@ -218,16 +219,14 @@ export function NewAgentModal({ onClose }: Props) {
               <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Modelo de IA</label>
               <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
                 <optgroup label="Anthropic Claude">
-                  <option value="claude-sonnet-4-5-20250929">claude-sonnet-4 (recomendado)</option>
-                  <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (rápido)</option>
-                  <option value="claude-opus-4-6">claude-opus-4-6 (premium)</option>
+                  {groupedModelOptions().anthropic.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
+                  ))}
                 </optgroup>
                 <optgroup label="OpenAI GPT">
-                  <option value="gpt-5">gpt-5</option>
-                  <option value="gpt-5-mini">gpt-5-mini (rápido)</option>
-                  <option value="gpt-5-nano">gpt-5-nano (mais barato)</option>
-                  <option value="gpt-4o">gpt-4o</option>
-                  <option value="gpt-4o-mini">gpt-4o-mini</option>
+                  {groupedModelOptions().openai.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
+                  ))}
                 </optgroup>
               </select>
             </div>

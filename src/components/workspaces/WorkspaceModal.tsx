@@ -34,7 +34,10 @@ export function WorkspaceModal({ workspace, onClose }: Props) {
 
   const [name, setName] = useState(workspace?.name ?? '');
   const [llmProvider, setLlmProvider] = useState<LLMProvider>(workspace?.llmProvider ?? 'openai');
-  const [llmApiKey, setLlmApiKey] = useState(workspace?.llmApiKey ?? '');
+  const [anthropicApiKey, setAnthropicApiKey] = useState(workspace?.anthropicApiKey ?? '');
+  const [openaiApiKey, setOpenaiApiKey] = useState(workspace?.openaiApiKey ?? '');
+  // Mantém o valor legacy no state pra preservar workspaces antigos (não enviado se vazio)
+  const [llmApiKey] = useState(workspace?.llmApiKey ?? '');
   const [crmProvider, setCrmProvider] = useState<CRMProvider | ''>(workspace?.crmProvider ?? '');
   const [crmBaseUrl, setCrmBaseUrl] = useState(workspace?.crmBaseUrl ?? '');
   const [crmAccountId, setCrmAccountId] = useState(workspace?.crmAccountId ?? '');
@@ -71,7 +74,10 @@ export function WorkspaceModal({ workspace, onClose }: Props) {
       const payload = {
         name: name.trim(),
         llmProvider,
+        // Legacy — só persiste se já tinha valor (não apaga workspaces antigos)
         llmApiKey: llmApiKey.trim() || undefined,
+        anthropicApiKey: anthropicApiKey.trim() || undefined,
+        openaiApiKey: openaiApiKey.trim() || undefined,
         crmProvider: crmProvider || undefined,
         crmBaseUrl: crmBaseUrl.trim() || undefined,
         crmAccountId: crmAccountId.trim() || undefined,
@@ -134,25 +140,49 @@ export function WorkspaceModal({ workspace, onClose }: Props) {
         </div>
 
         <div className="text-[12px] font-bold uppercase tracking-widest text-brand-bright pt-2">LLM</div>
+        <div>
+          <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+            Provider preferido (default em criação de agente)
+          </label>
+          <select
+            className="input"
+            value={llmProvider}
+            onChange={(e) => setLlmProvider(e.target.value as LLMProvider)}
+          >
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Provider</label>
-            <select className="input" value={llmProvider} onChange={(e) => setLlmProvider(e.target.value as LLMProvider)}>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-            </select>
-          </div>
-          <div>
             <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
-              API Key (opcional)
+              Anthropic API Key
             </label>
             <input
               className="input font-mono"
               type="password"
-              value={llmApiKey}
-              onChange={(e) => setLlmApiKey(e.target.value)}
-              placeholder="sk-... (deixa vazio pra usar env)"
+              value={anthropicApiKey}
+              onChange={(e) => setAnthropicApiKey(e.target.value)}
+              placeholder="sk-ant-... (vazio = usa env)"
+              autoComplete="off"
             />
+            <p className="text-[11.5px] text-creme-faint mt-1">Usada por agentes com modelo claude-*</p>
+          </div>
+          <div>
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+              OpenAI API Key
+            </label>
+            <input
+              className="input font-mono"
+              type="password"
+              value={openaiApiKey}
+              onChange={(e) => setOpenaiApiKey(e.target.value)}
+              placeholder="sk-... (vazio = usa env)"
+              autoComplete="off"
+            />
+            <p className="text-[11.5px] text-creme-faint mt-1">
+              Usada por agentes com modelo gpt-*, o1-*, e por Whisper (áudio in)/TTS (áudio out)
+            </p>
           </div>
         </div>
 

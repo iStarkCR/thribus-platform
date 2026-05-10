@@ -26,7 +26,8 @@ export function WorkspaceEditModal({ workspace, onClose }: Props) {
 
   const [name, setName] = useState(workspace.name);
   const [llmProvider, setLlmProvider] = useState<LLMProvider>(workspace.llmProvider);
-  const [llmApiKey, setLlmApiKey] = useState(workspace.llmApiKey ?? '');
+  const [anthropicApiKey, setAnthropicApiKey] = useState(workspace.anthropicApiKey ?? '');
+  const [openaiApiKey, setOpenaiApiKey] = useState(workspace.openaiApiKey ?? '');
   const [crmProvider, setCrmProvider] = useState<CRMProvider | ''>(workspace.crmProvider ?? '');
   const [crmBaseUrl, setCrmBaseUrl] = useState(workspace.crmBaseUrl ?? '');
   const [crmApiToken, setCrmApiToken] = useState(workspace.crmApiToken ?? '');
@@ -43,7 +44,8 @@ export function WorkspaceEditModal({ workspace, onClose }: Props) {
       await updateWorkspace(workspace.id, {
         name,
         llmProvider,
-        llmApiKey: llmApiKey || undefined,
+        anthropicApiKey: anthropicApiKey || undefined,
+        openaiApiKey: openaiApiKey || undefined,
         crmProvider: (crmProvider as CRMProvider) || undefined,
         crmBaseUrl: crmBaseUrl || undefined,
         crmApiToken: crmApiToken || undefined,
@@ -97,32 +99,46 @@ export function WorkspaceEditModal({ workspace, onClose }: Props) {
               />
             </Field>
 
-            {/* LLM Provider + Key */}
+            {/* LLM Keys (2 providers separados) */}
             <div className="bg-surface-2 rounded-lg p-4 space-y-3 border border-default">
               <div className="text-[12px] uppercase tracking-wider font-bold text-creme-faint flex items-center gap-1.5">
-                <KeyRound size={11} /> LLM Provider
+                <KeyRound size={11} /> LLM Keys
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Provider" inline>
-                  <select
-                    value={llmProvider}
-                    onChange={(e) => setLlmProvider(e.target.value as LLMProvider)}
-                    className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-default text-[13px] text-creme focus:outline-none focus:border-brand"
-                  >
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                </Field>
-                <Field label="API Key" inline>
-                  <input
-                    type={showSecrets ? 'text' : 'password'}
-                    value={llmApiKey}
-                    onChange={(e) => setLlmApiKey(e.target.value)}
-                    placeholder={llmProvider === 'openai' ? 'sk-...' : 'sk-ant-...'}
-                    className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-default text-[13px] text-creme placeholder-creme-faint font-mono focus:outline-none focus:border-brand"
-                  />
-                </Field>
-              </div>
+              <Field label="Provider preferido (default em novo agente)">
+                <select
+                  value={llmProvider}
+                  onChange={(e) => setLlmProvider(e.target.value as LLMProvider)}
+                  className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-default text-[13px] text-creme focus:outline-none focus:border-brand"
+                >
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+              </Field>
+              <Field label="Anthropic API Key (modelos claude-*)">
+                <input
+                  type={showSecrets ? 'text' : 'password'}
+                  value={anthropicApiKey}
+                  onChange={(e) => setAnthropicApiKey(e.target.value)}
+                  placeholder="sk-ant-... (vazio = usa env ANTHROPIC_API_KEY)"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-default text-[13px] text-creme placeholder-creme-faint font-mono focus:outline-none focus:border-brand"
+                />
+              </Field>
+              <Field label="OpenAI API Key (gpt-*, Whisper, TTS)">
+                <input
+                  type={showSecrets ? 'text' : 'password'}
+                  value={openaiApiKey}
+                  onChange={(e) => setOpenaiApiKey(e.target.value)}
+                  placeholder="sk-... (vazio = usa env OPENAI_API_KEY)"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-default text-[13px] text-creme placeholder-creme-faint font-mono focus:outline-none focus:border-brand"
+                />
+              </Field>
+              <p className="text-[11.5px] text-creme-faint">
+                O worker escolhe a chave automaticamente conforme o modelo do agente —
+                claude-* → Anthropic, gpt-/o1-/Whisper/TTS → OpenAI. Trocar de modelo no
+                painel não causa mais conflito.
+              </p>
             </div>
 
             {/* CRM */}
