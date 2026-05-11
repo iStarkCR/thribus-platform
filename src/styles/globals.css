@@ -2,9 +2,99 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * ─── Tokens de tema ────────────────────────────────────────────────────────
+ * CSS Custom Properties como triplets RGB (sem "rgb(...)" ao redor) pra que o
+ * Tailwind possa aplicar `<alpha-value>` na sintaxe `bg-brand/10`, `text-creme/50`, etc.
+ *
+ * Default = dark (estado original do painel).
+ * `<html class="light">` ativa o tema claro.
+ * Toggle controlado pelo hook useTheme + ThemeToggle.
+ */
 @layer base {
+  :root {
+    /* Surfaces — fundo dos cards/sections (mais escuro → mais claro) */
+    --surface-0: 9 14 9;        /* #090e09 — body bg */
+    --surface-1: 13 20 13;      /* #0d140d — card base */
+    --surface-2: 18 28 18;      /* #121c12 — card raised */
+    --surface-3: 23 33 23;      /* #172117 — card hover/inset */
+    --surface-4: 30 43 30;      /* #1e2b1e — card highest */
+    --surface-hover: 26 38 26;  /* #1a261a — hover state */
+
+    /* Brand — verde militar usado pra accents/CTAs */
+    --brand-dim:    74 122 61;   /* #4a7a3d */
+    --brand:        107 143 94;  /* #6B8F5E */
+    --brand-bright: 140 196 122; /* #8cc47a */
+    --brand-glow:   168 212 150; /* #a8d496 */
+
+    /* Creme — texto e foreground */
+    --creme:       237 232 220; /* #EDE8DC — texto primário */
+    --creme-dim:   196 191 178; /* #c4bfb2 — texto secundário */
+    --creme-mute:  138 133 122; /* #8a857a — texto muted */
+    --creme-faint:  94  90  82; /* #5e5a52 — texto faint */
+
+    /* Semantic */
+    --semantic-green: 74 222 128;  /* #4ade80 */
+    --semantic-amber: 251 191 36;  /* #fbbf24 */
+    --semantic-red:   248 113 113; /* #f87171 */
+    --semantic-blue:  96 165 250;  /* #60a5fa */
+
+    /* Borders — derivam do brand com opacidades diferentes */
+    --border-default: 107 143 94;  /* base do brand → usado com alpha 0.12 */
+    --border-default-alpha: 0.12;
+    --border-hover-alpha:   0.28;
+    --border-active-alpha:  0.45;
+
+    /* Scrollbar */
+    --scrollbar-thumb: 30 43 30; /* #1e2b1e */
+  }
+
+  /* ─── Light theme — invertendo superfícies e texto, mantendo brand ────── */
+  :root.light {
+    /* Surfaces — backgrounds claros, hierarquia em cinza-creme */
+    --surface-0: 248 249 247;   /* #f8f9f7 — body bg */
+    --surface-1: 241 243 239;   /* #f1f3ef — card base */
+    --surface-2: 232 235 229;   /* #e8ebe5 — card raised */
+    --surface-3: 222 225 218;   /* #dee1da — card hover/inset */
+    --surface-4: 212 216 207;   /* #d4d8cf — card highest */
+    --surface-hover: 227 230 221; /* #e3e6dd — hover state */
+
+    /* Brand — verde mais escuro pra contraste em fundo claro */
+    --brand-dim:    58 85 48;    /* #3a5530 */
+    --brand:        74 107 63;   /* #4a6b3f */
+    --brand-bright: 107 143 94;  /* #6B8F5E (era o DEFAULT do dark) */
+    --brand-glow:   140 196 122; /* #8cc47a */
+
+    /* Creme — texto escuro pra fundo claro (semântica preservada) */
+    --creme:       26 31 26;    /* #1a1f1a — texto primário */
+    --creme-dim:   64 70 64;    /* #404640 — texto secundário */
+    --creme-mute:  107 111 106; /* #6b6f6a — texto muted */
+    --creme-faint: 140 143 136; /* #8c8f88 — texto faint */
+
+    /* Semantic — mais saturados pra contraste em fundo claro */
+    --semantic-green: 34 160 78;  /* #22a04e */
+    --semantic-amber: 217 119 6;  /* #d97706 */
+    --semantic-red:   220 38 38;  /* #dc2626 */
+    --semantic-blue:  37 99 235;  /* #2563eb */
+
+    /* Borders */
+    --border-default: 74 107 63;
+    --border-default-alpha: 0.20;
+    --border-hover-alpha:   0.40;
+    --border-active-alpha:  0.60;
+
+    /* Scrollbar — barra mais clara no light */
+    --scrollbar-thumb: 200 205 195;
+  }
+
   html {
     font-size: 17px;
+    background-color: rgb(var(--surface-0));
+    color: rgb(var(--creme));
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  body {
+    background-color: rgb(var(--surface-0));
   }
   ::-webkit-scrollbar {
     width: 4px;
@@ -13,7 +103,7 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1e2b1e;
+    background: rgb(var(--scrollbar-thumb));
     border-radius: 99px;
   }
 }
@@ -48,14 +138,14 @@
     @apply bg-semantic-blue/10 text-semantic-blue;
   }
   .chip-muted {
-    @apply bg-white/[0.04] text-creme-mute;
+    @apply bg-creme/[0.04] text-creme-mute;
   }
 
   .tag {
     @apply text-[12px] font-mono font-medium px-1.5 py-0.5 rounded bg-brand/[0.06] border border-brand/[0.12] text-brand;
   }
   .tag-off {
-    @apply bg-white/[0.02] border-default text-creme-faint;
+    @apply bg-creme/[0.02] border-default text-creme-faint;
   }
 
   .input {

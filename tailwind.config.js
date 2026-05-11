@@ -1,4 +1,11 @@
 /** @type {import('tailwindcss').Config} */
+/*
+ * Cores dinâmicas via CSS Custom Properties — definidas em src/styles/globals.css
+ * em :root (dark default) e :root.light (light theme).
+ *
+ * Sintaxe `rgb(var(--xxx) / <alpha-value>)` permite usar opacidade Tailwind
+ * (ex: `bg-brand/10`, `text-creme/50`) com cores que mudam por tema.
+ */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
@@ -9,36 +16,37 @@ export default {
       },
       colors: {
         surface: {
-          0: '#090e09',
-          1: '#0d140d',
-          2: '#121c12',
-          3: '#172117',
-          4: '#1e2b1e',
-          hover: '#1a261a',
+          0: 'rgb(var(--surface-0) / <alpha-value>)',
+          1: 'rgb(var(--surface-1) / <alpha-value>)',
+          2: 'rgb(var(--surface-2) / <alpha-value>)',
+          3: 'rgb(var(--surface-3) / <alpha-value>)',
+          4: 'rgb(var(--surface-4) / <alpha-value>)',
+          hover: 'rgb(var(--surface-hover) / <alpha-value>)',
         },
         brand: {
-          dim: '#4a7a3d',
-          DEFAULT: '#6B8F5E',
-          bright: '#8cc47a',
-          glow: '#a8d496',
+          dim:     'rgb(var(--brand-dim) / <alpha-value>)',
+          DEFAULT: 'rgb(var(--brand) / <alpha-value>)',
+          bright:  'rgb(var(--brand-bright) / <alpha-value>)',
+          glow:    'rgb(var(--brand-glow) / <alpha-value>)',
         },
         creme: {
-          DEFAULT: '#EDE8DC',
-          dim: '#c4bfb2',
-          mute: '#8a857a',
-          faint: '#5e5a52',
+          DEFAULT: 'rgb(var(--creme) / <alpha-value>)',
+          dim:     'rgb(var(--creme-dim) / <alpha-value>)',
+          mute:    'rgb(var(--creme-mute) / <alpha-value>)',
+          faint:   'rgb(var(--creme-faint) / <alpha-value>)',
         },
         semantic: {
-          green: '#4ade80',
-          amber: '#fbbf24',
-          red: '#f87171',
-          blue: '#60a5fa',
+          green: 'rgb(var(--semantic-green) / <alpha-value>)',
+          amber: 'rgb(var(--semantic-amber) / <alpha-value>)',
+          red:   'rgb(var(--semantic-red) / <alpha-value>)',
+          blue:  'rgb(var(--semantic-blue) / <alpha-value>)',
         },
       },
       borderColor: {
-        default: 'rgba(107,143,94,0.12)',
-        hover: 'rgba(107,143,94,0.28)',
-        active: 'rgba(107,143,94,0.45)',
+        // Borders derivam do brand com alpha controlado via CSS var por tema
+        default: 'rgb(var(--border-default) / var(--border-default-alpha))',
+        hover:   'rgb(var(--border-default) / var(--border-hover-alpha))',
+        active:  'rgb(var(--border-default) / var(--border-active-alpha))',
       },
       animation: {
         'pulse-dot': 'pulse-dot 2s infinite',

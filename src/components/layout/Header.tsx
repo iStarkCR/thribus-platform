@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Search, Bell, Plus, Play } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { NotificationsDropdown } from './NotificationsDropdown';
+import { ThemeToggle } from '@/components/shared/ThemeToggle';
 
 const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   '/': { title: 'Dashboard', subtitle: 'Visão geral dos colaboradores digitais' },
@@ -44,6 +45,8 @@ export function Header({ onNewAgent, onTestAgent }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        <ThemeToggle />
+
         <button
           onClick={handleSearch}
           className="w-8 h-8 rounded-lg bg-surface-2 border border-default flex items-center justify-center text-creme-mute hover:text-creme hover:border-hover transition-all"
