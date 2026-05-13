@@ -18,6 +18,7 @@ import { bufferEnqueue } from '../agent/buffer.js';
 import { db } from '../db/index.js';
 import { transcribeAudio } from '../media/transcribe.js';
 import { pickApiKeyByProvider } from '../llm/keys.js';
+import { reverseGeocode, parseLocationContent } from '../media/geocode.js';
 
 // ─── Tipos do payload TexNet ──────────────────────────────────────────────────
 
@@ -223,20 +224,44 @@ export function createWebhookRouter(): Router {
         // Cliente enviou pin de localização do WhatsApp. Formato varia por canal:
         //  - Evolution: content pode ser "lat,lon" ou JSON { latitude, longitude }
         //  - 360dialog: idem mas pode vir em outros campos do payload
-        // Sem reverse geocoding (próximo PR), instruímos o agente a pedir endereço
-        // por texto. Logamos o payload bruto pra implementar suporte definitivo.
-        const locRaw = message.content;
-        const preview = typeof locRaw === 'string' ? locRaw.slice(0, 200) : `<${typeof locRaw}>`;
-        console.warn(
-          `[webhook] LOCATION lead=${lead.id} channel=${lead.channel} ` +
-          `messageId=${message.id} contentType=${typeof locRaw} preview="${preview}"`,
-        );
-        finalContent =
-          '[cliente enviou pin de localização do WhatsApp] ' +
-          'INSTRUCAO INTERNA AO AGENTE: O sistema ainda não suporta processar pino de ' +
-          'localização. Peça ao cliente educadamente o endereço por texto: "Recebi seu ' +
-          'pin! Por enquanto preciso do endereço por texto pra confirmar a cobertura. ' +
-          'Pode me passar o CEP + número, ou rua + número + bairro? 🙂"';
+        // Reverse geocode via Nominatim (OSM) pra extrair endereço utilizável
+        // pra consultar_viabilidade. Se falhar, fallback amigável pedindo texto.
+        const coords = parseLocationContent(message.content);
+        if (coords) {
+          console.log(
+            `[webhook] LOCATION lead=${lead.id} channel=${lead.channel} ` +
+            `lat=${coords.lat.toFixed(6)} lng=${coords.lng.toFixed(6)} — resolvendo endereço`,
+          );
+          const resolved = await reverseGeocode(coords.lat, coords.lng);
+          if (resolved) {
+            console.log(`[webhook] geocode OK lead=${lead.id} endereço="${resolved.formatted}"`);
+            finalContent =
+              `[cliente enviou pin de localização — endereço resolvido: ${resolved.formatted}] ` +
+              `INSTRUCAO INTERNA AO AGENTE: Use esse endereço pra chamar consultar_viabilidade ` +
+              `imediatamente. Confirme com o cliente em linguagem natural antes: "Recebi seu pin! ` +
+              `Confirma se é ${resolved.formatted}?"`;
+          } else {
+            console.warn(`[webhook] geocode falhou lead=${lead.id} lat=${coords.lat} lng=${coords.lng}`);
+            finalContent =
+              '[cliente enviou pin de localização — não foi possível resolver endereço] ' +
+              'INSTRUCAO INTERNA AO AGENTE: Não consegui converter o pin em endereço. Peça ' +
+              'gentilmente o endereço por texto: "Recebi seu pin mas não consegui identificar ' +
+              'o endereço aqui. Pode me passar o CEP + número, ou rua + número + bairro? 🙂"';
+          }
+        } else {
+          // Formato de location não reconhecido — log + fallback pra pedir texto
+          const preview = typeof message.content === 'string' ? message.content.slice(0, 200) : `<${typeof message.content}>`;
+          console.warn(
+            `[webhook] LOCATION FORMATO NAO RECONHECIDO lead=${lead.id} channel=${lead.channel} ` +
+            `messageId=${message.id} contentType=${typeof message.content} preview="${preview}"`,
+          );
+          finalContent =
+            '[cliente enviou pin de localização do WhatsApp] ' +
+            'INSTRUCAO INTERNA AO AGENTE: Não consegui processar o pin. Peça ao cliente ' +
+            'educadamente o endereço por texto: "Recebi seu pin! Por enquanto preciso do ' +
+            'endereço por texto pra confirmar a cobertura. Pode me passar o CEP + número, ' +
+            'ou rua + número + bairro? 🙂"';
+        }
       } else if (!finalContent) {
         // Texto vazio em mensagem não-áudio — pula
         console.log(`[webhook] message ${message.id} sem conteúdo textual — skipping`);

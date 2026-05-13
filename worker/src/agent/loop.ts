@@ -30,6 +30,7 @@ import {
   extractStateData,
   isTerminalState,
   nextStateAfterTool,
+  nextStateAfterMessage,
   SALES_FLOW_STATES,
 } from './state-machine.js';
 import { buildHandoffSummary } from './handoff-summary.js';
@@ -836,6 +837,17 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       }
 
       finalText = response.text;
+
+      // Estado pré-tool — avança baseado no conteúdo da resposta (heurística).
+      // Necessário pra `1_welcome` → `2_qualifying` → `3_address` que não têm
+      // tool calls (estados pré-viabilidade). Sem isso, conversation.current_state
+      // fica eternamente em `1_welcome` mesmo já tendo coletado endereço.
+      const assistantTurns = trimmed.filter((m) => m.role === 'assistant').length + 1;
+      const nextStateFromMsg = nextStateAfterMessage(currentState, finalText, assistantTurns);
+      if (nextStateFromMsg && stateChanged(nextStateFromMsg)) {
+        console.log(`[loop] message-based state transition ${currentState} → ${nextStateFromMsg} (turn ${assistantTurns})`);
+        currentState = nextStateFromMsg;
+      }
 
       // Verifica canal conectado antes de enviar
       const connected = await crm.isChannelConnected(job.channel, workspace ?? undefined);

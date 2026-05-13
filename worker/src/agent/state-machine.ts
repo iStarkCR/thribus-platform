@@ -191,6 +191,63 @@ export function nextStateAfterTool(
 }
 
 /**
+ * Avança o estado da conversa baseado em mensagens (sem tool call).
+ *
+ * Necessário pra estados pré-tool (1_welcome, 2_qualifying, 3_address) que não
+ * têm `expectedTool` definida — `nextStateAfterTool` nunca dispara neles, então
+ * a conversa fica eternamente em `1_welcome` mesmo já estando coletando endereço.
+ *
+ * Heurísticas conservadoras (preferir não avançar a avançar errado):
+ *   - `1_welcome` → `2_qualifying`: após primeiro turno do agente (boas-vindas saiu)
+ *   - `2_qualifying` → `3_address`: agente pediu endereço/CEP/rua na resposta atual
+ *   - `3_address` permanece: avança automaticamente via tool (`consultar_viabilidade`)
+ *
+ * Estados pós-tool são gerenciados por `nextStateAfterTool` (não tocar aqui).
+ *
+ * @param currentState     estado atual da conversa
+ * @param agentResponse    texto que o agente acabou de responder
+ * @param assistantTurns   quantos turnos do agente já houve nesta conversa (>=1)
+ * @returns próximo estado ou null se manter o atual
+ */
+export function nextStateAfterMessage(
+  currentState: string,
+  agentResponse: string,
+  assistantTurns: number,
+): string | null {
+  const lower = agentResponse.toLowerCase();
+
+  if (currentState === '1_welcome') {
+    // Welcome só vale pra primeira resposta. A partir do 2º turno do agente
+    // (que já é qualificação ou coleta), avança. Conservador: só avança se
+    // o agente NÃO está repetindo a apresentação.
+    const ainda_apresentando = /sou (a |o )?bianca|consultora.*texnet/i.test(lower);
+    if (assistantTurns >= 1 && !ainda_apresentando) {
+      return '2_qualifying';
+    }
+    if (assistantTurns >= 2) {
+      // Mesmo se ainda mencionou nome, depois de 2 turnos definitivamente saiu do welcome
+      return '2_qualifying';
+    }
+  }
+
+  if (currentState === '2_qualifying') {
+    // Quando o agente pede endereço, claramente passou da qualificação.
+    // Frases típicas: "me informe o CEP", "qual o seu endereço", "rua + número + bairro"
+    const pediu_endereco =
+      /\bcep\b/.test(lower) ||
+      /\bendere[çc]o\b/.test(lower) ||
+      /\b(rua|avenida|av\.?) .* (n[úu]mero|bairro)/.test(lower) ||
+      /verificar (a )?cobertura/.test(lower);
+    if (pediu_endereco) {
+      return '3_address';
+    }
+  }
+
+  // 3_address e estados seguintes: gerenciados por nextStateAfterTool
+  return null;
+}
+
+/**
  * Constrói o system reminder injetado a cada turno.
  * Inclui o estado atual + descrição + ação esperada.
  */
