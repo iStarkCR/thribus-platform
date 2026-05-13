@@ -24,17 +24,21 @@ function getClient(apiKey?: string): OpenAI {
  * Transcreve áudio via Whisper.
  *
  * Aceita 2 formatos de input:
- *  1. URL pública (`https://...`) — baixa via fetch
+ *  1. URL (`https://...`) — baixa via fetch
  *  2. Data URI base64 (`data:audio/ogg;base64,...`) — decodifica direto.
- *     TexNet CRM entrega áudio nesse formato no payload de webhook.
  *
  * @param audioInput URL ou data URI base64
  * @param apiKey OpenAI API key (opcional — usa env como fallback)
+ * @param downloadHeaders Headers extras pro fetch da URL — usado pra autenticar
+ *                        downloads que requerem auth (ex: TexNet API
+ *                        `/api/v1/leads/<id>/messages/<id>/media` precisa de
+ *                        `x-api-key`). Ignorado em data URI.
  * @returns texto transcrito ou null se falhar
  */
 export async function transcribeAudio(
   audioInput: string,
   apiKey?: string,
+  downloadHeaders?: Record<string, string>,
 ): Promise<string | null> {
   try {
     const start = Date.now();
@@ -54,8 +58,10 @@ export async function transcribeAudio(
       buf = Buffer.from(match[2], 'base64');
       sourceLabel = `data:${contentType} ${buf.length}b`;
     } else {
-      // URL — baixa via fetch
-      const fetchRes = await fetch(audioInput);
+      // URL — baixa via fetch (com headers opcionais pra URLs autenticadas)
+      const fetchRes = await fetch(audioInput, {
+        headers: downloadHeaders,
+      });
       if (!fetchRes.ok) {
         console.warn(`[transcribe] download falhou: HTTP ${fetchRes.status} url=${audioInput}`);
         return null;

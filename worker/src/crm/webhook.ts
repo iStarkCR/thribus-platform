@@ -180,7 +180,18 @@ export function createWebhookRouter(): Router {
           // Whisper é sempre OpenAI — usa a chave OpenAI específica, não o
           // legacy llmApiKey (que pode estar setado pra Anthropic em workspaces
           // que rodam Claude no agente principal).
-          const transcribed = await transcribeAudio(audioUrl, pickApiKeyByProvider('openai', workspace));
+          //
+          // TexNet media.url retorna 401 sem auth — precisa passar x-api-key
+          // do workspace. URL: /api/v1/leads/<id>/messages/<id>/media
+          const isTexNetUrl = audioUrl.includes('texcrm.texnet.com.br') && audioUrl.includes('/api/v1/');
+          const downloadHeaders = isTexNetUrl && workspace?.crmApiToken
+            ? { 'x-api-key': workspace.crmApiToken }
+            : undefined;
+          const transcribed = await transcribeAudio(
+            audioUrl,
+            pickApiKeyByProvider('openai', workspace),
+            downloadHeaders,
+          );
           if (transcribed) {
             finalContent = `[áudio do cliente] ${transcribed}`;
             console.log(`[webhook] audio transcribed lead=${lead.id} chars=${transcribed.length}`);

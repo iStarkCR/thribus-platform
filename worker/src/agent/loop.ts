@@ -419,6 +419,17 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   }
   // Constrói mensagens — se conteúdo tiver [image_url: ...], converte pra
   // content blocks multimodais (texto + imagem) compatíveis com Anthropic/OpenAI.
+  //
+  // TexNet media URLs (/api/v1/leads/.../messages/.../media) requerem `x-api-key`.
+  // Construímos um header builder que injeta auth só quando a URL é do TexNet.
+  const buildImageHeaders = (url: string): Record<string, string> | undefined => {
+    const isTexNetUrl = url.includes('texcrm.texnet.com.br') && url.includes('/api/v1/');
+    if (isTexNetUrl && workspace?.crmApiToken) {
+      return { 'x-api-key': workspace.crmApiToken };
+    }
+    return undefined;
+  };
+
   const messages: MessageParam[] = await Promise.all(
     trimmed.map(async (m) => {
       const role = m.role as 'user' | 'assistant';
@@ -429,7 +440,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       // Build multimodal content: imagens + texto
       const blocks: Array<unknown> = [];
       for (const url of urls) {
-        const block = await urlToAnthropicImageBlock(url);
+        const block = await urlToAnthropicImageBlock(url, buildImageHeaders(url));
         if (block) blocks.push(block);
       }
       if (text) blocks.push({ type: 'text', text });
@@ -449,7 +460,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     if (jobUrls.length > 0) {
       const blocks: Array<unknown> = [];
       for (const url of jobUrls) {
-        const block = await urlToAnthropicImageBlock(url);
+        const block = await urlToAnthropicImageBlock(url, buildImageHeaders(url));
         if (block) blocks.push(block);
       }
       if (jobText) blocks.push({ type: 'text', text: jobText });

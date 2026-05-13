@@ -39,10 +39,18 @@ export function extractImageRefs(content: string): { urls: string[]; text: strin
  * Converte URL de imagem em ImageBlockParam pro Anthropic.
  * Baixa a imagem e envia como base64 (compatível com versões atuais do SDK
  * e funciona pra URLs privadas).
+ *
+ * @param url URL da imagem
+ * @param downloadHeaders Headers extras pro fetch — usado pra URLs autenticadas
+ *                        (ex: TexNet `/api/v1/leads/<id>/messages/<id>/media`
+ *                        precisa de `x-api-key`).
  */
-export async function urlToAnthropicImageBlock(url: string): Promise<ImageBlockParam | null> {
+export async function urlToAnthropicImageBlock(
+  url: string,
+  downloadHeaders?: Record<string, string>,
+): Promise<ImageBlockParam | null> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: downloadHeaders });
     if (!res.ok) {
       console.warn(`[vision] download falhou: HTTP ${res.status} url=${url}`);
       return null;
