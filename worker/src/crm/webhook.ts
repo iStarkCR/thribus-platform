@@ -39,6 +39,16 @@ interface TexNetWebhookPayload {
       type: string;
       direction: 'inbound' | 'outbound';
       createdAt: string;
+      /**
+       * TexNet — desde 2026-05-13: payloads de áudio/imagem/video/document/sticker
+       * vêm com este objeto. `url` é HTTPS pública (sem auth) pra fetch direto.
+       * Formato content nesses casos é um path relativo legado (não usar pra fetch).
+       */
+      media?: {
+        url: string;
+        mime: string;
+        type: 'audio' | 'image' | 'video' | 'document' | 'sticker';
+      };
     };
   };
 }
@@ -145,36 +155,69 @@ export function createWebhookRouter(): Router {
       let finalContent = (message.content ?? '').trim();
 
       if (message.type === 'audio') {
-        // TexNet entrega áudio como data URI (data:audio/ogg;base64,...) ou URL.
-        // No canal Evolution Web (texnet-testeti) chega data URI. No 360dialog
-        // (texnet-duall) o formato é diferente — observado em prod (lead Rita,
-        // canal texnet-duall, 09/05/2026). Quando cair no fallback, logamos o
-        // payload bruto pra descobrir o formato e implementar suporte.
-        const audioSource = message.content;
-        if (audioSource && (audioSource.startsWith('data:') || audioSource.startsWith('http'))) {
-          console.log(`[webhook] áudio detectado lead=${lead.id} channel=${lead.channel} — transcrevendo`);
+        // TexNet atualizado em 2026-05-13: agora entrega `message.media.url`
+        // (URL pública HTTPS de download) quando o tipo é audio/image/video/document.
+        // O campo `message.content` virou path relativo (legado/info, não usar pra fetch).
+        //
+        // Caminhos suportados (em ordem de preferência):
+        //   1. message.media.url — URL HTTPS pública (formato novo, padrão)
+        //   2. message.content data URI — formato legado Evolution Web (transitional)
+        //   3. message.content URL — formato legado (transitional)
+        const audioUrl: string | undefined =
+          message.media?.url ??
+          (typeof message.content === 'string' &&
+            (message.content.startsWith('http') || message.content.startsWith('data:'))
+            ? message.content
+            : undefined);
+
+        if (audioUrl) {
+          console.log(
+            `[webhook] áudio detectado lead=${lead.id} channel=${lead.channel} ` +
+            `source=${message.media?.url ? 'media.url' : 'content'} ` +
+            `mime=${message.media?.mime ?? 'n/a'} — transcrevendo`,
+          );
           // Whisper é sempre OpenAI — usa a chave OpenAI específica, não o
           // legacy llmApiKey (que pode estar setado pra Anthropic em workspaces
           // que rodam Claude no agente principal).
-          const transcribed = await transcribeAudio(audioSource, pickApiKeyByProvider('openai', workspace));
+          const transcribed = await transcribeAudio(audioUrl, pickApiKeyByProvider('openai', workspace));
           if (transcribed) {
             finalContent = `[áudio do cliente] ${transcribed}`;
             console.log(`[webhook] audio transcribed lead=${lead.id} chars=${transcribed.length}`);
           } else {
             finalContent = '[cliente enviou áudio — transcrição indisponível]';
-            console.warn(`[webhook] audio transcription falhou lead=${lead.id}`);
+            console.warn(`[webhook] audio transcription falhou lead=${lead.id} url=${audioUrl.slice(0, 80)}`);
           }
         } else {
-          // Formato não suportado — log verboso pra investigar e implementar.
-          // Não vaza áudio inteiro (pode ser MB), mas mostra prefixo e tamanho.
-          const preview = typeof audioSource === 'string' ? audioSource.slice(0, 200) : `<${typeof audioSource}>`;
-          const totalLen = typeof audioSource === 'string' ? audioSource.length : 0;
+          // Sem URL nem data URI — log pra debug + fallback amigável
+          const preview = typeof message.content === 'string' ? message.content.slice(0, 200) : `<${typeof message.content}>`;
           console.warn(
-            `[webhook] AUDIO FORMATO NAO RECONHECIDO lead=${lead.id} channel=${lead.channel} ` +
-            `messageId=${message.id} contentType=${typeof audioSource} length=${totalLen} ` +
-            `preview="${preview}"`,
+            `[webhook] AUDIO SEM MEDIA.URL lead=${lead.id} channel=${lead.channel} ` +
+            `messageId=${message.id} content="${preview}" mediaKeys=${JSON.stringify(Object.keys(message.media ?? {}))}`,
           );
           finalContent = '[cliente enviou áudio — formato não reconhecido]';
+        }
+      } else if (message.type === 'image') {
+        // TexNet desde 2026-05-13: image também vem com media.url HTTPS.
+        // Agent loop usa `extractImageRefs` que reconhece marker `[image_url: URL]`
+        // no content e converte pra Anthropic multimodal blocks automaticamente.
+        const imageUrl = message.media?.url;
+        if (imageUrl) {
+          console.log(
+            `[webhook] imagem detectada lead=${lead.id} channel=${lead.channel} ` +
+            `mime=${message.media?.mime ?? 'n/a'} url=${imageUrl.slice(0, 80)}`,
+          );
+          // Caption da imagem (se houver texto junto) vai antes do marker
+          const caption = typeof message.content === 'string' && !message.content.startsWith('/media/')
+            ? message.content.trim()
+            : '';
+          finalContent = caption
+            ? `${caption}\n[image_url: ${imageUrl}]`
+            : `[cliente enviou imagem] [image_url: ${imageUrl}]`;
+        } else {
+          console.warn(
+            `[webhook] IMAGE SEM MEDIA.URL lead=${lead.id} messageId=${message.id}`,
+          );
+          finalContent = '[cliente enviou imagem — não consegui acessar]';
         }
       } else if (message.type === 'location') {
         // Cliente enviou pin de localização do WhatsApp. Formato varia por canal:

@@ -85,6 +85,15 @@ export interface LeadMessage {
   status: string;
   createdAt: string;
   sender: { id: string; name: string } | null;
+  /**
+   * TexNet — desde 2026-05-13 mensagens de áudio/imagem/video/document/sticker
+   * vêm com este objeto. `url` é HTTPS pública (sem auth) pra download direto.
+   */
+  media?: {
+    url: string;
+    mime: string;
+    type: 'audio' | 'image' | 'video' | 'document' | 'sticker';
+  };
 }
 
 export interface CrmUser {
