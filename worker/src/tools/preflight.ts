@@ -140,6 +140,124 @@ function validateConsultarViabilidade(input: Record<string, unknown>): Preflight
   };
 }
 
+// ─── Validators de data (consultar_agenda + criar_os_agendamento) ───────────
+//
+// Bug reportado em 2026-05-11: Bianca às vezes agenda em data muito futura
+// (cliente diz "13/05" mas vai parar em novembro). Hipótese: LLM inverte
+// dia↔mês ao gerar o JSON do tool call.
+//
+// Defesa em profundidade: preflight valida que data_desejada/data_reservada:
+//   1. Está no formato YYYY-MM-DD (ANO-MES-DIA)
+//   2. É uma data parseável
+//   3. Mês entre 01-12 e dia entre 01-31 (catch o swap óbvio)
+//   4. Está entre HOJE-1 e HOJE+90 dias (sanidade — agendamento futuro razoável)
+//
+// Se inválida, retorna erro estruturado pro LLM com instrução pra corrigir.
+
+interface DateValidation {
+  ok: boolean;
+  parsed?: Date;
+  error?: string;
+  /** Sugestão se detectou swap óbvio (dia > 12 em campo de mês) */
+  suggested?: string;
+}
+
+const DATE_ISO_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function validateScheduleDate(raw: string, fieldName: string): DateValidation {
+  const v = String(raw ?? '').trim();
+  if (!v) return { ok: false, error: `${fieldName} vazio` };
+
+  const m = v.match(DATE_ISO_RE);
+  if (!m) {
+    return { ok: false, error: `${fieldName} deve estar no formato YYYY-MM-DD (ex: 2026-05-13 para 13 de maio de 2026), recebido: "${v}"` };
+  }
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+
+  // Mês inválido — pega o caso clássico "2026-13-05" (dia 13 virou mês)
+  if (month < 1 || month > 12) {
+    const fixed = `${m[1]}-${m[3]}-${m[2]}`;
+    return {
+      ok: false,
+      error: `${fieldName} tem mês inválido (${month}). Você inverteu dia/mês? Formato é YYYY-MM-DD = ANO-MES-DIA. Talvez você quis dizer "${fixed}".`,
+      suggested: fixed,
+    };
+  }
+
+  // Dia inválido pro mês
+  if (day < 1 || day > 31) {
+    return { ok: false, error: `${fieldName} tem dia inválido (${day})` };
+  }
+
+  // Parse + valida que a data existe (ex: 31 de fevereiro não existe)
+  const parsed = new Date(year, month - 1, day);
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return { ok: false, error: `${fieldName} "${v}" não é uma data real (ex: 31 de fevereiro)` };
+  }
+
+  // Sanidade — data plausível pra agendamento (entre ontem e 90 dias no futuro)
+  const now = new Date();
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const ninetyDaysAhead = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 90);
+
+  if (parsed < yesterday) {
+    return { ok: false, error: `${fieldName} "${v}" está no passado (${parsed.toISOString().slice(0, 10)} < ${yesterday.toISOString().slice(0, 10)}). Use data futura.` };
+  }
+
+  if (parsed > ninetyDaysAhead) {
+    // Se passou de 90 dias e dia/mês são swappáveis (ex: month=11 day=05 quando hoje é maio),
+    // sugere o swap como hipótese mais provável
+    const swapped = `${year}-${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}`;
+    const swapMonth = day;
+    const swapDay = month;
+    const looksLikeSwap = swapMonth >= 1 && swapMonth <= 12 && swapDay >= 1 && swapDay <= 31;
+    return {
+      ok: false,
+      error: `${fieldName} "${v}" está muito longe (${Math.round((parsed.getTime() - now.getTime()) / 86400000)} dias). Agendamentos são no máximo 90 dias à frente.${looksLikeSwap ? ` Você inverteu dia/mês? Tente "${swapped}".` : ''}`,
+      suggested: looksLikeSwap ? swapped : undefined,
+    };
+  }
+
+  return { ok: true, parsed };
+}
+
+function validateConsultarAgenda(input: Record<string, unknown>): PreflightResult {
+  const v = validateScheduleDate(String(input.data_desejada ?? ''), 'data_desejada');
+  if (v.ok) return { ok: true };
+  return {
+    ok: false,
+    reason: 'invalid_date',
+    output: JSON.stringify({
+      erro: 'data_invalida',
+      mensagem: v.error,
+      sugestao: v.suggested,
+      instrucao_pro_llm: 'Reformate data_desejada no formato YYYY-MM-DD (ANO-MES-DIA). Mês é 01-12, dia é 01-31. Se cliente disse "13 de maio", passe "2026-05-13" — NÃO inverta dia/mês.',
+    }),
+  };
+}
+
+function validateCriarOsAgendamento(input: Record<string, unknown>): PreflightResult {
+  const v = validateScheduleDate(String(input.data_reservada ?? ''), 'data_reservada');
+  if (v.ok) return { ok: true };
+  return {
+    ok: false,
+    reason: 'invalid_date',
+    output: JSON.stringify({
+      erro: 'data_invalida',
+      mensagem: v.error,
+      sugestao: v.suggested,
+      instrucao_pro_llm: 'Reformate data_reservada no formato YYYY-MM-DD. Use o data_disponivel exato que veio de consultar_agenda — NÃO reformate manualmente.',
+    }),
+  };
+}
+
 // ─── Registry ────────────────────────────────────────────────────────────────
 
 /**
@@ -148,6 +266,8 @@ function validateConsultarViabilidade(input: Record<string, unknown>): Preflight
  */
 const VALIDATORS: Record<string, (input: Record<string, unknown>) => PreflightResult> = {
   consultar_viabilidade: validateConsultarViabilidade,
+  consultar_agenda: validateConsultarAgenda,
+  criar_os_agendamento: validateCriarOsAgendamento,
 };
 
 /**

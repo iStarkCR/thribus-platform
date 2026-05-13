@@ -121,10 +121,127 @@ for (const tc of CASES) {
 }
 
 console.log('─'.repeat(70));
-console.log(`Resultado: ${passed}/${CASES.length} ok, ${failed} falhas`);
-if (failed > 0) {
+console.log(`consultar_viabilidade: ${passed}/${CASES.length} ok, ${failed} falhas`);
+
+// ════════════════════════════════════════════════════════════════════════
+// Tests do validator de DATA (consultar_agenda + criar_os_agendamento)
+// ════════════════════════════════════════════════════════════════════════
+
+interface DateCase {
+  name: string;
+  tool: 'consultar_agenda' | 'criar_os_agendamento';
+  input: Record<string, unknown>;
+  shouldPass: boolean;
+  notes?: string;
+}
+
+// Calcula datas relativas ao "hoje" pra testes não-frágeis
+const today = new Date();
+const todayStr = today.toISOString().slice(0, 10);
+const tomorrow = new Date(today);
+tomorrow.setDate(today.getDate() + 1);
+const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+const in30days = new Date(today);
+in30days.setDate(today.getDate() + 30);
+const in30daysStr = in30days.toISOString().slice(0, 10);
+const in120days = new Date(today);
+in120days.setDate(today.getDate() + 120);
+const in120daysStr = in120days.toISOString().slice(0, 10);
+const yesterday = new Date(today);
+yesterday.setDate(today.getDate() - 1);
+const lastWeek = new Date(today);
+lastWeek.setDate(today.getDate() - 7);
+const lastWeekStr = lastWeek.toISOString().slice(0, 10);
+
+const DATE_CASES: DateCase[] = [
+  // ─── Devem PASSAR ───────────────────────────────────────────────────────
+  { name: 'consultar_agenda · amanhã', tool: 'consultar_agenda', input: { data_desejada: tomorrowStr }, shouldPass: true },
+  { name: 'consultar_agenda · hoje', tool: 'consultar_agenda', input: { data_desejada: todayStr }, shouldPass: true },
+  { name: 'consultar_agenda · 30 dias à frente', tool: 'consultar_agenda', input: { data_desejada: in30daysStr }, shouldPass: true },
+  { name: 'criar_os_agendamento · data válida em 30d', tool: 'criar_os_agendamento', input: { data_reservada: in30daysStr }, shouldPass: true },
+
+  // ─── Devem BLOQUEAR ────────────────────────────────────────────────────
+  {
+    name: 'consultar_agenda · mês inválido (swap clássico: 2026-13-05)',
+    tool: 'consultar_agenda',
+    input: { data_desejada: '2026-13-05' },
+    shouldPass: false,
+    notes: 'Bug clássico: LLM inverte dia/mês. Validator detecta mês>12.',
+  },
+  {
+    name: 'consultar_agenda · formato errado (13/05/2026 BR)',
+    tool: 'consultar_agenda',
+    input: { data_desejada: '13/05/2026' },
+    shouldPass: false,
+    notes: 'Tool exige ISO YYYY-MM-DD',
+  },
+  {
+    name: 'consultar_agenda · data no passado (semana passada)',
+    tool: 'consultar_agenda',
+    input: { data_desejada: lastWeekStr },
+    shouldPass: false,
+  },
+  {
+    name: 'criar_os_agendamento · data > 90 dias no futuro',
+    tool: 'criar_os_agendamento',
+    input: { data_reservada: in120daysStr },
+    shouldPass: false,
+    notes: 'Reportado pelo user: agendamento indo pra novembro quando deveria ser maio (~6 meses no futuro)',
+  },
+  {
+    name: 'consultar_agenda · data inexistente (31 de fevereiro)',
+    tool: 'consultar_agenda',
+    input: { data_desejada: '2026-02-31' },
+    shouldPass: false,
+  },
+  {
+    name: 'consultar_agenda · vazio',
+    tool: 'consultar_agenda',
+    input: { data_desejada: '' },
+    shouldPass: false,
+  },
+];
+
+console.log('─'.repeat(70));
+console.log('Preflight smoke tests — consultar_agenda + criar_os_agendamento (data)');
+console.log('─'.repeat(70));
+
+let datePassed = 0;
+let dateFailed = 0;
+const dateFailures: string[] = [];
+
+for (const tc of DATE_CASES) {
+  const result = preflightCheck(tc.tool, tc.input);
+  const actualPassed = result.ok;
+  const ok = actualPassed === tc.shouldPass;
+
+  const icon = ok ? '✓' : '✗';
+  const status = tc.shouldPass ? 'passa' : 'bloqueia';
+  console.log(`${icon} [${status}] ${tc.name}`);
+  console.log(`    input: ${JSON.stringify(tc.input)}`);
+  if (!ok) {
+    console.log(`    EXPECTED: ${tc.shouldPass ? 'pass' : 'block'}`);
+    console.log(`    GOT: ${actualPassed ? 'pass' : 'block'} (reason: ${result.reason ?? '—'})`);
+    dateFailures.push(tc.name);
+    dateFailed++;
+  } else {
+    datePassed++;
+  }
+  if (tc.notes) console.log(`    note: ${tc.notes}`);
+}
+
+console.log('─'.repeat(70));
+console.log(`data validators: ${datePassed}/${DATE_CASES.length} ok, ${dateFailed} falhas`);
+
+console.log('═'.repeat(70));
+const totalOk = passed + datePassed;
+const totalCases = CASES.length + DATE_CASES.length;
+const totalFailed = failed + dateFailed;
+console.log(`Resultado FINAL: ${totalOk}/${totalCases} ok, ${totalFailed} falhas`);
+if (totalFailed > 0) {
   console.log('Falhas:');
-  for (const f of failures) console.log(`  - ${f}`);
+  for (const f of failures) console.log(`  - [viabilidade] ${f}`);
+  for (const f of dateFailures) console.log(`  - [data] ${f}`);
   process.exit(1);
 }
 console.log('Tudo passou ✓');

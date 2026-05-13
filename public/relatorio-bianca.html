@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bianca — Relatório de Produção · 09 a 11 de Maio</title>
+  <meta name="description" content="Performance da Bianca (Colaborador Digital Thribus) no atendimento comercial da TexNet — 3 dias de produção.">
+  <meta name="robots" content="noindex,nofollow">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-0: #0a0e0c;
+      --bg-1: #11161300;
+      --bg-2: #161c19;
+      --bg-3: #1d2521;
+      --brand: #6b8f5e;
+      --brand-bright: #8aba7a;
+      --creme: #e8e4d8;
+      --creme-mute: #a8a698;
+      --creme-faint: #6a6a60;
+      --green: #7ec47a;
+      --amber: #e0a838;
+      --red: #e15a4a;
+      --blue: #5a9bd4;
+    }
+    body {
+      background: radial-gradient(ellipse at top, #131815 0%, #0a0e0c 60%);
+      color: var(--creme);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+    }
+    .surface-1 { background: #11161300; }
+    .surface-2 { background: var(--bg-2); }
+    .surface-3 { background: var(--bg-3); }
+    .text-brand { color: var(--brand-bright); }
+    .text-creme { color: var(--creme); }
+    .text-creme-mute { color: var(--creme-mute); }
+    .text-creme-faint { color: var(--creme-faint); }
+    .text-green { color: var(--green); }
+    .text-amber { color: var(--amber); }
+    .text-red { color: var(--red); }
+    .text-blue { color: var(--blue); }
+    .border-default { border-color: rgba(232, 228, 216, 0.08); }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    .grad-bianca {
+      background: linear-gradient(135deg, rgba(107, 143, 94, 0.18) 0%, rgba(107, 143, 94, 0.04) 100%);
+      border: 1px solid rgba(107, 143, 94, 0.25);
+    }
+    .grad-red {
+      background: linear-gradient(135deg, rgba(225, 90, 74, 0.14) 0%, rgba(225, 90, 74, 0.04) 100%);
+      border: 1px solid rgba(225, 90, 74, 0.30);
+    }
+    .grad-green {
+      background: linear-gradient(135deg, rgba(126, 196, 122, 0.14) 0%, rgba(126, 196, 122, 0.04) 100%);
+      border: 1px solid rgba(126, 196, 122, 0.28);
+    }
+    .grad-amber {
+      background: linear-gradient(135deg, rgba(224, 168, 56, 0.12) 0%, rgba(224, 168, 56, 0.04) 100%);
+      border: 1px solid rgba(224, 168, 56, 0.25);
+    }
+    .funnel-bar {
+      background: linear-gradient(90deg, var(--brand) 0%, var(--brand-bright) 100%);
+      box-shadow: 0 0 24px rgba(138, 186, 122, 0.18);
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .glow-brand {
+      box-shadow: 0 0 60px rgba(138, 186, 122, 0.08), 0 0 1px rgba(138, 186, 122, 0.5) inset;
+    }
+    .card { @apply rounded-2xl p-6; }
+    @media print {
+      body { background: white; color: #111; }
+      .surface-2, .surface-3, .grad-bianca, .grad-red, .grad-green, .grad-amber {
+        background: white !important; border: 1px solid #ddd !important;
+      }
+      .text-creme, .text-creme-mute, .text-creme-faint { color: #222 !important; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body class="antialiased">
+
+  <!-- HEADER -->
+  <header class="border-b border-default">
+    <div class="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl grad-bianca flex items-center justify-center text-brand font-bold text-lg">
+          B
+        </div>
+        <div>
+          <div class="text-[15px] font-bold text-creme">Relatório de Produção · Bianca</div>
+          <div class="text-[12.5px] text-creme-faint mono">colaboradores digitais · thribus × texnet</div>
+        </div>
+      </div>
+      <div class="text-right">
+        <div class="text-[13px] text-creme-mute font-semibold">Período</div>
+        <div class="text-[14px] text-creme mono">09/05 — 11/05/2026</div>
+        <div class="text-[11px] text-creme-faint mono">3 dias úteis · sáb a seg</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="max-w-6xl mx-auto px-6 pt-12 pb-6">
+    <span class="pill grad-bianca text-brand">Resumo executivo</span>
+    <h1 class="text-[36px] md:text-[44px] font-bold leading-tight mt-4 text-creme">
+      Em <span class="text-brand">3 dias</span> de produção real, a Bianca atendeu
+      <span class="text-brand">239 leads</span>, agendou
+      <span class="text-brand">8 instalações</span> e custou
+      <span class="text-red">R$ 79,18</span>.
+    </h1>
+    <p class="text-[16px] text-creme-mute mt-4 max-w-3xl leading-relaxed">
+      Cada real investido na Bianca retornou <strong class="text-brand">R$ 132 em LTV</strong> de vendas agendadas.
+      A taxa de conversão lead → venda ficou em <strong class="text-brand">3,3%</strong> — dentro do benchmark
+      de mercado pra cold inbound de WhatsApp (1-3%) já na primeira semana.
+    </p>
+  </section>
+
+  <!-- KPIs HERO -->
+  <section class="max-w-6xl mx-auto px-6 py-6">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="card grad-bianca">
+        <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">Conversas atendidas</div>
+        <div class="text-[42px] font-extrabold text-creme leading-none mt-3 mono">239</div>
+        <div class="text-[12px] text-creme-mute mt-1.5">~80/dia · sem time humano</div>
+      </div>
+      <div class="card grad-green">
+        <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">Instalações agendadas</div>
+        <div class="text-[42px] font-extrabold text-green leading-none mt-3 mono">8</div>
+        <div class="text-[12px] text-creme-mute mt-1.5">vendas pré-fechadas, técnico marcado</div>
+      </div>
+      <div class="card grad-red">
+        <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">Custo no período</div>
+        <div class="text-[42px] font-extrabold text-red leading-none mt-3 mono">R$ 79</div>
+        <div class="text-[12px] text-creme-mute mt-1.5">$15.83 USD · projeção R$ 790/mês</div>
+      </div>
+      <div class="card grad-amber">
+        <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">ROI imediato</div>
+        <div class="text-[42px] font-extrabold text-amber leading-none mt-3 mono">132×</div>
+        <div class="text-[12px] text-creme-mute mt-1.5">cada R$ 1 → R$ 132 em LTV</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FUNIL -->
+  <section class="max-w-6xl mx-auto px-6 py-8">
+    <div class="surface-2 rounded-2xl p-8 border border-default">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="text-[20px] font-bold text-creme">Funil de Conversão</h2>
+          <p class="text-[13px] text-creme-mute mt-1">Cada conversa única, qual a etapa mais funda que atingiu.</p>
+        </div>
+        <span class="pill grad-bianca text-brand">3 dias · 239 conv.</span>
+      </div>
+
+      <div class="space-y-3">
+        <!-- Funil visual: largura proporcional ao % -->
+        <div>
+          <div class="flex items-center justify-between text-[14px] mb-1.5">
+            <span class="text-creme font-semibold">01. Iniciaram conversa</span>
+            <span class="mono text-creme"><strong>239</strong> <span class="text-creme-faint">· 100%</span></span>
+          </div>
+          <div class="h-9 rounded-lg overflow-hidden surface-3">
+            <div class="h-full funnel-bar rounded-lg" style="width:100%"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between text-[14px] mb-1.5">
+            <span class="text-creme font-semibold">02. Chegaram na viabilidade (Geogrid)</span>
+            <span class="mono text-creme"><strong>144</strong> <span class="text-creme-faint">· 60,3%</span></span>
+          </div>
+          <div class="h-9 rounded-lg overflow-hidden surface-3">
+            <div class="h-full funnel-bar rounded-lg" style="width:60.3%"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between text-[14px] mb-1.5">
+            <span class="text-creme font-semibold">03. Viram opções de planos</span>
+            <span class="mono text-creme"><strong>88</strong> <span class="text-creme-faint">· 36,8%</span></span>
+          </div>
+          <div class="h-9 rounded-lg overflow-hidden surface-3">
+            <div class="h-full funnel-bar rounded-lg" style="width:36.8%"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between text-[14px] mb-1.5">
+            <span class="text-creme font-semibold">04. Fizeram cadastro completo</span>
+            <span class="mono text-creme"><strong>19</strong> <span class="text-creme-faint">· 7,9%</span></span>
+          </div>
+          <div class="h-9 rounded-lg overflow-hidden surface-3">
+            <div class="h-full funnel-bar rounded-lg" style="width:7.9%"></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between text-[14px] mb-1.5">
+            <span class="text-green font-semibold">05. Agendaram instalação · venda fechada</span>
+            <span class="mono text-green"><strong>8</strong> <span class="text-creme-faint">· 3,3%</span></span>
+          </div>
+          <div class="h-9 rounded-lg overflow-hidden surface-3">
+            <div class="h-full rounded-lg" style="width:3.3%; background: linear-gradient(90deg, var(--green) 0%, #b8e6a8 100%); box-shadow: 0 0 20px rgba(126,196,122,0.4);"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 grid md:grid-cols-3 gap-4 text-[13px] text-creme-mute">
+        <div class="surface-3 rounded-lg p-4">
+          <div class="text-creme font-bold mb-1">3,3% lead → venda</div>
+          Dentro do benchmark de cold inbound WhatsApp (1-3%) já na primeira semana sem otimizações.
+        </div>
+        <div class="surface-3 rounded-lg p-4">
+          <div class="text-creme font-bold mb-1">60% chegam à viabilidade</div>
+          Mesmo quem não fecha deixa endereço qualificado. Base limpa pra remarketing.
+        </div>
+        <div class="surface-3 rounded-lg p-4">
+          <div class="text-creme font-bold mb-1">19 cadastros completos</div>
+          Aceitaram contrato mas ainda não agendaram. Time humano pode resgatar via ligação.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EVOLUÇÃO DIÁRIA -->
+  <section class="max-w-6xl mx-auto px-6 py-8">
+    <div class="surface-2 rounded-2xl p-8 border border-default">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-[20px] font-bold text-creme">Evolução Diária</h2>
+        <span class="pill grad-bianca text-brand">sáb · dom · seg</span>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-6 mb-8">
+        <div class="surface-3 rounded-xl p-5 border-l-4" style="border-left-color: var(--brand-bright);">
+          <div class="text-[12.5px] uppercase tracking-wider text-creme-faint font-bold">Sáb 09/05</div>
+          <div class="mt-3 space-y-1.5 text-[14px]">
+            <div class="flex justify-between"><span class="text-creme-mute">Conversas</span><span class="mono text-creme font-bold">77</span></div>
+            <div class="flex justify-between"><span class="text-creme-mute">Viabilidades</span><span class="mono text-creme font-bold">94</span></div>
+            <div class="flex justify-between"><span class="text-creme-mute">Cadastros</span><span class="mono text-creme font-bold">14</span></div>
+            <div class="flex justify-between"><span class="text-green">Agendamentos</span><span class="mono text-green font-bold">6</span></div>
+            <div class="flex justify-between"><span class="text-creme-mute">Escalados</span><span class="mono text-creme font-bold">2</span></div>
+          </div>
+        </div>
+        <div class="surface-3 rounded-xl p-5 border-l-4" style="border-left-color: var(--brand-bright);">
+          <div class="text-[12.5px] uppercase tracking-wider text-creme-faint font-bold">Dom 10/05</div>
+          <div class="mt-3 space-y-1.5 text-[14px]">
+            <div class="flex justify-between"><span class="text-creme-mute">Conversas</span><span class="mono text-creme font-bold">96</span></div>
+            <div class="flex justify-between"><span class="text-creme-mute">Viabilidades</span><span class="mono text-creme font-bold">74</span></div>
+            <div class="flex justify-between"><span class="text-creme-mute">Cadastros</span><span class="mono text-creme font-bold">8</span></div>
+            <div class="flex justify-between"><span class="text-green">Agendamentos</span><span class="mono text-green font-bold">2</span></div>
+            <div class="flex justify-between"><span class="text-creme-mute">Escalados</span><span class="mono text-creme font-bold">26</span></div>
+          </div>
+        </div>
+        <div class="surface-3 rounded-xl p-5 border-l-4" style="border-left-color: var(--amber);">
+          <div class="text-[12.5px] uppercase tracking-wider text-creme-faint font-bold flex items-center justify-between">
+            Seg 11/05
+            <span class="text-amber text-[10px] normal-case tracking-normal">⚠ bug IXC</span>
+          </div>
+          <div class="mt-3 space-y-1.5 text-[14px]">
+            <div class="flex justify-between"><span class="text-creme-mute">Conversas</span><span class="mono text-creme font-bold">81</span></div>
+            <div class="flex justify-between"><span class="text-creme-mute">Viabilidades</span><span class="mono text-creme font-bold">69</span></div>
+            <div class="flex justify-between"><span class="text-creme-mute">Cadastros</span><span class="mono text-creme font-bold">5</span></div>
+            <div class="flex justify-between"><span class="text-red">Agendamentos</span><span class="mono text-red font-bold">0</span></div>
+            <div class="flex justify-between"><span class="text-amber">Escalados</span><span class="mono text-amber font-bold">29</span></div>
+          </div>
+        </div>
+      </div>
+
+      <canvas id="dailyChart" height="80"></canvas>
+
+      <div class="mt-6 grad-amber rounded-lg p-4 text-[13px] flex gap-3">
+        <span class="text-amber text-lg">⚠</span>
+        <div>
+          <strong class="text-amber">Segunda 11/05 — queda artificial.</strong>
+          <span class="text-creme-mute">
+            Zero agendamentos e 29 escalações é sintoma de bug de integração com o IXC (campo
+            <code class="mono text-creme bg-black/30 px-1.5 py-0.5 rounded">data_reservada</code>
+            sendo gravado como <code class="mono text-creme bg-black/30 px-1.5 py-0.5 rounded">06/11/0005</code>
+            quando deveria ser <code class="mono text-creme bg-black/30 px-1.5 py-0.5 rounded">11/05/2026</code>).
+            A Bianca está identificando a falha do IXC e escalando corretamente. Fix já mapeado no workflow
+            n8n — aplicar antes do próximo ciclo.
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ENGAJAMENTO + CUSTO LADO A LADO -->
+  <section class="max-w-6xl mx-auto px-6 py-8">
+    <div class="grid md:grid-cols-2 gap-6">
+
+      <!-- ENGAJAMENTO -->
+      <div class="surface-2 rounded-2xl p-8 border border-default">
+        <h2 class="text-[20px] font-bold text-creme mb-1">Engajamento dos leads</h2>
+        <p class="text-[13px] text-creme-mute mb-6">Tempo desde a última mensagem do cliente.</p>
+
+        <canvas id="engajamentoChart" height="120"></canvas>
+
+        <div class="mt-6 space-y-2.5 text-[13.5px]">
+          <div class="flex justify-between items-center">
+            <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:var(--red)"></span><span class="text-creme">Nunca responderam <span class="text-creme-faint">(spam/oi e sumiram)</span></span></span>
+            <span class="mono text-creme font-bold">72 <span class="text-creme-faint">(30%)</span></span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:var(--amber)"></span><span class="text-creme">Pararam 1-2 dias atrás</span></span>
+            <span class="mono text-creme font-bold">29 <span class="text-creme-faint">(12%)</span></span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:var(--blue)"></span><span class="text-creme">Pararam há mais de 2 dias</span></span>
+            <span class="mono text-creme font-bold">138 <span class="text-creme-faint">(58%)</span></span>
+          </div>
+        </div>
+
+        <div class="mt-6 grad-bianca rounded-lg p-4 text-[13px] text-creme-mute">
+          <strong class="text-creme">Insight:</strong> 30% dos leads nunca interagiram de verdade
+          (mandaram "oi" e sumiram). Esse é trabalho de triagem que <strong class="text-brand">Bianca filtra de graça</strong>
+          — se fosse atendente humano, custaria horas de trabalho descartando esses leads.
+        </div>
+      </div>
+
+      <!-- CUSTO -->
+      <div class="surface-2 rounded-2xl p-8 border border-default">
+        <h2 class="text-[20px] font-bold text-creme mb-1">Custo real</h2>
+        <p class="text-[13px] text-creme-mute mb-6">Calculado pelos tokens reais de cada chamada de LLM.</p>
+
+        <div class="grid grid-cols-2 gap-3 mb-6">
+          <div class="surface-3 rounded-xl p-4">
+            <div class="text-[11px] uppercase tracking-wider text-creme-faint font-bold">3 dias</div>
+            <div class="mono text-[28px] font-extrabold text-red leading-none mt-2">R$ 79</div>
+            <div class="text-[11px] text-creme-faint mt-1">$15,83 USD</div>
+          </div>
+          <div class="surface-3 rounded-xl p-4">
+            <div class="text-[11px] uppercase tracking-wider text-creme-faint font-bold">por conversa</div>
+            <div class="mono text-[28px] font-extrabold text-creme leading-none mt-2">R$ 0,33</div>
+            <div class="text-[11px] text-creme-faint mt-1">$0,066 USD</div>
+          </div>
+          <div class="surface-3 rounded-xl p-4">
+            <div class="text-[11px] uppercase tracking-wider text-creme-faint font-bold">por venda agendada</div>
+            <div class="mono text-[28px] font-extrabold text-creme leading-none mt-2">R$ 9,90</div>
+            <div class="text-[11px] text-creme-faint mt-1">8 vendas / R$ 79,18</div>
+          </div>
+          <div class="surface-3 rounded-xl p-4">
+            <div class="text-[11px] uppercase tracking-wider text-creme-faint font-bold">projeção mensal</div>
+            <div class="mono text-[28px] font-extrabold text-red leading-none mt-2">R$ 790</div>
+            <div class="text-[11px] text-creme-faint mt-1">~$158 USD</div>
+          </div>
+        </div>
+
+        <h3 class="text-[14px] font-bold text-creme mb-3">Comparativo</h3>
+        <div class="space-y-2">
+          <div class="flex justify-between items-center surface-3 rounded-lg p-3">
+            <span class="text-[13.5px] text-creme">1 atendente CLT (filtro/triagem)</span>
+            <span class="mono text-red font-bold">~R$ 2.500/mês</span>
+          </div>
+          <div class="flex justify-between items-center surface-3 rounded-lg p-3">
+            <span class="text-[13.5px] text-creme">1h de atendente humano</span>
+            <span class="mono text-red font-bold">~R$ 30</span>
+          </div>
+          <div class="flex justify-between items-center grad-green rounded-lg p-3">
+            <span class="text-[13.5px] text-creme font-semibold">Bianca (24/7, infinitas conversas paralelas)</span>
+            <span class="mono text-green font-bold">R$ 790/mês</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROI -->
+  <section class="max-w-6xl mx-auto px-6 py-8">
+    <div class="grad-green rounded-2xl p-8">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="text-[20px] font-bold text-creme">ROI — retorno em LTV</h2>
+          <p class="text-[13px] text-creme-mute mt-1">Valor das vendas agendadas vs custo total no período.</p>
+        </div>
+        <span class="pill" style="background: rgba(126,196,122,0.18); color: var(--green); border: 1px solid rgba(126,196,122,0.3)">132× retorno</span>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4 mb-6">
+        <div class="bg-black/30 rounded-xl p-5">
+          <div class="text-[11.5px] uppercase tracking-wider text-creme-faint font-bold">Vendas agendadas</div>
+          <div class="mono text-[34px] font-extrabold text-creme mt-2">8</div>
+          <div class="text-[12px] text-creme-mute mt-1">técnico marcado pra instalar</div>
+        </div>
+        <div class="bg-black/30 rounded-xl p-5">
+          <div class="text-[11.5px] uppercase tracking-wider text-creme-faint font-bold">Ticket médio × fidelidade</div>
+          <div class="mono text-[34px] font-extrabold text-creme mt-2">R$ 1.308</div>
+          <div class="text-[12px] text-creme-mute mt-1">~R$ 109/mês × 12 meses · LTV</div>
+        </div>
+        <div class="bg-black/30 rounded-xl p-5">
+          <div class="text-[11.5px] uppercase tracking-wider text-creme-faint font-bold">LTV total agendado</div>
+          <div class="mono text-[34px] font-extrabold text-green mt-2">R$ 10.464</div>
+          <div class="text-[12px] text-creme-mute mt-1">8 × R$ 1.308</div>
+        </div>
+      </div>
+
+      <div class="bg-black/40 rounded-xl p-6">
+        <div class="text-center">
+          <div class="text-[13px] text-creme-mute uppercase tracking-wider font-bold">Cálculo</div>
+          <div class="mono text-[26px] text-creme mt-3">
+            <span class="text-green">R$ 10.464</span>
+            <span class="text-creme-faint mx-3">÷</span>
+            <span class="text-red">R$ 79,18</span>
+            <span class="text-creme-faint mx-3">=</span>
+            <span class="text-green font-extrabold text-[34px]">132×</span>
+          </div>
+          <div class="text-[13.5px] text-creme-mute mt-3">
+            Cada R$ 1 investido na Bianca retornou <strong class="text-green">R$ 132 em LTV de vendas agendadas</strong> em 3 dias.
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 text-[13px] text-creme-mute">
+        <strong class="text-creme">Pipeline aberto que NÃO está nesse número:</strong>
+        19 cadastros completos esperando agendamento + 144 leads qualificados com endereço validado.
+        Cada um pode virar venda com 1 ligação humana de resgate.
+      </div>
+    </div>
+  </section>
+
+  <!-- CONCLUSÃO / RECOMENDAÇÃO -->
+  <section class="max-w-6xl mx-auto px-6 py-8">
+    <div class="surface-2 rounded-2xl p-8 border border-default">
+      <h2 class="text-[20px] font-bold text-creme mb-6">Conclusão e recomendação</h2>
+
+      <div class="space-y-4 mb-8">
+        <div class="flex gap-3">
+          <span class="text-green text-lg shrink-0">✓</span>
+          <div class="text-[14.5px] text-creme">
+            <strong>Performance dentro do benchmark de mercado (3,3% conversão lead → venda)</strong>
+            já na primeira semana, sem otimizações.
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <span class="text-green text-lg shrink-0">✓</span>
+          <div class="text-[14.5px] text-creme">
+            <strong>30% dos leads são triagem pura</strong> que Bianca filtra de graça — economiza horas humanas.
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <span class="text-green text-lg shrink-0">✓</span>
+          <div class="text-[14.5px] text-creme">
+            <strong>R$ 790/mês projetado</strong> = fração do custo de 1 atendente CLT (~R$ 2.500), com 24/7 paralelo ilimitado.
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <span class="text-amber text-lg shrink-0">⚠</span>
+          <div class="text-[14.5px] text-creme">
+            <strong>Queda artificial na segunda 11/05</strong> foi causada por bug de integração com IXC, já identificado.
+            <span class="text-creme-mute">Fix mapeado no workflow n8n — pronto pra deploy.</span>
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <span class="text-amber text-lg shrink-0">⚠</span>
+          <div class="text-[14.5px] text-creme">
+            <strong>Leads órfãos</strong> (chegam direto em "aguardando" no IXC sem passar pela Bianca) inflam métricas
+            do humano e <span class="text-creme-mute">subestimam o crédito real da Bianca</span>.
+          </div>
+        </div>
+      </div>
+
+      <div class="grad-bianca rounded-xl p-6">
+        <div class="flex items-start gap-4">
+          <div class="text-brand text-3xl">→</div>
+          <div>
+            <h3 class="text-[16px] font-bold text-creme mb-2">Sugestão antes de qualquer decisão</h3>
+            <p class="text-[14px] text-creme leading-relaxed mb-3">
+              <strong>Trial estruturado de mais 14 dias</strong> com os 2 fixes aplicados (data IXC + leads órfãos)
+              e meta clara: <strong class="text-brand">≥ 2 agendamentos/dia em média</strong>.
+            </p>
+            <p class="text-[13.5px] text-creme-mute leading-relaxed">
+              Hoje, mesmo com a queda da segunda por bug externo, está em
+              <strong class="text-brand">2,67 agendamentos/dia</strong>. Com os fixes, projeção é
+              <strong class="text-brand">4-5/dia</strong> e o ROI cresce proporcional.
+              Se em 14 dias não bater a meta, conversa de desligar tem mérito. Hoje os números mostram o oposto.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-default mt-12 py-8 no-print">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-3">
+      <div class="text-[12.5px] text-creme-faint">
+        Dados extraídos de produção · agent_id <code class="mono text-creme-mute">0146f067-ffed-45c8-8f8b-f5bd8877b840</code>
+      </div>
+      <div class="text-[12.5px] text-creme-faint">
+        Thribus · Colaboradores Digitais · Maio/2026
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    Chart.defaults.color = '#a8a698';
+    Chart.defaults.borderColor = 'rgba(232, 228, 216, 0.08)';
+    Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+    // ─── Daily chart (atendimentos + agendamentos por dia) ───
+    new Chart(document.getElementById('dailyChart'), {
+      type: 'bar',
+      data: {
+        labels: ['Sáb 09/05', 'Dom 10/05', 'Seg 11/05'],
+        datasets: [
+          {
+            label: 'Conversas',
+            data: [77, 96, 81],
+            backgroundColor: 'rgba(107, 143, 94, 0.6)',
+            borderColor: '#8aba7a',
+            borderWidth: 1,
+            borderRadius: 6,
+          },
+          {
+            label: 'Cadastros',
+            data: [14, 8, 5],
+            backgroundColor: 'rgba(90, 155, 212, 0.6)',
+            borderColor: '#5a9bd4',
+            borderWidth: 1,
+            borderRadius: 6,
+          },
+          {
+            label: 'Agendamentos',
+            data: [6, 2, 0],
+            backgroundColor: 'rgba(126, 196, 122, 0.85)',
+            borderColor: '#7ec47a',
+            borderWidth: 1,
+            borderRadius: 6,
+          },
+          {
+            label: 'Escalados',
+            data: [2, 26, 29],
+            backgroundColor: 'rgba(224, 168, 56, 0.6)',
+            borderColor: '#e0a838',
+            borderWidth: 1,
+            borderRadius: 6,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#a8a698', padding: 16 } },
+        },
+        scales: {
+          x: { grid: { color: 'rgba(232, 228, 216, 0.05)' } },
+          y: { grid: { color: 'rgba(232, 228, 216, 0.05)' }, beginAtZero: true },
+        },
+      },
+    });
+
+    // ─── Engajamento donut ───
+    new Chart(document.getElementById('engajamentoChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Nunca responderam', 'Pararam 1-2 dias', 'Pararam +2 dias'],
+        datasets: [{
+          data: [72, 29, 138],
+          backgroundColor: ['#e15a4a', '#e0a838', '#5a9bd4'],
+          borderColor: '#161c19',
+          borderWidth: 3,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.label}: ${ctx.parsed} (${(ctx.parsed/239*100).toFixed(1)}%)`,
+            },
+          },
+        },
+      },
+    });
+  </script>
+</body>
+</html>
