@@ -193,8 +193,34 @@ export function createWebhookRouter(): Router {
             downloadHeaders,
           );
           if (transcribed) {
-            finalContent = `[áudio do cliente] ${transcribed}`;
-            console.log(`[webhook] audio transcribed lead=${lead.id} chars=${transcribed.length}`);
+            // Heurística: se transcrição contém dados sensíveis pra tools
+            // (CEP 8 dígitos, número de casa, CPF 11 dígitos, etc), instrui
+            // o agente a CONFIRMAR a transcrição em linguagem natural antes
+            // de chamar tool. Whisper erra com homofonia/números em pt-BR.
+            const looksLikeData =
+              /\b\d{8}\b/.test(transcribed) ||                  // CEP/CPF/8+ dígitos
+              /\b\d{4,7}\b/.test(transcribed) ||                // número de casa, telefone parcial
+              /\b(rua|avenida|av\.?|travessa|alameda)\b/i.test(transcribed) ||
+              /\bcep\b/i.test(transcribed) ||
+              /\b(bairro|jardim|conjunto|residencial)\b/i.test(transcribed);
+
+            if (looksLikeData) {
+              finalContent =
+                `[áudio do cliente — transcrição automática, pode conter erro: "${transcribed}"]\n\n` +
+                `INSTRUCAO INTERNA AO AGENTE: A transcrição automática pode ter errado ` +
+                `números/nomes. ANTES de chamar qualquer tool com esses dados ` +
+                `(consultar_viabilidade, cadastro_wizard, consultar_cpf, etc), CONFIRME ` +
+                `em linguagem natural com o cliente. Exemplo: "Entendi: <repete o dado>. ` +
+                `Confirma se é isso mesmo? 🙂" Só prossiga com a tool após o cliente confirmar.`;
+            } else {
+              // Áudio simples (ex: "sim", "pode ser", "ok") — sem dado crítico,
+              // passa direto.
+              finalContent = `[áudio do cliente] ${transcribed}`;
+            }
+            console.log(
+              `[webhook] audio transcribed lead=${lead.id} chars=${transcribed.length} ` +
+              `looksLikeData=${looksLikeData}`,
+            );
           } else {
             finalContent = '[cliente enviou áudio — transcrição indisponível]';
             console.warn(`[webhook] audio transcription falhou lead=${lead.id} url=${audioUrl.slice(0, 80)}`);
