@@ -111,14 +111,15 @@
     <span class="pill grad-bianca text-brand">Resumo executivo</span>
     <h1 class="text-[36px] md:text-[44px] font-bold leading-tight mt-4 text-creme">
       Em <span class="text-brand">3 dias</span> de produção real, a Bianca atendeu
-      <span class="text-brand">239 leads</span>, agendou
-      <span class="text-brand">8 instalações</span> e custou
-      <span class="text-red">R$ 79,18</span>.
+      <span class="text-brand">239 leads</span>, qualificou
+      <span class="text-brand">144 endereços</span> e agendou
+      <span class="text-green">8 instalações</span>.
     </h1>
     <p class="text-[16px] text-creme-mute mt-4 max-w-3xl leading-relaxed">
-      Cada real investido na Bianca retornou <strong class="text-brand">R$ 132 em LTV</strong> de vendas agendadas.
-      A taxa de conversão lead → venda ficou em <strong class="text-brand">3,3%</strong> — dentro do benchmark
-      de mercado pra cold inbound de WhatsApp (1-3%) já na primeira semana.
+      A taxa de conversão lead → venda agendada ficou em <strong class="text-brand">3,3%</strong> — dentro do
+      benchmark de mercado pra cold inbound de WhatsApp (1-3%) já na primeira semana. Com pipeline aberto de
+      <strong class="text-brand">19 cadastros completos</strong> e <strong class="text-brand">144 leads qualificados</strong>
+      pra resgate manual.
     </p>
   </section>
 
@@ -128,22 +129,22 @@
       <div class="card grad-bianca">
         <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">Conversas atendidas</div>
         <div class="text-[42px] font-extrabold text-creme leading-none mt-3 mono">239</div>
-        <div class="text-[12px] text-creme-mute mt-1.5">~80/dia · sem time humano</div>
+        <div class="text-[12px] text-creme-mute mt-1.5">~80/dia · 24h por dia, sem pausa</div>
+      </div>
+      <div class="card grad-bianca">
+        <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">Leads qualificados</div>
+        <div class="text-[42px] font-extrabold text-brand leading-none mt-3 mono">144</div>
+        <div class="text-[12px] text-creme-mute mt-1.5">endereço validado no Geogrid</div>
+      </div>
+      <div class="card grad-amber">
+        <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">Cadastros completos</div>
+        <div class="text-[42px] font-extrabold text-amber leading-none mt-3 mono">19</div>
+        <div class="text-[12px] text-creme-mute mt-1.5">pipeline aberto pra resgate</div>
       </div>
       <div class="card grad-green">
         <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">Instalações agendadas</div>
         <div class="text-[42px] font-extrabold text-green leading-none mt-3 mono">8</div>
         <div class="text-[12px] text-creme-mute mt-1.5">vendas pré-fechadas, técnico marcado</div>
-      </div>
-      <div class="card grad-red">
-        <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">Custo no período</div>
-        <div class="text-[42px] font-extrabold text-red leading-none mt-3 mono">R$ 79</div>
-        <div class="text-[12px] text-creme-mute mt-1.5">$15.83 USD · projeção R$ 790/mês</div>
-      </div>
-      <div class="card grad-amber">
-        <div class="text-[11.5px] uppercase tracking-wider font-bold text-creme-faint">ROI imediato</div>
-        <div class="text-[42px] font-extrabold text-amber leading-none mt-3 mono">132×</div>
-        <div class="text-[12px] text-creme-mute mt-1.5">cada R$ 1 → R$ 132 em LTV</div>
       </div>
     </div>
   </section>
@@ -288,135 +289,95 @@
     </div>
   </section>
 
-  <!-- ENGAJAMENTO + CUSTO LADO A LADO -->
+  <!-- ENGAJAMENTO -->
   <section class="max-w-6xl mx-auto px-6 py-8">
-    <div class="grid md:grid-cols-2 gap-6">
+    <div class="surface-2 rounded-2xl p-8 border border-default">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="text-[20px] font-bold text-creme">Engajamento dos leads</h2>
+          <p class="text-[13px] text-creme-mute mt-1">Tempo desde a última mensagem do cliente.</p>
+        </div>
+        <span class="pill grad-bianca text-brand">239 conversas</span>
+      </div>
 
-      <!-- ENGAJAMENTO -->
-      <div class="surface-2 rounded-2xl p-8 border border-default">
-        <h2 class="text-[20px] font-bold text-creme mb-1">Engajamento dos leads</h2>
-        <p class="text-[13px] text-creme-mute mb-6">Tempo desde a última mensagem do cliente.</p>
-
-        <canvas id="engajamentoChart" height="120"></canvas>
-
-        <div class="mt-6 space-y-2.5 text-[13.5px]">
-          <div class="flex justify-between items-center">
-            <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:var(--red)"></span><span class="text-creme">Nunca responderam <span class="text-creme-faint">(spam/oi e sumiram)</span></span></span>
-            <span class="mono text-creme font-bold">72 <span class="text-creme-faint">(30%)</span></span>
-          </div>
-          <div class="flex justify-between items-center">
-            <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:var(--amber)"></span><span class="text-creme">Pararam 1-2 dias atrás</span></span>
-            <span class="mono text-creme font-bold">29 <span class="text-creme-faint">(12%)</span></span>
-          </div>
-          <div class="flex justify-between items-center">
-            <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full" style="background:var(--blue)"></span><span class="text-creme">Pararam há mais de 2 dias</span></span>
-            <span class="mono text-creme font-bold">138 <span class="text-creme-faint">(58%)</span></span>
-          </div>
+      <div class="grid md:grid-cols-2 gap-8 items-center">
+        <div>
+          <canvas id="engajamentoChart" height="180"></canvas>
         </div>
 
-        <div class="mt-6 grad-bianca rounded-lg p-4 text-[13px] text-creme-mute">
-          <strong class="text-creme">Insight:</strong> 30% dos leads nunca interagiram de verdade
-          (mandaram "oi" e sumiram). Esse é trabalho de triagem que <strong class="text-brand">Bianca filtra de graça</strong>
-          — se fosse atendente humano, custaria horas de trabalho descartando esses leads.
+        <div class="space-y-3">
+          <div class="surface-3 rounded-lg p-4 border-l-4" style="border-left-color: var(--red);">
+            <div class="flex justify-between items-baseline">
+              <span class="text-creme font-semibold">Nunca responderam</span>
+              <span class="mono text-creme font-bold text-[18px]">72 <span class="text-creme-faint text-[14px]">· 30%</span></span>
+            </div>
+            <div class="text-[12.5px] text-creme-mute mt-1">Mandaram "oi"/spam e sumiram. Trabalho de triagem feito sem time humano.</div>
+          </div>
+
+          <div class="surface-3 rounded-lg p-4 border-l-4" style="border-left-color: var(--amber);">
+            <div class="flex justify-between items-baseline">
+              <span class="text-creme font-semibold">Pararam 1-2 dias atrás</span>
+              <span class="mono text-creme font-bold text-[18px]">29 <span class="text-creme-faint text-[14px]">· 12%</span></span>
+            </div>
+            <div class="text-[12.5px] text-creme-mute mt-1">Conversa ativa interrompida. Janela ótima pra resgate manual.</div>
+          </div>
+
+          <div class="surface-3 rounded-lg p-4 border-l-4" style="border-left-color: var(--blue);">
+            <div class="flex justify-between items-baseline">
+              <span class="text-creme font-semibold">Pararam há mais de 2 dias</span>
+              <span class="mono text-creme font-bold text-[18px]">138 <span class="text-creme-faint text-[14px]">· 58%</span></span>
+            </div>
+            <div class="text-[12.5px] text-creme-mute mt-1">Leads frios. Base limpa pra campanha de remarketing.</div>
+          </div>
         </div>
       </div>
 
-      <!-- CUSTO -->
-      <div class="surface-2 rounded-2xl p-8 border border-default">
-        <h2 class="text-[20px] font-bold text-creme mb-1">Custo real</h2>
-        <p class="text-[13px] text-creme-mute mb-6">Calculado pelos tokens reais de cada chamada de LLM.</p>
-
-        <div class="grid grid-cols-2 gap-3 mb-6">
-          <div class="surface-3 rounded-xl p-4">
-            <div class="text-[11px] uppercase tracking-wider text-creme-faint font-bold">3 dias</div>
-            <div class="mono text-[28px] font-extrabold text-red leading-none mt-2">R$ 79</div>
-            <div class="text-[11px] text-creme-faint mt-1">$15,83 USD</div>
-          </div>
-          <div class="surface-3 rounded-xl p-4">
-            <div class="text-[11px] uppercase tracking-wider text-creme-faint font-bold">por conversa</div>
-            <div class="mono text-[28px] font-extrabold text-creme leading-none mt-2">R$ 0,33</div>
-            <div class="text-[11px] text-creme-faint mt-1">$0,066 USD</div>
-          </div>
-          <div class="surface-3 rounded-xl p-4">
-            <div class="text-[11px] uppercase tracking-wider text-creme-faint font-bold">por venda agendada</div>
-            <div class="mono text-[28px] font-extrabold text-creme leading-none mt-2">R$ 9,90</div>
-            <div class="text-[11px] text-creme-faint mt-1">8 vendas / R$ 79,18</div>
-          </div>
-          <div class="surface-3 rounded-xl p-4">
-            <div class="text-[11px] uppercase tracking-wider text-creme-faint font-bold">projeção mensal</div>
-            <div class="mono text-[28px] font-extrabold text-red leading-none mt-2">R$ 790</div>
-            <div class="text-[11px] text-creme-faint mt-1">~$158 USD</div>
-          </div>
-        </div>
-
-        <h3 class="text-[14px] font-bold text-creme mb-3">Comparativo</h3>
-        <div class="space-y-2">
-          <div class="flex justify-between items-center surface-3 rounded-lg p-3">
-            <span class="text-[13.5px] text-creme">1 atendente CLT (filtro/triagem)</span>
-            <span class="mono text-red font-bold">~R$ 2.500/mês</span>
-          </div>
-          <div class="flex justify-between items-center surface-3 rounded-lg p-3">
-            <span class="text-[13.5px] text-creme">1h de atendente humano</span>
-            <span class="mono text-red font-bold">~R$ 30</span>
-          </div>
-          <div class="flex justify-between items-center grad-green rounded-lg p-3">
-            <span class="text-[13.5px] text-creme font-semibold">Bianca (24/7, infinitas conversas paralelas)</span>
-            <span class="mono text-green font-bold">R$ 790/mês</span>
-          </div>
-        </div>
+      <div class="mt-6 grad-bianca rounded-lg p-4 text-[13.5px] text-creme-mute">
+        <strong class="text-creme">Insight:</strong> 30% dos leads que chegam via WhatsApp nunca interagem de verdade
+        (mandam "oi" e somem). A Bianca faz essa <strong class="text-brand">triagem 24/7</strong> filtrando o que
+        não vale tempo do time humano — só os leads engajados de fato chegam pra atendimento personalizado.
       </div>
     </div>
   </section>
 
-  <!-- ROI -->
+  <!-- PIPELINE & POTENCIAL -->
   <section class="max-w-6xl mx-auto px-6 py-8">
     <div class="grad-green rounded-2xl p-8">
       <div class="flex items-center justify-between mb-6">
         <div>
-          <h2 class="text-[20px] font-bold text-creme">ROI — retorno em LTV</h2>
-          <p class="text-[13px] text-creme-mute mt-1">Valor das vendas agendadas vs custo total no período.</p>
+          <h2 class="text-[20px] font-bold text-creme">Pipeline gerado</h2>
+          <p class="text-[13px] text-creme-mute mt-1">Vendas agendadas + oportunidades abertas pra resgate.</p>
         </div>
-        <span class="pill" style="background: rgba(126,196,122,0.18); color: var(--green); border: 1px solid rgba(126,196,122,0.3)">132× retorno</span>
+        <span class="pill" style="background: rgba(126,196,122,0.18); color: var(--green); border: 1px solid rgba(126,196,122,0.3)">3 dias</span>
       </div>
 
       <div class="grid md:grid-cols-3 gap-4 mb-6">
         <div class="bg-black/30 rounded-xl p-5">
-          <div class="text-[11.5px] uppercase tracking-wider text-creme-faint font-bold">Vendas agendadas</div>
-          <div class="mono text-[34px] font-extrabold text-creme mt-2">8</div>
-          <div class="text-[12px] text-creme-mute mt-1">técnico marcado pra instalar</div>
+          <div class="text-[11.5px] uppercase tracking-wider text-creme-faint font-bold">✓ Vendas agendadas</div>
+          <div class="mono text-[40px] font-extrabold text-green mt-2 leading-none">8</div>
+          <div class="text-[12.5px] text-creme-mute mt-2">técnico marcado · instalação confirmada</div>
         </div>
         <div class="bg-black/30 rounded-xl p-5">
-          <div class="text-[11.5px] uppercase tracking-wider text-creme-faint font-bold">Ticket médio × fidelidade</div>
-          <div class="mono text-[34px] font-extrabold text-creme mt-2">R$ 1.308</div>
-          <div class="text-[12px] text-creme-mute mt-1">~R$ 109/mês × 12 meses · LTV</div>
+          <div class="text-[11.5px] uppercase tracking-wider text-creme-faint font-bold">+ Cadastros completos</div>
+          <div class="mono text-[40px] font-extrabold text-amber mt-2 leading-none">19</div>
+          <div class="text-[12.5px] text-creme-mute mt-2">contrato aceito · pronto pra agendar</div>
         </div>
         <div class="bg-black/30 rounded-xl p-5">
-          <div class="text-[11.5px] uppercase tracking-wider text-creme-faint font-bold">LTV total agendado</div>
-          <div class="mono text-[34px] font-extrabold text-green mt-2">R$ 10.464</div>
-          <div class="text-[12px] text-creme-mute mt-1">8 × R$ 1.308</div>
+          <div class="text-[11.5px] uppercase tracking-wider text-creme-faint font-bold">+ Leads qualificados</div>
+          <div class="mono text-[40px] font-extrabold text-brand mt-2 leading-none">144</div>
+          <div class="text-[12.5px] text-creme-mute mt-2">endereço validado · pronto pra remarketing</div>
         </div>
       </div>
 
-      <div class="bg-black/40 rounded-xl p-6">
-        <div class="text-center">
-          <div class="text-[13px] text-creme-mute uppercase tracking-wider font-bold">Cálculo</div>
-          <div class="mono text-[26px] text-creme mt-3">
-            <span class="text-green">R$ 10.464</span>
-            <span class="text-creme-faint mx-3">÷</span>
-            <span class="text-red">R$ 79,18</span>
-            <span class="text-creme-faint mx-3">=</span>
-            <span class="text-green font-extrabold text-[34px]">132×</span>
-          </div>
-          <div class="text-[13.5px] text-creme-mute mt-3">
-            Cada R$ 1 investido na Bianca retornou <strong class="text-green">R$ 132 em LTV de vendas agendadas</strong> em 3 dias.
-          </div>
+      <div class="bg-black/40 rounded-xl p-6 text-center">
+        <div class="text-[13px] text-creme-mute uppercase tracking-wider font-bold">Pipeline total tocável pelo time humano</div>
+        <div class="mono text-[42px] font-extrabold text-green mt-3 leading-none">171 oportunidades</div>
+        <div class="text-[13.5px] text-creme-mute mt-3 max-w-2xl mx-auto">
+          Considerando ticket médio TexNet (~R$ 109/mês × fidelidade 12 meses = R$ 1.308 por venda),
+          o pipeline total construído pela Bianca em 3 dias representa
+          <strong class="text-green">até R$ 223 mil em LTV potencial</strong> se time humano resgatar
+          os cadastros e leads qualificados.
         </div>
-      </div>
-
-      <div class="mt-6 text-[13px] text-creme-mute">
-        <strong class="text-creme">Pipeline aberto que NÃO está nesse número:</strong>
-        19 cadastros completos esperando agendamento + 144 leads qualificados com endereço validado.
-        Cada um pode virar venda com 1 ligação humana de resgate.
       </div>
     </div>
   </section>
@@ -437,20 +398,29 @@
         <div class="flex gap-3">
           <span class="text-green text-lg shrink-0">✓</span>
           <div class="text-[14.5px] text-creme">
-            <strong>30% dos leads são triagem pura</strong> que Bianca filtra de graça — economiza horas humanas.
+            <strong>Atendimento 24/7 sem pausa</strong>, com infinitas conversas paralelas — escala impossível
+            de igualar com time humano.
           </div>
         </div>
         <div class="flex gap-3">
           <span class="text-green text-lg shrink-0">✓</span>
           <div class="text-[14.5px] text-creme">
-            <strong>R$ 790/mês projetado</strong> = fração do custo de 1 atendente CLT (~R$ 2.500), com 24/7 paralelo ilimitado.
+            <strong>30% dos leads são triagem pura</strong> que Bianca filtra automaticamente — só os
+            engajados de fato chegam pro time humano.
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <span class="text-green text-lg shrink-0">✓</span>
+          <div class="text-[14.5px] text-creme">
+            <strong>Pipeline aberto de 171 oportunidades</strong> (8 agendadas + 19 cadastradas + 144 qualificadas)
+            pronto pra time humano fechar.
           </div>
         </div>
         <div class="flex gap-3">
           <span class="text-amber text-lg shrink-0">⚠</span>
           <div class="text-[14.5px] text-creme">
-            <strong>Queda artificial na segunda 11/05</strong> foi causada por bug de integração com IXC, já identificado.
-            <span class="text-creme-mute">Fix mapeado no workflow n8n — pronto pra deploy.</span>
+            <strong>Queda artificial na segunda 11/05</strong> foi causada por bug de integração com o sistema IXC, já identificado.
+            <span class="text-creme-mute">Fix mapeado — pronto pra aplicar antes do próximo ciclo.</span>
           </div>
         </div>
         <div class="flex gap-3">
@@ -472,10 +442,11 @@
               e meta clara: <strong class="text-brand">≥ 2 agendamentos/dia em média</strong>.
             </p>
             <p class="text-[13.5px] text-creme-mute leading-relaxed">
-              Hoje, mesmo com a queda da segunda por bug externo, está em
-              <strong class="text-brand">2,67 agendamentos/dia</strong>. Com os fixes, projeção é
-              <strong class="text-brand">4-5/dia</strong> e o ROI cresce proporcional.
-              Se em 14 dias não bater a meta, conversa de desligar tem mérito. Hoje os números mostram o oposto.
+              Hoje, mesmo com a queda da segunda por bug externo, a média já está em
+              <strong class="text-brand">2,67 agendamentos/dia</strong>. Com os fixes aplicados, projeção é
+              <strong class="text-brand">4-5 agendamentos/dia</strong>, mais a recuperação do pipeline aberto
+              (171 oportunidades) pelo time humano. Se em 14 dias não bater a meta,
+              conversa de desligar tem mérito. Os números atuais mostram o oposto.
             </p>
           </div>
         </div>
