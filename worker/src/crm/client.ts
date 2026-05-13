@@ -271,27 +271,60 @@ export async function escalateToHuman(leadId: string, channel: string, cfg?: Tex
   // 1. Bot para de responder
   await leads.setBotMode(leadId, false, cfg);
 
-  // 2. Move pra fila aguardando + desvincula responsável NUMA ÚNICA chamada PATCH.
-  // Antes usávamos assign('') mas TexNet rejeita string vazia (responsibleId é
-  // obrigatório no endpoint /assign). PATCH /leads/:id com responsibleId: null
-  // funciona pra ambos numa atomic op.
+  // 2. Move pra fila aguardando + desvincula responsável.
+  //
+  // PROBLEMA OBSERVADO (2026-05-10, lead 6f1306b3-...): a TexNet API às vezes
+  // retorna HTTP 200 pro PATCH combinado MAS ignora silenciosamente os campos
+  // `stage` e `responsibleId` (só botMode foi via endpoint dedicado). Por isso
+  // agora fazemos PATCH + RE-LEITURA + retry com endpoints dedicados se não
+  // aplicou. Garantia de consistência > performance do round-trip extra.
   try {
     await leads.update(
       leadId,
       { stage: 'aguardando', responsibleId: null },
       cfg,
     );
-    console.log(`[crm] lead ${leadId} → stage=aguardando, responsibleId=null`);
   } catch (err) {
-    // Fallback: se a API recusar o PATCH combinado, tenta passos separados
     console.warn(`[crm] update combinado falhou pra lead ${leadId}:`, (err as Error).message);
-    try {
-      await leads.update(leadId, { stage: 'aguardando' }, cfg);
-    } catch (e2) {
-      console.warn(`[crm] update stage=aguardando falhou:`, (e2 as Error).message);
+  }
+
+  // Validação pós-PATCH: re-lê o lead e confirma que os campos aplicaram
+  try {
+    const refreshed = await leads.get(leadId, cfg);
+    const stageOk = refreshed.stage === 'aguardando';
+    const responsibleOk = refreshed.responsibleId === null;
+
+    if (!stageOk) {
+      console.warn(`[crm] lead ${leadId} stage não aplicou (atual="${refreshed.stage}") — usando /stage dedicado`);
+      try {
+        await leads.moveStage(leadId, 'aguardando', cfg);
+      } catch (e) {
+        console.warn(`[crm] moveStage dedicado também falhou:`, (e as Error).message);
+      }
     }
-    // Não tentamos assign('') — sabidamente falha. Lead fica com responsável
-    // anterior; a fila pode filtrar por stage=aguardando e ignorar atribuição.
+
+    if (!responsibleOk) {
+      console.warn(`[crm] lead ${leadId} responsibleId não desvinculou (atual="${refreshed.responsibleId}") — tentando PATCH isolado`);
+      try {
+        await leads.update(leadId, { responsibleId: null }, cfg);
+      } catch (e) {
+        console.warn(`[crm] PATCH responsibleId=null falhou:`, (e as Error).message);
+      }
+    }
+
+    if (stageOk && responsibleOk) {
+      console.log(`[crm] lead ${leadId} → stage=aguardando, responsibleId=null (validado)`);
+    } else {
+      // Re-confirma após tentativas de fallback
+      const final = await leads.get(leadId, cfg).catch(() => refreshed);
+      console.log(
+        `[crm] lead ${leadId} → stage=${final.stage}, responsibleId=${final.responsibleId ?? 'null'} ` +
+        `(após fallback; consistente=${final.stage === 'aguardando' && final.responsibleId === null})`,
+      );
+    }
+  } catch (err) {
+    console.warn(`[crm] falha ao validar PATCH pós-escalação lead ${leadId}:`, (err as Error).message);
+    // Não bloqueia o fluxo — botMode=false já foi aplicado, cliente recebe a msg
   }
 
   // 3. Mensagem ao cliente
