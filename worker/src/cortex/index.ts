@@ -10,10 +10,13 @@ import type { Express } from 'express';
 import { loadBuiltInAgents, agentRegistry } from './agents/registry.js';
 import { createCortexRouter } from './inject/rest.js';
 import { startConsolidationWorker } from './memory/consolidation.js';
+import { loadBuiltInModules, moduleRegistry } from './modules/registry.js';
 
 export function mountCortex(app: Express): void {
   loadBuiltInAgents();
   agentRegistry.logInventory();
+  loadBuiltInModules();
+  moduleRegistry.logInventory();
   app.use('/cortex', createCortexRouter());
   if (process.env.CORTEX_CONSOLIDATION_DISABLED !== '1') {
     startConsolidationWorker();

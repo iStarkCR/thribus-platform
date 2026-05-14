@@ -20,6 +20,9 @@ import { applyGuardrails } from '../guardrails/index.js';
 import { shortTermMemory } from '../memory/short-term.js';
 import { snapshot as metricsSnapshot } from '../observability/metrics.js';
 import { createAdminRouter } from './admin.js';
+import { createSsoRouter } from '../auth/sso.js';
+import { createBillingRouter } from '../billing/stripe.js';
+import { moduleRegistry } from '../modules/registry.js';
 import type { AnalyzeRequest, EntityRef } from '../types.js';
 import { authenticate, resolveAnthropicKey } from './auth.js';
 import { createStreamRouter } from './sse.js';
@@ -82,6 +85,33 @@ export function createCortexRouter(): Router {
 
   // Admin endpoints (gated por ADMIN_SECRET)
   router.use('/admin', createAdminRouter());
+
+  // Auth/SSO (signup/signin/me)
+  router.use('/auth', createSsoRouter());
+
+  // Billing/Stripe (checkout, portal, webhook)
+  router.use('/billing', createBillingRouter());
+
+  // Enterprise modules (contracts, proposals, talki, bi)
+  router.use('/modules', moduleRegistry.buildAllRoutes());
+
+  // Catálogo público de módulos
+  router.get('/modules', (_req: Request, res: Response) => {
+    res.json({
+      modules: moduleRegistry.list().map((m) => ({
+        id: m.id,
+        name: m.name,
+        slug: m.slug,
+        description: m.description,
+        category: m.category,
+        version: m.version,
+        status: m.status,
+        icon: m.icon,
+        tags: m.tags ?? [],
+        has_runtime: !!m.buildRouter,
+      })),
+    });
+  });
 
   // SSE streaming
   router.use('/', createStreamRouter());
