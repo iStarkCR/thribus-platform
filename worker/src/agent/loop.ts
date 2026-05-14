@@ -310,6 +310,15 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     return;
   }
 
+  // 3.1. Move lead pra stage "Atendimento IA" no kanban do CRM (TexNet) se ele
+  // ainda estiver em "aguardando". Sinaliza visualmente pro gestor que o bot
+  // está trabalhando esse lead. Fire-and-forget — falha aqui não bloqueia.
+  if (lead.stage === 'aguardando') {
+    crm.moveToAIStage(job.channel, job.leadId, workspace ?? undefined).catch((err) => {
+      console.warn(`[loop] moveToAIStage falhou pra lead ${job.leadId}:`, (err as Error).message);
+    });
+  }
+
   // 5. Garante conversation no banco e persiste mensagem recebida (dedup)
   const conversation = await db.conversations.findOrCreate({
     externalId: job.leadId,

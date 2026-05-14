@@ -107,6 +107,7 @@ export interface CrmUser {
 
 export type LeadStage =
   | 'aguardando'
+  | 'atendimento_ia'
   | 'em_atendimento'
   | 'sem_contato'
   | 'parou_responder'
@@ -342,4 +343,44 @@ export async function escalateToHuman(leadId: string, channel: string, cfg?: Tex
     cfg,
   );
   console.log(`[crm] lead ${leadId} escalado pra fila aguardando`);
+}
+
+// ─── Move lead pra stage "Atendimento IA" ────────────────────────────────────
+//
+// Sinaliza no kanban do CRM que o bot está trabalhando esse lead. Útil pro
+// gestor diferenciar "lead sem ninguém atendendo" (aguardando) de "lead em
+// conversa ativa com a Bianca" (atendimento_ia).
+//
+// Idempotente: só move se o lead atual estiver em "aguardando". Outros estados
+// (em_atendimento, convertido, perdido, escalado pra humano) não são tocados —
+// significa que alguém do time assumiu ou o lead já avançou.
+//
+// Erro NÃO bloqueia o fluxo do bot: stage no CRM é visual/operacional, não
+// afeta capacidade de responder. Loga warning e segue.
+
+export async function moveToAIStage(leadId: string, cfg?: TexNetConfig): Promise<void> {
+  // Caller (loop.ts) já checa stage='aguardando' usando lead em memória — não
+  // duplicamos o GET aqui. Se PATCH falhar (lead já mudou, slug rejeitado, etc),
+  // só logamos e seguimos.
+  try {
+    await leads.moveStage(leadId, 'atendimento_ia', cfg);
+  } catch (err) {
+    console.warn(`[crm] moveToAIStage: PATCH falhou pra lead ${leadId}:`, (err as Error).message);
+    return;
+  }
+
+  // Validação pós-PATCH (TexNet API pode aceitar HTTP 200 e ignorar campo
+  // silenciosamente — comportamento já visto no escalateToHuman)
+  try {
+    const refreshed = await leads.get(leadId, cfg);
+    if (refreshed.stage === 'atendimento_ia') {
+      console.log(`[crm] lead ${leadId} → stage=atendimento_ia (validado)`);
+    } else {
+      console.warn(
+        `[crm] lead ${leadId} stage não aplicou para atendimento_ia (atual="${refreshed.stage}")`,
+      );
+    }
+  } catch (err) {
+    console.warn(`[crm] moveToAIStage: validação pós-PATCH falhou:`, (err as Error).message);
+  }
 }

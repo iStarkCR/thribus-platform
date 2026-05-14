@@ -152,6 +152,21 @@ export async function escalateToHuman(channel: string, leadId: string, ws?: Work
   await texnet.escalateToHuman(leadId, channel, cfg);
 }
 
+// ─── Move lead pra stage "Atendimento IA" ────────────────────────────────────
+// Sinaliza no kanban do CRM que o bot está trabalhando esse lead. Só TexNet
+// suporta — no Talki não existe stage equivalente, então no-op.
+
+export async function moveToAIStage(channel: string, leadId: string, ws?: WorkspaceRecord): Promise<void> {
+  const provider = detectProvider(channel);
+
+  if (provider === 'talki') {
+    return; // Talki não tem stage equivalente
+  }
+
+  const cfg = texnet.configFromWorkspace(ws);
+  await texnet.moveToAIStage(leadId, cfg);
+}
+
 // ─── Internal note (private) ─────────────────────────────────────────────────
 // Cria uma nota interna visível só pra agentes (não vai pro cliente).
 // Útil pra resumir o atendimento antes de passar pra humano.
