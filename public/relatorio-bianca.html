@@ -446,6 +446,105 @@
     </div>
   </section>
 
+  <!-- INSIGHTS OPERACIONAIS (mapeamento de demanda) -->
+  <section class="max-w-6xl mx-auto px-6 py-8">
+    <div class="surface-2 rounded-2xl p-8 border border-default">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="text-[20px] font-bold text-creme">Inteligência operacional</h2>
+          <p class="text-[13px] text-creme-mute mt-1">Insights novos extraídos do log de consultas reais da Bianca + Geogrid.</p>
+        </div>
+        <span class="pill grad-bianca text-brand">4 casos analisados</span>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4 mb-6">
+
+        <!-- Insight 1: tendência de CTO lotada -->
+        <div class="grad-amber rounded-xl p-6">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-amber text-2xl">📈</span>
+            <h3 class="text-[15px] font-bold text-creme">Tendência: 75% com CTO lotada</h3>
+          </div>
+          <div class="mono text-[40px] font-extrabold text-amber leading-none mb-3">75%</div>
+          <p class="text-[13.5px] text-creme leading-relaxed">
+            Das consultas reais que tiveram cobertura confirmada, <strong class="text-amber">3 em cada 4</strong>
+            retornaram CTO sem porta livre. Sinaliza que a Texnet está no limite de capacidade
+            justamente nas regiões onde mais aparece demanda.
+          </p>
+          <div class="mt-3 text-[12.5px] text-creme-mute italic">
+            → Argumento forte pra plano de expansão de rede nessas regiões.
+          </div>
+        </div>
+
+        <!-- Insight 2: concentração Caucaia -->
+        <div class="grad-red rounded-xl p-6">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-red text-2xl">📍</span>
+            <h3 class="text-[15px] font-bold text-creme">Caucaia concentra demanda reprimida</h3>
+          </div>
+          <div class="mono text-[40px] font-extrabold text-red leading-none mb-3">2/3</div>
+          <p class="text-[13.5px] text-creme leading-relaxed">
+            Das 3 CTOs lotadas identificadas, <strong class="text-red">2 estão em Caucaia</strong>
+            (PT8289 em Jurema, PT7647 em Potira). É o bairro com maior demanda
+            reprimida no log atual.
+          </p>
+          <div class="mt-3 text-[12.5px] text-creme-mute italic">
+            → Caucaia deve ser prioridade #1 no roadmap de expansão.
+          </div>
+        </div>
+
+        <!-- Insight 3: bug Geogrid -->
+        <div class="surface-3 rounded-xl p-6 border border-default">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-blue text-2xl">🐛</span>
+            <h3 class="text-[15px] font-bold text-creme">Bug do Geogrid documentado</h3>
+          </div>
+          <p class="text-[13.5px] text-creme leading-relaxed mb-3">
+            Mesma consulta com 4 formatações diferentes retornou
+            <strong class="text-creme">4 respostas conflitantes</strong>
+            (sem cobertura ↔ disponível ↔ endereço não localizado).
+          </p>
+          <div class="bg-black/40 rounded-md p-3 font-mono text-[11px] text-creme-mute leading-snug">
+            "Rua Paracatu, 143, Potira" → <span class="text-red">SEM COBERTURA</span><br>
+            "+CEP+CE" → <span class="text-green">DISPONÍVEL</span>
+          </div>
+          <div class="mt-3 text-[12.5px] text-creme-mute italic">
+            → Sugerido pra time Texnet investigar normalização de query no webhook.
+          </div>
+        </div>
+
+        <!-- Insight 4: funil ideal -->
+        <div class="grad-green rounded-xl p-6">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-green text-2xl">✨</span>
+            <h3 class="text-[15px] font-bold text-creme">Funil ideal quando há infra</h3>
+          </div>
+          <div class="mono text-[40px] font-extrabold text-green leading-none mb-3">12</div>
+          <p class="text-[13.5px] text-creme leading-relaxed">
+            O único caso 100% atendível (Ana Jéssica · Av. Osório de Paiva) tinha
+            <strong class="text-green">12 portas livres</strong> na CTO. Bianca conduziu até
+            o agendamento <strong class="text-creme">sem atrito</strong>.
+          </p>
+          <div class="mt-3 text-[12.5px] text-creme-mute italic">
+            → Onde há infraestrutura, o funil flui. O gargalo é capacidade física, não o agente.
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-black/40 rounded-xl p-5 text-[13.5px] text-creme">
+        <strong class="text-brand">💡 Tradução estratégica:</strong>
+        <span class="text-creme-mute">
+          A Bianca não está só atendendo — está
+          <strong class="text-creme">mapeando demanda georreferenciada</strong>.
+          Cada conversa que termina em "CTO sem porta" é um pin no mapa de expansão
+          da Texnet. Em 4 casos, identificou 3 CTOs gargalo e 1 região com capacidade
+          plena. Isso é inteligência de mercado que custaria horas de pesquisa
+          manual — Bianca gera de graça, em paralelo, 24/7.
+        </span>
+      </div>
+    </div>
+  </section>
+
   <!-- CONCLUSÃO / RECOMENDAÇÃO -->
   <section class="max-w-6xl mx-auto px-6 py-8">
     <div class="surface-2 rounded-2xl p-8 border border-default">
