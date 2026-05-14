@@ -1,0 +1,40 @@
+{
+  "name": "@thribus/cortex-sdk",
+  "version": "0.1.0",
+  "description": "SDK oficial pra integrar com o Cortex Brain — cérebro multi-agente B2B da Thribus.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "cortex",
+    "thribus",
+    "ai",
+    "agents",
+    "claude",
+    "anthropic",
+    "multi-agent"
+  ],
+  "author": "Thribus Tech",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4"
+  }
+}

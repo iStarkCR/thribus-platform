@@ -10,6 +10,7 @@ import { SkillsPage } from '@/pages/SkillsPage';
 import { TemplatesPage } from '@/pages/TemplatesPage';
 import { MetricsPage } from '@/pages/MetricsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { CortexPage } from '@/pages/CortexPage';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -33,6 +34,7 @@ export function App() {
           <Route path="/logs" element={<LogsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/clients" element={<WorkspacesPage />} />
+          <Route path="/cortex" element={<CortexPage />} />
         </Routes>
       </AppLayout>
       <ToastContainer />
