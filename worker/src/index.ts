@@ -13,6 +13,7 @@ import express from 'express';
 import { createWebhookRouter } from './crm/webhook.js';
 import { createTalkiWebhookRouter } from './talki/webhook.js';
 import { createAdminRouter } from './admin/reprocess.js';
+import { mountCortex } from './cortex/index.js';
 import { startWorker } from './queue/index.js';
 import { startPolling } from './agent/poll.js';
 
@@ -30,6 +31,9 @@ app.get('/', (_req, res) => {
       health: 'GET /health',
       texnet_webhook: 'POST /webhook/texnet',
       talki_webhook: 'POST /webhook/talki',
+      cortex_analyze: 'POST /cortex/analyze',
+      cortex_health: 'GET /cortex/health',
+      cortex_agents: 'GET /cortex/agents',
     },
     ts: new Date().toISOString(),
   });
@@ -46,6 +50,9 @@ app.use('/webhook', createTalkiWebhookRouter());
 
 // Admin routes (gated por ADMIN_SECRET — endpoints de operação manual)
 app.use('/admin', createAdminRouter());
+
+// Cortex Brain — inject layer (agentes + análise + roteamento)
+mountCortex(app);
 
 // Start async worker loop
 startWorker();
