@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   LayoutGrid, Bot, Wrench, BarChart3,
-  Terminal, Settings, Building2, ChevronRight, Zap, Sparkles, Layout, Brain, Briefcase,
+  Terminal, Settings, Building2, ChevronRight, Zap, Sparkles, Layout, Brain, Briefcase, Boxes,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -22,6 +22,7 @@ const NAV_ITEMS = [
     items: [
       { path: '/cortex', label: 'Cortex Admin', icon: Brain },
       { path: '/enterprise', label: 'Enterprise', icon: Briefcase },
+      { path: '/stack', label: 'Stack (M1-M3)', icon: Boxes },
     ],
   },
   {

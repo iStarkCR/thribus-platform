@@ -23,6 +23,9 @@ import { createAdminRouter } from './admin.js';
 import { createSsoRouter } from '../auth/sso.js';
 import { createBillingRouter } from '../billing/stripe.js';
 import { moduleRegistry } from '../modules/registry.js';
+import { createM1Router } from './m1-routes.js';
+import { createM3Router } from './m3-routes.js';
+import { createOidcRouter } from '../auth/oidc.js';
 import type { AnalyzeRequest, EntityRef } from '../types.js';
 import { authenticate, resolveAnthropicKey } from './auth.js';
 import { createStreamRouter } from './sse.js';
@@ -88,6 +91,15 @@ export function createCortexRouter(): Router {
 
   // Auth/SSO (signup/signin/me)
   router.use('/auth', createSsoRouter());
+
+  // M1: workflows, approvals, webhooks, templates, notifications
+  router.use('/m1', createM1Router());
+
+  // M3: audit log UI, integrações, white-label
+  router.use('/m3', createM3Router());
+
+  // SSO OIDC (Google, Microsoft, GitHub)
+  router.use('/auth/oidc', createOidcRouter());
 
   // Billing/Stripe (checkout, portal, webhook)
   router.use('/billing', createBillingRouter());

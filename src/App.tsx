@@ -12,6 +12,7 @@ import { MetricsPage } from '@/pages/MetricsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { CortexPage } from '@/pages/CortexPage';
 import { CortexEnterprisePage } from '@/pages/CortexEnterprisePage';
+import { CortexStackPage } from '@/pages/CortexStackPage';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -37,6 +38,7 @@ export function App() {
           <Route path="/clients" element={<WorkspacesPage />} />
           <Route path="/cortex" element={<CortexPage />} />
           <Route path="/enterprise" element={<CortexEnterprisePage />} />
+          <Route path="/stack" element={<CortexStackPage />} />
         </Routes>
       </AppLayout>
       <ToastContainer />

@@ -14,7 +14,11 @@ import { createLogger } from '../observability/logger.js';
 import { buildContractsRouter, contractsModule } from './contracts.js';
 import { buildProposalsRouter, proposalsModule } from './proposals.js';
 import { biModule } from './bi.js';
-import { talkiModule } from './talki.js';
+import { buildTalkiRouter, talkiRuntimeModule } from './talki-runtime.js';
+import { buildCrmRouter, crmModule } from './crm.js';
+import { buildTicketsRouter, ticketsModule } from './tickets.js';
+import { billingBrModule, buildBillingBrRouter } from './billing-br.js';
+import { buildKbRouter, kbModule } from './knowledge-base.js';
 import type { InstalledModule, ModuleDefinition } from './types.js';
 
 const logger = createLogger('cortex.modules');
@@ -63,8 +67,14 @@ export function loadBuiltInModules(): void {
   // Módulos com runtime real
   moduleRegistry.register({ ...contractsModule, buildRouter: buildContractsRouter });
   moduleRegistry.register({ ...proposalsModule, buildRouter: buildProposalsRouter });
-  // Módulos preview/coming-soon (UI vendável, backend stub)
-  moduleRegistry.register(talkiModule);
+  // Talki agora com runtime (M1)
+  moduleRegistry.register({ ...talkiRuntimeModule, buildRouter: buildTalkiRouter });
+  // M2 — módulos B2B core
+  moduleRegistry.register({ ...crmModule, buildRouter: buildCrmRouter });
+  moduleRegistry.register({ ...ticketsModule, buildRouter: buildTicketsRouter });
+  moduleRegistry.register({ ...billingBrModule, buildRouter: buildBillingBrRouter });
+  moduleRegistry.register({ ...kbModule, buildRouter: buildKbRouter });
+  // BI continua coming-soon (M3+)
   moduleRegistry.register(biModule);
 }
 
