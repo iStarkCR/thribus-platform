@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Zap, Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck,
-  Sparkles, Bot, Building2,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { BrandLogo } from '@/components/shared/BrandLogo';
+import { MarketingCarousel } from '@/components/shared/MarketingCarousel';
 
 type Mode = 'signin' | 'signup';
 
@@ -48,22 +48,30 @@ export function LoginPage() {
           </div>
         </div>
 
-        <div className="relative flex-1 flex flex-col justify-center z-10 max-w-[520px]">
-          <h1 className="text-[42px] font-bold text-creme leading-[1.05] tracking-tight">
+        <div className="relative flex-1 flex flex-col justify-center z-10 max-w-[560px] py-8">
+          <h1 className="text-[36px] font-bold text-creme leading-[1.05] tracking-tight">
             Sua operação ganha<br />
             <span className="text-brand-bright">colaboradores que não dormem.</span>
           </h1>
-          <p className="text-[16px] text-creme-mute mt-5 leading-relaxed">
+          <p className="text-[15px] text-creme-mute mt-4 leading-relaxed">
             Agentes que conversam, fecham vendas, consultam seu ERP, escalam pra humano
-            quando precisa. Tudo num painel só, com governança LGPD e analytics que
-            seu CFO entende.
+            quando precisa. Governança LGPD, analytics que o CFO entende, motor proprietário Cortex Brain.
           </p>
 
-          <div className="mt-8 space-y-3">
-            <Feature icon={<Bot size={14} />} text="Multi-agente com handoff automático" />
-            <Feature icon={<Building2 size={14} />} text="Integração com IXC, Stripe, Asaas, Talki" />
-            <Feature icon={<ShieldCheck size={14} />} text="LGPD + SOC 2 evidence packs" />
-            <Feature icon={<Sparkles size={14} />} text="Cortex Brain — motor multi-agente proprietário" />
+          {/* Marketing carousel — mostra o que tem de novo antes mesmo de logar */}
+          <div className="mt-8">
+            <MarketingCarousel />
+          </div>
+
+          {/* Mini trust strip */}
+          <div className="flex items-center gap-4 mt-6 text-[11px] font-mono text-creme-faint">
+            <span className="inline-flex items-center gap-1"><ShieldCheck size={11} className="text-brand-bright" /> LGPD compliant</span>
+            <span>·</span>
+            <span>SOC 2 Type II</span>
+            <span>·</span>
+            <span>SSO Enterprise</span>
+            <span>·</span>
+            <span className="text-brand-bright">15k+ conversas/mês em produção</span>
           </div>
         </div>
 
@@ -173,15 +181,6 @@ export function LoginPage() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Feature({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return (
-    <div className="flex items-center gap-2.5 text-[13.5px] text-creme-mute">
-      <span className="w-6 h-6 rounded-md bg-brand/15 text-brand-bright flex items-center justify-center shrink-0">{icon}</span>
-      {text}
     </div>
   );
 }
