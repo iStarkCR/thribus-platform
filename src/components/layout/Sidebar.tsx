@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
@@ -7,6 +8,7 @@ import {
   FlaskConical, UserCircle2, Inbox, Blocks, Phone, Store, FileBarChart, TestTube2,
   ShieldCheck, Lightbulb, Handshake, Activity, Code2, BookMarked, Smartphone,
   CreditCard, Rocket, Bell, Webhook, Beaker, Radio, Gauge, FileCheck, Lock,
+  LogOut, User, Moon, HelpCircle,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -159,19 +161,85 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="p-2.5 border-t border-default shrink-0">
-        <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-surface-hover transition-colors cursor-pointer">
-          <div className="w-[30px] h-[30px] rounded-full bg-surface-4 border border-hover flex items-center justify-center text-[13px] font-bold text-creme-mute shrink-0">
-            CA
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-creme truncate">Charles Andrade</div>
-            <div className="text-[12px] text-creme-faint">CEO · Thribus Tech</div>
-          </div>
-          <ChevronRight size={14} className="text-creme-faint shrink-0" />
-        </div>
-      </div>
+      {/* Footer — User menu */}
+      <UserMenu />
     </aside>
+  );
+}
+
+function UserMenu() {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', onClick);
+    return () => window.removeEventListener('mousedown', onClick);
+  }, []);
+
+  const go = (path: string) => { navigate(path); setOpen(false); };
+  const logout = () => {
+    // Mock: limpa estado e volta pro login
+    setOpen(false);
+    navigate('/login');
+  };
+
+  return (
+    <div ref={ref} className="relative p-2.5 border-t border-default shrink-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className={clsx(
+          'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors',
+          open ? 'bg-surface-hover' : 'hover:bg-surface-hover',
+        )}
+      >
+        <div className="w-[30px] h-[30px] rounded-full bg-gradient-to-br from-brand-dim to-brand border border-hover flex items-center justify-center text-[13px] font-bold text-creme shrink-0">
+          CA
+        </div>
+        <div className="flex-1 min-w-0 text-left">
+          <div className="text-xs font-semibold text-creme truncate">Charles Andrade</div>
+          <div className="text-[12px] text-creme-faint">CEO · Thribus Tech</div>
+        </div>
+        <ChevronRight size={14} className={clsx('text-creme-faint shrink-0 transition-transform', open && '-rotate-90')} />
+      </button>
+
+      {open && (
+        <div className="absolute left-2.5 right-2.5 bottom-[60px] bg-surface-1 border border-default rounded-lg shadow-2xl overflow-hidden z-50">
+          <div className="px-3 py-2.5 border-b border-default">
+            <div className="text-[12.5px] font-semibold text-creme truncate">Charles Andrade</div>
+            <div className="text-[10.5px] font-mono text-creme-faint truncate">developer@thribus.com.br</div>
+          </div>
+          <MenuItem icon={<User size={13} />} label="Meu perfil" onClick={() => go('/profile')} />
+          <MenuItem icon={<Bell size={13} />} label="Notificações" onClick={() => go('/notifications')} />
+          <MenuItem icon={<Building2 size={13} />} label="Workspaces" onClick={() => go('/clients')} />
+          <MenuItem icon={<Settings size={13} />} label="Configurações" onClick={() => go('/settings')} />
+          <MenuItem icon={<Lock size={13} />} label="Vault & API Keys" onClick={() => go('/vault')} />
+          <div className="border-t border-default" />
+          <MenuItem icon={<HelpCircle size={13} />} label="Ajuda & Academy" onClick={() => go('/help')} />
+          <MenuItem icon={<Moon size={13} />} label="Tema (escuro)" subtitle="ativo" onClick={() => { /* noop */ }} />
+          <div className="border-t border-default" />
+          <MenuItem icon={<LogOut size={13} />} label="Sair" danger onClick={logout} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({ icon, label, subtitle, danger, onClick }: { icon: React.ReactNode; label: string; subtitle?: string; danger?: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'w-full flex items-center gap-2.5 px-3 py-2 text-[12.5px] font-medium transition-colors',
+        danger ? 'text-semantic-red hover:bg-semantic-red/10' : 'text-creme-mute hover:text-creme hover:bg-surface-hover',
+      )}
+    >
+      <span className={clsx('shrink-0', danger ? 'text-semantic-red' : 'text-creme-faint')}>{icon}</span>
+      <span className="flex-1 text-left">{label}</span>
+      {subtitle && <span className="text-[10px] font-mono text-creme-faint">{subtitle}</span>}
+    </button>
   );
 }

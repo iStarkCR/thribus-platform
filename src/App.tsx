@@ -42,6 +42,7 @@ import { OptimizerPage } from '@/pages/OptimizerPage';
 import { CompliancePage } from '@/pages/CompliancePage';
 import { VaultPage } from '@/pages/VaultPage';
 import { LoginPage } from '@/pages/LoginPage';
+import { ProfilePage } from '@/pages/ProfilePage';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -112,6 +113,7 @@ function InnerRoutes() {
           <Route path="/optimizer" element={<OptimizerPage />} />
           <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/vault" element={<VaultPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
     </Routes>
   );
 }
