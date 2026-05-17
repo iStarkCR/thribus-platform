@@ -41,6 +41,7 @@ import { ActivityPage } from '@/pages/ActivityPage';
 import { OptimizerPage } from '@/pages/OptimizerPage';
 import { CompliancePage } from '@/pages/CompliancePage';
 import { VaultPage } from '@/pages/VaultPage';
+import { LoginPage } from '@/pages/LoginPage';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -54,8 +55,23 @@ export function App() {
 
   return (
     <HashRouter>
-      <AppLayout>
-        <Routes>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/*" element={
+          <AppLayout>
+            <InnerRoutes />
+          </AppLayout>
+        } />
+      </Routes>
+      <ToastContainer />
+      <CommandPalette />
+    </HashRouter>
+  );
+}
+
+function InnerRoutes() {
+  return (
+    <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/tools" element={<ToolsPage />} />
@@ -96,10 +112,6 @@ export function App() {
           <Route path="/optimizer" element={<OptimizerPage />} />
           <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/vault" element={<VaultPage />} />
-        </Routes>
-      </AppLayout>
-      <ToastContainer />
-      <CommandPalette />
-    </HashRouter>
+    </Routes>
   );
 }

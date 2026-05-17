@@ -17,7 +17,7 @@ const SIMPLEICONS = new Set([
   'pipedrive', 'amplitude', 'clickup', 'chatwoot', 'zoho', 'notion',
   'supabase', 'mercadopago', 'googledrive', 'box', 'github', 'discord',
   'twilio', 'sendgrid', 'mailchimp', 'instagram', 'meta', 'openai',
-  'anthropic', 'elevenlabs',
+  'anthropic', 'elevenlabs', 'google', 'apple', 'microsoft',
 ]);
 
 // Brand colors oficiais (use no parâmetro do CDN pra força a cor)
@@ -39,6 +39,9 @@ const BRAND_COLOR: Record<string, string> = {
   openai: '412991',
   anthropic: 'CC785C',
   elevenlabs: '000000',
+  apple: 'FFFFFF',
+  microsoft: '5E5E5E',
+  // google: omitido — multicolor padrão fica mais bonito
 };
 
 // Customs (brasileiros sem icon oficial)
