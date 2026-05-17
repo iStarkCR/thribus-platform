@@ -6,7 +6,7 @@ import {
   BookOpen, Plug, Network, Shield,
   FlaskConical, UserCircle2, Inbox, Blocks, Phone, Store, FileBarChart, TestTube2,
   ShieldCheck, Lightbulb, Handshake, Activity, Code2, BookMarked, Smartphone,
-  CreditCard,
+  CreditCard, Rocket, Bell, Webhook, Beaker, Radio, Gauge, FileCheck, Lock,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -15,11 +15,13 @@ const NAV_ITEMS = [
     group: 'Principal',
     items: [
       { path: '/', label: 'Dashboard', icon: LayoutGrid },
+      { path: '/onboarding', label: 'Onboarding', icon: Rocket },
       { path: '/agents', label: 'Colaboradores', icon: Bot, badge: true },
       { path: '/studio', label: 'Studio (no-code)', icon: Blocks },
       { path: '/tools', label: 'Ferramentas', icon: Wrench },
       { path: '/skills', label: 'Skills', icon: Sparkles },
       { path: '/templates', label: 'Templates', icon: Layout },
+      { path: '/activity', label: 'Activity Feed', icon: Radio },
     ],
   },
   {
@@ -45,6 +47,7 @@ const NAV_ITEMS = [
       { path: '/experiments', label: 'A/B Tests', icon: TestTube2 },
       { path: '/insights', label: 'Insights & VoC', icon: Lightbulb },
       { path: '/reports', label: 'Reports', icon: FileBarChart },
+      { path: '/optimizer', label: 'AI Cost Optimizer', icon: Gauge },
     ],
   },
   {
@@ -53,13 +56,16 @@ const NAV_ITEMS = [
       { path: '/marketplace', label: 'Marketplace', icon: Store },
       { path: '/partners', label: 'Partner Portal', icon: Handshake },
       { path: '/billing', label: 'Billing (Stripe+Asaas)', icon: CreditCard },
+      { path: '/sandbox', label: 'Sandbox / Trial', icon: Beaker },
     ],
   },
   {
     group: 'Plataforma',
     items: [
       { path: '/api-docs', label: 'API Reference', icon: Code2 },
+      { path: '/webhooks', label: 'Webhooks Outbound', icon: Webhook },
       { path: '/mobile', label: 'Mobile / PWA', icon: Smartphone },
+      { path: '/notifications', label: 'Notificações', icon: Bell },
       { path: '/status', label: 'Status', icon: Activity },
       { path: '/help', label: 'Help & Academy', icon: BookMarked },
     ],
@@ -77,6 +83,8 @@ const NAV_ITEMS = [
     items: [
       { path: '/governance', label: 'RBAC · Audit · SLA', icon: Shield },
       { path: '/lgpd', label: 'LGPD Center', icon: ShieldCheck },
+      { path: '/compliance', label: 'Compliance Builder', icon: FileCheck },
+      { path: '/vault', label: 'Vault & API Keys', icon: Lock },
     ],
   },
   {

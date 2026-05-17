@@ -33,6 +33,15 @@ import { ApiDocsPage } from '@/pages/ApiDocsPage';
 import { HelpPage } from '@/pages/HelpPage';
 import { MobilePage } from '@/pages/MobilePage';
 import { BillingPage } from '@/pages/BillingPage';
+import { OnboardingPage } from '@/pages/OnboardingPage';
+import { NotificationsPage } from '@/pages/NotificationsPage';
+import { WebhooksPage } from '@/pages/WebhooksPage';
+import { SandboxPage } from '@/pages/SandboxPage';
+import { ActivityPage } from '@/pages/ActivityPage';
+import { OptimizerPage } from '@/pages/OptimizerPage';
+import { CompliancePage } from '@/pages/CompliancePage';
+import { VaultPage } from '@/pages/VaultPage';
+import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -79,9 +88,18 @@ export function App() {
           <Route path="/help" element={<HelpPage />} />
           <Route path="/mobile" element={<MobilePage />} />
           <Route path="/billing" element={<BillingPage />} />
+          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/webhooks" element={<WebhooksPage />} />
+          <Route path="/sandbox" element={<SandboxPage />} />
+          <Route path="/activity" element={<ActivityPage />} />
+          <Route path="/optimizer" element={<OptimizerPage />} />
+          <Route path="/compliance" element={<CompliancePage />} />
+          <Route path="/vault" element={<VaultPage />} />
         </Routes>
       </AppLayout>
       <ToastContainer />
+      <CommandPalette />
     </HashRouter>
   );
 }
