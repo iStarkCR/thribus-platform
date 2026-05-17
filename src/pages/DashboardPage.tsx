@@ -11,6 +11,8 @@ import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
 import { resolveCost, usdToBrl } from '@/lib/pricing';
 import { resolveRange, previousPeriod, inRange, type RangeKey } from '@/lib/dateRanges';
 import { DateRangeFilter } from '@/components/shared/DateRangeFilter';
+import { MarketingCarousel } from '@/components/shared/MarketingCarousel';
+import { CortexBrainShowcase } from '@/components/shared/CortexBrainShowcase';
 import type { Agent, Execution } from '@/types';
 
 export function DashboardPage() {
@@ -92,6 +94,11 @@ export function DashboardPage() {
 
   return (
     <>
+      {/* ─── Marketing carousel ───────────────────────────────────────────── */}
+      <div className="mb-4">
+        <MarketingCarousel />
+      </div>
+
       {/* ─── Header com filtro temporal ─────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4">
         <div className="text-[15px] font-bold text-creme">
@@ -244,6 +251,11 @@ export function DashboardPage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* ─── Cortex Brain Showcase (pitch + ROI) ─────────────────────── */}
+      <div className="mt-6 mb-2">
+        <CortexBrainShowcase />
       </div>
 
       {selectedAgent && (
