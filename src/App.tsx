@@ -13,6 +13,26 @@ import { SettingsPage } from '@/pages/SettingsPage';
 import { CortexPage } from '@/pages/CortexPage';
 import { CortexEnterprisePage } from '@/pages/CortexEnterprisePage';
 import { CortexStackPage } from '@/pages/CortexStackPage';
+import { KnowledgePage } from '@/pages/KnowledgePage';
+import { IntegrationsPage } from '@/pages/IntegrationsPage';
+import { OrchestrationPage } from '@/pages/OrchestrationPage';
+import { GovernancePage } from '@/pages/GovernancePage';
+import { LabPage } from '@/pages/LabPage';
+import { Customer360Page } from '@/pages/Customer360Page';
+import { InboxPage } from '@/pages/InboxPage';
+import { StudioPage } from '@/pages/StudioPage';
+import { VoicePage } from '@/pages/VoicePage';
+import { MarketplacePage } from '@/pages/MarketplacePage';
+import { ReportsPage } from '@/pages/ReportsPage';
+import { ExperimentsPage } from '@/pages/ExperimentsPage';
+import { LgpdPage } from '@/pages/LgpdPage';
+import { InsightsPage } from '@/pages/InsightsPage';
+import { PartnerPage } from '@/pages/PartnerPage';
+import { StatusPage } from '@/pages/StatusPage';
+import { ApiDocsPage } from '@/pages/ApiDocsPage';
+import { HelpPage } from '@/pages/HelpPage';
+import { MobilePage } from '@/pages/MobilePage';
+import { BillingPage } from '@/pages/BillingPage';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -39,6 +59,26 @@ export function App() {
           <Route path="/cortex" element={<CortexPage />} />
           <Route path="/enterprise" element={<CortexEnterprisePage />} />
           <Route path="/stack" element={<CortexStackPage />} />
+          <Route path="/knowledge" element={<KnowledgePage />} />
+          <Route path="/integrations" element={<IntegrationsPage />} />
+          <Route path="/orchestration" element={<OrchestrationPage />} />
+          <Route path="/governance" element={<GovernancePage />} />
+          <Route path="/lab" element={<LabPage />} />
+          <Route path="/customers" element={<Customer360Page />} />
+          <Route path="/inbox" element={<InboxPage />} />
+          <Route path="/studio" element={<StudioPage />} />
+          <Route path="/voice" element={<VoicePage />} />
+          <Route path="/marketplace" element={<MarketplacePage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/experiments" element={<ExperimentsPage />} />
+          <Route path="/lgpd" element={<LgpdPage />} />
+          <Route path="/insights" element={<InsightsPage />} />
+          <Route path="/partners" element={<PartnerPage />} />
+          <Route path="/status" element={<StatusPage />} />
+          <Route path="/api-docs" element={<ApiDocsPage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/mobile" element={<MobilePage />} />
+          <Route path="/billing" element={<BillingPage />} />
         </Routes>
       </AppLayout>
       <ToastContainer />
