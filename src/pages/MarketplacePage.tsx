@@ -14,6 +14,7 @@ import {
   SEED_SECTOR_PACKS, SEED_PRIVATE_MARKETPLACES,
   type MarketplaceBundle, type ListingReview,
 } from '@/lib/seed-marketplace-extras';
+import { BrandLogo } from '@/components/shared/BrandLogo';
 
 type Tab = 'catalog' | 'bundles' | 'packs' | 'publishers' | 'private';
 
@@ -146,7 +147,9 @@ function ListingCard({ listing: l, variant, onReviews }: { listing: MarketplaceL
       variant === 'featured' ? 'border-2 border-brand/40 hover:border-brand/70' : 'border border-default hover:border-hover',
     )}>
       <div className="flex items-start gap-3 mb-3">
-        <div className="w-11 h-11 rounded-lg bg-surface-1 border border-default flex items-center justify-center text-[20px] shrink-0">{l.icon}</div>
+        <div className="w-11 h-11 rounded-lg bg-surface-1 border border-default flex items-center justify-center shrink-0">
+          {l.logoSlug ? <BrandLogo slug={l.logoSlug} size={24} fallbackEmoji={l.icon} /> : <span className="text-[20px]">{l.icon}</span>}
+        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-1">
             <TypeIcon size={11} className="text-creme-faint shrink-0" />
@@ -215,7 +218,9 @@ function ReviewsView({ listing, reviews, onClose }: { listing: MarketplaceListin
       </button>
       <div className="bg-surface-2 border border-default rounded-[10px] p-5 mb-3">
         <div className="flex items-start gap-3">
-          <div className="w-12 h-12 rounded-lg bg-surface-1 border border-default flex items-center justify-center text-[22px]">{listing.icon}</div>
+          <div className="w-12 h-12 rounded-lg bg-surface-1 border border-default flex items-center justify-center">
+            {listing.logoSlug ? <BrandLogo slug={listing.logoSlug} size={26} fallbackEmoji={listing.icon} /> : <span className="text-[22px]">{listing.icon}</span>}
+          </div>
           <div className="flex-1">
             <h2 className="text-[16px] font-bold text-creme">{listing.title}</h2>
             <div className="text-[12px] text-creme-mute mt-0.5 inline-flex items-center gap-1">
@@ -299,7 +304,7 @@ function BundleCard({ bundle: b }: { bundle: MarketplaceBundle }) {
       <div className="space-y-1.5 mb-3 pb-3 border-b border-default">
         {items.map((it) => (
           <div key={it.id} className="flex items-center gap-2 p-1.5 rounded bg-surface-1 border border-default">
-            <span className="text-[16px]">{it.icon}</span>
+            {it.logoSlug ? <BrandLogo slug={it.logoSlug} size={16} fallbackEmoji={it.icon} /> : <span className="text-[16px]">{it.icon}</span>}
             <span className="text-[12px] font-semibold text-creme truncate">{it.title}</span>
             <span className="ml-auto text-[10.5px] font-mono text-creme-faint">{it.type}</span>
           </div>
@@ -360,7 +365,8 @@ function PacksPanel() {
               <div className="flex flex-wrap gap-1 mb-3 pb-3 border-b border-default">
                 {items.map((it) => (
                   <span key={it.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-1 border border-default text-[10.5px] font-mono text-creme-dim">
-                    {it.icon} {it.title.length > 22 ? it.title.slice(0, 22) + '…' : it.title}
+                    {it.logoSlug ? <BrandLogo slug={it.logoSlug} size={11} fallbackEmoji={it.icon} /> : <span>{it.icon}</span>}
+                    {it.title.length > 22 ? it.title.slice(0, 22) + '…' : it.title}
                   </span>
                 ))}
               </div>

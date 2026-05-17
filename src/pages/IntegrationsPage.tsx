@@ -8,6 +8,7 @@ import {
   SEED_INTEGRATIONS, SEED_APPROVALS, SEED_CUSTOM_TOOLS,
   type Integration, type IntegrationCategory, type ToolApprovalRequest,
 } from '@/lib/seed-integrations';
+import { BrandLogo } from '@/components/shared/BrandLogo';
 
 type Tab = 'catalog' | 'approvals' | 'custom';
 
@@ -201,8 +202,8 @@ function IntegrationCard({ integration }: { integration: Integration }) {
       isConnected ? 'bg-surface-2 border-default hover:border-brand/40' : 'bg-surface-2/60 border-default hover:border-hover',
     )}>
       <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-lg bg-surface-1 border border-default flex items-center justify-center text-[20px] shrink-0">
-          {i.logoEmoji}
+        <div className="w-10 h-10 rounded-lg bg-surface-1 border border-default flex items-center justify-center shrink-0">
+          {i.logoSlug ? <BrandLogo slug={i.logoSlug} size={22} fallbackEmoji={i.logoEmoji} /> : <span className="text-[20px]">{i.logoEmoji}</span>}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
