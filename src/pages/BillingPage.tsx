@@ -1,23 +1,58 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CreditCard, Search, QrCode, Receipt, DollarSign, AlertTriangle,
   CheckCircle2, Clock, XCircle, Copy, Download, Send,
-  TrendingUp, TrendingDown, FileText, RotateCcw, Plus,
+  TrendingUp, TrendingDown, FileText, RotateCcw, Plus, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_STRIPE_CUSTOMERS, SEED_STRIPE_SUBSCRIPTIONS, SEED_STRIPE_INVOICES, SEED_STRIPE_REFUNDS,
   SEED_ASAAS_CUSTOMERS, SEED_ASAAS_CHARGES, SEED_ASAAS_SUBSCRIPTIONS, BILLING_SUMMARY,
 } from '@/lib/seed-billing';
-import type { StripeSubscription, StripeInvoice } from '@/services/stripe';
-import type { AsaasCharge, AsaasChargeStatus, AsaasBillingType } from '@/services/asaas';
+import * as stripeService from '@/services/stripe';
+import * as asaasService from '@/services/asaas';
+import type { StripeSubscription, StripeInvoice, StripeCustomer, StripeRefund } from '@/services/stripe';
+import type { AsaasCharge, AsaasChargeStatus, AsaasBillingType, AsaasCustomer, AsaasSubscription } from '@/services/asaas';
 
 type Gateway = 'all' | 'stripe' | 'asaas';
 type Tab = 'overview' | 'customers' | 'subscriptions' | 'charges' | 'refunds';
+type Source = 'mock' | 'partial' | 'live';
 
 export function BillingPage() {
   const [gateway, setGateway] = useState<Gateway>('all');
   const [tab, setTab] = useState<Tab>('overview');
+
+  // Live data state — quando edge function tá disponível
+  const [stripeCustomers, setStripeCustomers] = useState<StripeCustomer[]>(SEED_STRIPE_CUSTOMERS);
+  const [stripeSubs, setStripeSubs] = useState<StripeSubscription[]>(SEED_STRIPE_SUBSCRIPTIONS);
+  const [stripeInvoices, setStripeInvoices] = useState<StripeInvoice[]>(SEED_STRIPE_INVOICES);
+  const [stripeRefunds, setStripeRefunds] = useState<StripeRefund[]>(SEED_STRIPE_REFUNDS);
+  const [asaasCustomers, setAsaasCustomers] = useState<AsaasCustomer[]>(SEED_ASAAS_CUSTOMERS);
+  const [asaasCharges, setAsaasCharges] = useState<AsaasCharge[]>(SEED_ASAAS_CHARGES);
+  const [asaasSubs, setAsaasSubs] = useState<AsaasSubscription[]>(SEED_ASAAS_SUBSCRIPTIONS);
+  const [source, setSource] = useState<Source>('mock');
+  const [loading, setLoading] = useState(false);
+
+  // Tenta carregar dados reais quando Supabase + edge function disponíveis
+  useEffect(() => {
+    if (!stripeService.stripeConfigured) return;
+    setLoading(true);
+    let stripeOk = false;
+    let asaasOk = false;
+
+    Promise.allSettled([
+      stripeService.listCustomers(50).then((d) => { setStripeCustomers(d); stripeOk = true; }),
+      stripeService.listSubscriptions().then((d) => setStripeSubs(d)),
+      stripeService.listInvoices(undefined, 50).then((d) => setStripeInvoices(d)),
+      stripeService.listRefunds(50).then((d) => setStripeRefunds(d)),
+      asaasService.listCustomers(50).then((d) => { setAsaasCustomers(d); asaasOk = true; }),
+      asaasService.listCharges().then((d) => setAsaasCharges(d)),
+      asaasService.listSubscriptions().then((d) => setAsaasSubs(d)),
+    ]).then(() => {
+      setSource(stripeOk && asaasOk ? 'live' : stripeOk || asaasOk ? 'partial' : 'mock');
+      setLoading(false);
+    });
+  }, []);
 
   return (
     <>
@@ -26,6 +61,15 @@ export function BillingPage() {
           <CreditCard size={16} className="text-creme-mute" /> Billing
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · Stripe (USD/internacional) + Asaas (PIX/boleto BR)
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' :
+            source === 'partial' ? 'bg-semantic-amber/15 text-semantic-amber' :
+            'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {loading ? 'carregando…' : source === 'live' ? 'live' : source === 'partial' ? 'parcial' : 'mock'}
           </span>
         </div>
         <div className="flex items-center bg-surface-2 border border-default rounded-md p-0.5">
@@ -52,11 +96,11 @@ export function BillingPage() {
         <TabBtn active={tab === 'refunds'} onClick={() => setTab('refunds')} label="Refunds" />
       </div>
 
-      {tab === 'overview' && <OverviewPanel gateway={gateway} />}
-      {tab === 'customers' && <CustomersPanel gateway={gateway} />}
-      {tab === 'subscriptions' && <SubscriptionsPanel gateway={gateway} />}
-      {tab === 'charges' && <ChargesPanel gateway={gateway} />}
-      {tab === 'refunds' && <RefundsPanel gateway={gateway} />}
+      {tab === 'overview' && <OverviewPanel gateway={gateway} data={{ stripeCustomers, stripeSubs, stripeInvoices, asaasCustomers, asaasCharges, asaasSubs }} />}
+      {tab === 'customers' && <CustomersPanel gateway={gateway} data={{ stripeCustomers, asaasCustomers }} />}
+      {tab === 'subscriptions' && <SubscriptionsPanel gateway={gateway} data={{ stripeSubs, asaasSubs }} />}
+      {tab === 'charges' && <ChargesPanel gateway={gateway} data={{ asaasCharges, stripeInvoices }} />}
+      {tab === 'refunds' && <RefundsPanel gateway={gateway} data={{ stripeRefunds, asaasCharges }} />}
     </>
   );
 }
@@ -69,7 +113,12 @@ function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => vo
   );
 }
 
-function OverviewPanel({ gateway }: { gateway: Gateway }) {
+interface OverviewData {
+  stripeCustomers: StripeCustomer[]; stripeSubs: StripeSubscription[]; stripeInvoices: StripeInvoice[];
+  asaasCustomers: AsaasCustomer[]; asaasCharges: AsaasCharge[]; asaasSubs: AsaasSubscription[];
+}
+function OverviewPanel({ gateway, data }: { gateway: Gateway; data: OverviewData }) {
+  const { stripeCustomers, stripeSubs, stripeInvoices, asaasCustomers, asaasCharges, asaasSubs } = data;
   return (
     <>
       <div className="grid grid-cols-4 gap-2.5 mb-4">
@@ -100,13 +149,13 @@ function OverviewPanel({ gateway }: { gateway: Gateway }) {
               </span>
             </div>
             <div className="grid grid-cols-3 gap-2 mb-3">
-              <MiniStat label="Customers" value={SEED_STRIPE_CUSTOMERS.length.toString()} />
-              <MiniStat label="Subs ativas" value={SEED_STRIPE_SUBSCRIPTIONS.filter((s) => s.status === 'active').length.toString()} />
-              <MiniStat label="Past due" value={SEED_STRIPE_SUBSCRIPTIONS.filter((s) => s.status === 'past_due').length.toString()} highlight="amber" />
+              <MiniStat label="Customers" value={stripeCustomers.length.toString()} />
+              <MiniStat label="Subs ativas" value={stripeSubs.filter((s) => s.status === 'active').length.toString()} />
+              <MiniStat label="Past due" value={stripeSubs.filter((s) => s.status === 'past_due').length.toString()} highlight="amber" />
             </div>
             <div className="space-y-1.5">
               <div className="text-[10.5px] uppercase tracking-wider font-bold text-creme-faint">Última fatura</div>
-              {SEED_STRIPE_INVOICES.slice(0, 2).map((i) => <InvoiceMini key={i.id} invoice={i} />)}
+              {stripeInvoices.slice(0, 2).map((i) => <InvoiceMini key={i.id} invoice={i} />)}
             </div>
           </div>
         )}
@@ -123,13 +172,13 @@ function OverviewPanel({ gateway }: { gateway: Gateway }) {
               </span>
             </div>
             <div className="grid grid-cols-3 gap-2 mb-3">
-              <MiniStat label="Customers" value={SEED_ASAAS_CUSTOMERS.length.toString()} />
-              <MiniStat label="Subs ativas" value={SEED_ASAAS_SUBSCRIPTIONS.filter((s) => s.status === 'ACTIVE').length.toString()} />
-              <MiniStat label="Vencidas" value={SEED_ASAAS_CHARGES.filter((c) => c.status === 'OVERDUE').length.toString()} highlight="red" />
+              <MiniStat label="Customers" value={asaasCustomers.length.toString()} />
+              <MiniStat label="Subs ativas" value={asaasSubs.filter((s) => s.status === 'ACTIVE').length.toString()} />
+              <MiniStat label="Vencidas" value={asaasCharges.filter((c) => c.status === 'OVERDUE').length.toString()} highlight="red" />
             </div>
             <div className="space-y-1.5">
               <div className="text-[10.5px] uppercase tracking-wider font-bold text-creme-faint">Últimas cobranças</div>
-              {SEED_ASAAS_CHARGES.slice(0, 2).map((c) => <ChargeMini key={c.id} charge={c} />)}
+              {asaasCharges.slice(0, 2).map((c) => <ChargeMini key={c.id} charge={c} />)}
             </div>
           </div>
         )}
@@ -196,10 +245,10 @@ function ChargeMini({ charge: c }: { charge: AsaasCharge }) {
 }
 
 // ─── Customers ────────────────────────────────────────────────────────────
-function CustomersPanel({ gateway }: { gateway: Gateway }) {
+function CustomersPanel({ gateway, data }: { gateway: Gateway; data: { stripeCustomers: StripeCustomer[]; asaasCustomers: AsaasCustomer[] } }) {
   const [search, setSearch] = useState('');
-  const filteredStripe = SEED_STRIPE_CUSTOMERS.filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase()));
-  const filteredAsaas = SEED_ASAAS_CUSTOMERS.filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.cpfCnpj.includes(search));
+  const filteredStripe = data.stripeCustomers.filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.email.toLowerCase().includes(search.toLowerCase()));
+  const filteredAsaas = data.asaasCustomers.filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.cpfCnpj.includes(search));
 
   return (
     <>
@@ -261,14 +310,15 @@ function CustomersPanel({ gateway }: { gateway: Gateway }) {
 }
 
 // ─── Subscriptions ────────────────────────────────────────────────────────
-function SubscriptionsPanel({ gateway }: { gateway: Gateway }) {
+function SubscriptionsPanel({ gateway, data }: { gateway: Gateway; data: { stripeSubs: StripeSubscription[]; asaasSubs: AsaasSubscription[] } }) {
+  const { stripeSubs, asaasSubs } = data;
   return (
     <>
       {(gateway === 'all' || gateway === 'stripe') && (
         <div className="mb-4">
           <h3 className="text-[12.5px] font-bold uppercase tracking-wider text-brand-bright mb-2 inline-flex items-center gap-1.5"><CreditCard size={11} /> Stripe</h3>
           <div className="space-y-2">
-            {SEED_STRIPE_SUBSCRIPTIONS.map((s) => <StripeSubRow key={s.id} sub={s} />)}
+            {stripeSubs.map((s) => <StripeSubRow key={s.id} sub={s} />)}
           </div>
         </div>
       )}
@@ -276,7 +326,7 @@ function SubscriptionsPanel({ gateway }: { gateway: Gateway }) {
         <div>
           <h3 className="text-[12.5px] font-bold uppercase tracking-wider text-semantic-green mb-2 inline-flex items-center gap-1.5"><QrCode size={11} /> Asaas</h3>
           <div className="space-y-2">
-            {SEED_ASAAS_SUBSCRIPTIONS.map((s) => (
+            {asaasSubs.map((s) => (
               <div key={s.id} className="bg-surface-2 border border-default rounded-[10px] p-3.5 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-semibold text-creme">{s.customerName}</div>
@@ -329,7 +379,8 @@ function StripeSubRow({ sub: s }: { sub: StripeSubscription }) {
 }
 
 // ─── Charges (Asaas + Stripe Invoices) ───────────────────────────────────
-function ChargesPanel({ gateway }: { gateway: Gateway }) {
+function ChargesPanel({ gateway, data }: { gateway: Gateway; data: { asaasCharges: AsaasCharge[]; stripeInvoices: StripeInvoice[] } }) {
+  const { asaasCharges, stripeInvoices } = data;
   const [statusFilter, setStatusFilter] = useState<AsaasChargeStatus | 'all'>('all');
 
   return (
@@ -356,7 +407,7 @@ function ChargesPanel({ gateway }: { gateway: Gateway }) {
         <div className="mb-4">
           <h3 className="text-[12.5px] font-bold uppercase tracking-wider text-semantic-green mb-2 inline-flex items-center gap-1.5"><QrCode size={11} /> Asaas (BR)</h3>
           <div className="space-y-2">
-            {SEED_ASAAS_CHARGES.filter((c) => statusFilter === 'all' || c.status === statusFilter).map((c) => <AsaasChargeCard key={c.id} charge={c} />)}
+            {asaasCharges.filter((c) => statusFilter === 'all' || c.status === statusFilter).map((c) => <AsaasChargeCard key={c.id} charge={c} />)}
           </div>
         </div>
       )}
@@ -368,7 +419,7 @@ function ChargesPanel({ gateway }: { gateway: Gateway }) {
             <div className="grid grid-cols-[160px_1fr_120px_120px_140px] gap-3 px-4 py-2 border-b border-default bg-surface-1/50 text-[10.5px] uppercase tracking-wider font-bold text-creme-faint">
               <div>Número</div><div>Cliente</div><div>Status</div><div>Valor</div><div>Quando</div>
             </div>
-            {SEED_STRIPE_INVOICES.map((i) => (
+            {stripeInvoices.map((i) => (
               <div key={i.id} className="grid grid-cols-[160px_1fr_120px_120px_140px] gap-3 px-4 py-2.5 border-t border-default text-[12px] hover:bg-surface-hover/30">
                 <code className="font-mono text-creme-mute">{i.number}</code>
                 <div className="font-semibold text-creme truncate">{i.customerName}</div>
@@ -482,9 +533,9 @@ function BillingTypeBadge({ type }: { type: AsaasBillingType }) {
 }
 
 // ─── Refunds ──────────────────────────────────────────────────────────────
-function RefundsPanel({ gateway }: { gateway: Gateway }) {
-  const stripeRefunds = useMemo(() => SEED_STRIPE_REFUNDS, []);
-  const asaasRefunds = useMemo(() => SEED_ASAAS_CHARGES.filter((c) => c.status === 'REFUNDED'), []);
+function RefundsPanel({ gateway, data }: { gateway: Gateway; data: { stripeRefunds: StripeRefund[]; asaasCharges: AsaasCharge[] } }) {
+  const stripeRefunds = data.stripeRefunds;
+  const asaasRefunds = useMemo(() => data.asaasCharges.filter((c) => c.status === 'REFUNDED'), [data.asaasCharges]);
 
   return (
     <>

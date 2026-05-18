@@ -1,19 +1,21 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Inbox, Search, MessageSquare, Mail, Phone, Globe, Instagram,
   Paperclip, Bot, Send, Sparkles, AlertTriangle, Languages,
   StickyNote, Zap, LayoutList, LayoutGrid, Brain,
-  ChevronDown, AtSign, Wand2,
+  ChevronDown, AtSign, Wand2, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_INBOX_CONVERSATIONS, SEED_INBOX_MESSAGES,
   type InboxConversation, type InboxChannel, type InboxStatus,
+  type InboxMessage,
 } from '@/lib/seed-inbox';
 import {
   SEED_INTENTS, SEED_SUGGESTIONS, SEED_ALERTS, SEED_SUMMARIES,
   SEED_NOTES, SEED_MACROS, BOARD_LANES, BOARD_MAPPING,
 } from '@/lib/seed-inbox-extras';
+import * as inboxService from '@/services/inbox';
 
 const CHANNEL_ICON: Record<InboxChannel, typeof MessageSquare> = {
   whatsapp: MessageSquare, email: Mail, phone: Phone, web: Globe, instagram: Instagram,
@@ -33,22 +35,61 @@ export function InboxPage() {
   const [view, setView] = useState<'list' | 'board'>('list');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<InboxStatus | 'all'>('all');
-  const [selectedId, setSelectedId] = useState<string>(SEED_INBOX_CONVERSATIONS[0]?.id ?? '');
   const [draft, setDraft] = useState('');
   const [composerMode, setComposerMode] = useState<'reply' | 'note'>('reply');
   const [showMacros, setShowMacros] = useState(false);
   const [translateOn, setTranslateOn] = useState(false);
 
+  // Live data — falls back para SEED se Supabase não tiver dados
+  const [conversations, setConversations] = useState<InboxConversation[]>(SEED_INBOX_CONVERSATIONS);
+  const [messagesAll, setMessagesAll] = useState<InboxMessage[]>(SEED_INBOX_MESSAGES);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const [selectedId, setSelectedId] = useState<string>(SEED_INBOX_CONVERSATIONS[0]?.id ?? '');
+
+  // Fetch realtime do Supabase quando configurado
+  useEffect(() => {
+    if (!inboxService.inboxConfigured) return;
+    const workspaceId = 'ws_texnet'; // TODO: pegar do contexto/store de workspace ativo
+
+    const refresh = async () => {
+      try {
+        const convs = await inboxService.listConversations(workspaceId);
+        if (convs.length > 0) {
+          setConversations(convs);
+          setSource('live');
+          if (!convs.find((c) => c.id === selectedId)) {
+            setSelectedId(convs[0].id);
+          }
+        }
+      } catch (e) {
+        console.warn('[Inbox] live falhou, mantém mock:', (e as Error).message);
+      }
+    };
+
+    refresh();
+    const unsub = inboxService.subscribeInbox(workspaceId, refresh);
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Quando troca conversa em modo live, busca msgs dela
+  useEffect(() => {
+    if (source !== 'live' || !selectedId) return;
+    inboxService.listMessages(selectedId)
+      .then((msgs) => setMessagesAll((curr) => [...curr.filter((m) => m.conversationId !== selectedId), ...msgs]))
+      .catch((e) => console.warn('[Inbox] msgs failed:', (e as Error).message));
+  }, [selectedId, source]);
+
   const filtered = useMemo(() => {
-    let r = SEED_INBOX_CONVERSATIONS;
+    let r = conversations;
     if (filter !== 'all') r = r.filter((c) => c.status === filter);
     const q = search.trim().toLowerCase();
     if (q) r = r.filter((c) => c.customerName.toLowerCase().includes(q) || c.lastPreview.toLowerCase().includes(q));
     return [...r].sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
-  }, [search, filter]);
+  }, [search, filter, conversations]);
 
-  const selected = useMemo(() => SEED_INBOX_CONVERSATIONS.find((c) => c.id === selectedId) ?? null, [selectedId]);
-  const messages = useMemo(() => SEED_INBOX_MESSAGES.filter((m) => m.conversationId === selectedId), [selectedId]);
+  const selected = useMemo(() => conversations.find((c) => c.id === selectedId) ?? null, [selectedId, conversations]);
+  const messages = useMemo(() => messagesAll.filter((m) => m.conversationId === selectedId), [selectedId, messagesAll]);
   const intent = SEED_INTENTS.find((i) => i.conversationId === selectedId);
   const suggestion = SEED_SUGGESTIONS.find((s) => s.conversationId === selectedId);
   const alerts = SEED_ALERTS.filter((a) => a.conversationId === selectedId);
@@ -68,6 +109,13 @@ export function InboxPage() {
           <Inbox size={16} className="text-creme-mute" /> Inbox Unificada
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · co-pilot · macros · tradução · notas internas · kanban
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${conversations.length} conversas` : 'mock'}
           </span>
         </div>
         <div className="flex items-center bg-surface-2 border border-default rounded-md p-0.5">

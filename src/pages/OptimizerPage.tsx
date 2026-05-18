@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Gauge, Sparkles, RefreshCw, CheckCircle2, ChevronRight, TrendingUp,
-  Layers, Zap, FileCode, Wrench, Scissors,
+  Layers, Zap, FileCode, Wrench, Scissors, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SEED_OPTIMIZATIONS, type OptimizationRecommendation } from '@/lib/seed-final';
+import { fetchAgentCosts, supabaseConfigured, type AgentCostReal } from '@/services/cost';
 
 const TYPE_META = {
   model_swap: { Icon: Layers, label: 'Troca de modelo' },
@@ -16,11 +17,31 @@ const TYPE_META = {
 
 export function OptimizerPage() {
   const [recs, setRecs] = useState<OptimizationRecommendation[]>(SEED_OPTIMIZATIONS);
+  const [realCosts, setRealCosts] = useState<AgentCostReal[] | null>(null);
+  const [loadingReal, setLoadingReal] = useState(false);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  // Tenta buscar custos reais do Supabase (executions table)
+  useEffect(() => {
+    if (!supabaseConfigured) return;
+    setLoadingReal(true);
+    fetchAgentCosts('ws_texnet', 30)
+      .then((rows) => {
+        if (rows.length > 0) {
+          setRealCosts(rows);
+          setSource('live');
+        }
+      })
+      .catch((e) => console.warn('[Optimizer] cost real falhou, mantém mock:', e.message))
+      .finally(() => setLoadingReal(false));
+  }, []);
+
   const apply = (id: string) => setRecs((c) => c.map((r) => r.id === id ? { ...r, applied: true } : r));
 
   const totalSavings = recs.filter((r) => !r.applied).reduce((s, r) => s + r.estimatedSavingsMonthly, 0);
   const applied = recs.filter((r) => r.applied);
   const appliedSavings = applied.reduce((s, r) => s + r.estimatedSavingsMonthly, 0);
+  const realTotalCostUSD = realCosts ? realCosts.reduce((s, r) => s + r.llmCost, 0) : 0;
 
   return (
     <>
@@ -29,6 +50,15 @@ export function OptimizerPage() {
           <Gauge size={16} className="text-creme-mute" /> AI Cost Optimizer
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · análise automática · recomendações com impacto quantificado
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live'
+              ? 'bg-semantic-green/15 text-semantic-green'
+              : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {loadingReal ? 'carregando real…' : source === 'live' ? `live · ${realCosts?.length ?? 0} agentes · US$ ${realTotalCostUSD.toFixed(2)}/30d` : 'mock'}
           </span>
         </div>
         <button className="px-3 py-1.5 rounded-md text-[12px] font-semibold bg-surface-2 border border-default text-creme-mute hover:text-creme inline-flex items-center gap-1">
