@@ -23,8 +23,11 @@ supabase db push
 supabase db reset
 ```
 
-**Migrations atuais:**
-- `20260517_inbox.sql` — `inbox_conversations` + `inbox_messages` + RLS workspace-aware + trigger de atividade
+**Migrations atuais (aplicar em ordem):**
+- `20260517_inbox.sql` — `inbox_conversations` + `inbox_messages` + trigger de atividade
+- `20260517_customer360.sql` — `customer_profiles` + `customer_facts` + `customer_interactions` + `customer_contracts`
+- `20260517_notifications.sql` — `notifications` com RLS workspace-aware
+- `20260517_knowledge.sql` — pgvector + `knowledge_bases` + `knowledge_sources` + `knowledge_chunks` + RPC `match_knowledge_chunks`
 
 ## Edge Functions
 
@@ -61,6 +64,25 @@ supabase secrets set ASAAS_BASE_URL=https://api.asaas.com/v3
 
 supabase functions deploy asaas-proxy
 ```
+
+### 4. `ixc-proxy` — proxy seguro pra IXC (ERP de ISP)
+
+```bash
+supabase secrets set IXC_URL=https://provedor.ixc.com.br/webservice/v1
+supabase secrets set IXC_TOKEN=8
+supabase secrets set IXC_HASH=abc123...
+supabase functions deploy ixc-proxy
+```
+
+### 5. `knowledge-ingest` + `knowledge-query` — RAG semântico
+
+```bash
+supabase secrets set OPENAI_API_KEY=sk-xxx
+supabase functions deploy knowledge-ingest
+supabase functions deploy knowledge-query
+```
+
+Usa `text-embedding-3-small` (1536 dims, $0.02/M tokens).
 
 ## Smoke tests
 

@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Radio, DollarSign, MessageSquare, ArrowRight, Wrench, UserCheck,
-  AlertTriangle, Settings, TrendingDown, Pause, Play,
+  AlertTriangle, Settings, TrendingDown, Pause, Play, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { SEED_ACTIVITY, type ActivityType } from '@/lib/seed-final';
+import { SEED_ACTIVITY, type ActivityType, type ActivityEvent } from '@/lib/seed-final';
+import * as activity from '@/services/activity';
 
 const TYPE_META: Record<ActivityType, { Icon: typeof Radio; color: string; bg: string }> = {
   sale_closed: { Icon: DollarSign, color: 'text-semantic-green', bg: 'bg-semantic-green/15' },
@@ -20,8 +21,29 @@ const TYPE_META: Record<ActivityType, { Icon: typeof Radio; color: string; bg: s
 export function ActivityPage() {
   const [paused, setPaused] = useState(false);
   const [filter, setFilter] = useState<ActivityType | 'all'>('all');
+  const [events, setEvents] = useState<ActivityEvent[]>(SEED_ACTIVITY);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
 
-  const filtered = SEED_ACTIVITY.filter((e) => filter === 'all' || e.type === filter);
+  useEffect(() => {
+    if (!activity.activityConfigured) return;
+    activity.listRecentActivity('ws_texnet', 100)
+      .then((rows) => {
+        if (rows.length > 0) {
+          setEvents(rows);
+          setSource('live');
+        }
+      })
+      .catch((e) => console.warn('[Activity] live falhou:', (e as Error).message));
+
+    const unsub = activity.subscribeActivity('ws_texnet', (ev) => {
+      if (paused) return;
+      setEvents((curr) => [ev, ...curr].slice(0, 200));
+    });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filtered = events.filter((e) => filter === 'all' || e.type === filter);
 
   return (
     <>
@@ -30,6 +52,13 @@ export function ActivityPage() {
           <Radio size={16} className={clsx('text-creme-mute', !paused && 'animate-pulse')} /> Activity Feed
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · operação ao vivo · {paused ? 'pausado' : 'streaming'}
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${events.length} eventos` : 'mock'}
           </span>
         </div>
         <button onClick={() => setPaused(!paused)} className="px-3 py-1.5 rounded-md text-[12px] font-semibold bg-surface-2 border border-default text-creme-mute hover:text-creme inline-flex items-center gap-1">

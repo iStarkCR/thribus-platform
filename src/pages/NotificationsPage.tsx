@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Bell, CheckCircle2, AlertTriangle, MessageSquare, Zap, CreditCard,
-  Megaphone, Settings as SettingsIcon, Check, ExternalLink,
+  Megaphone, Settings as SettingsIcon, Check, ExternalLink, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SEED_NOTIFICATIONS, type AppNotification, type NotifKind } from '@/lib/seed-final';
+import * as notificationsService from '@/services/notifications';
 
 const KIND_META: Record<NotifKind, { Icon: typeof Bell; color: string; label: string }> = {
   system: { Icon: SettingsIcon, color: 'text-creme-mute', label: 'Sistema' },
@@ -19,6 +20,25 @@ const KIND_META: Record<NotifKind, { Icon: typeof Bell; color: string; label: st
 export function NotificationsPage() {
   const [notifs, setNotifs] = useState<AppNotification[]>(SEED_NOTIFICATIONS);
   const [filter, setFilter] = useState<'all' | 'unread' | NotifKind>('all');
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  // Fetch + subscribe
+  useEffect(() => {
+    if (!notificationsService.notificationsConfigured) return;
+    notificationsService.listNotifications('ws_texnet', 100)
+      .then((rows) => {
+        if (rows.length > 0) {
+          setNotifs(rows);
+          setSource('live');
+        }
+      })
+      .catch((e) => console.warn('[Notifications] live falhou:', (e as Error).message));
+
+    const unsub = notificationsService.subscribeNotifications('ws_texnet', (n) => {
+      setNotifs((c) => [n, ...c]);
+    });
+    return unsub;
+  }, []);
 
   const filtered = notifs.filter((n) =>
     filter === 'all' ? true :
@@ -27,8 +47,19 @@ export function NotificationsPage() {
   );
 
   const unread = notifs.filter((n) => !n.read).length;
-  const markAllRead = () => setNotifs((c) => c.map((n) => ({ ...n, read: true })));
-  const toggleRead = (id: string) => setNotifs((c) => c.map((n) => n.id === id ? { ...n, read: !n.read } : n));
+  const markAllRead = async () => {
+    setNotifs((c) => c.map((n) => ({ ...n, read: true })));
+    if (source === 'live') {
+      try { await notificationsService.markAllRead('ws_texnet'); } catch (e) { console.warn(e); }
+    }
+  };
+  const toggleRead = async (id: string) => {
+    const next = !notifs.find((n) => n.id === id)?.read;
+    setNotifs((c) => c.map((n) => n.id === id ? { ...n, read: next } : n));
+    if (source === 'live') {
+      try { await notificationsService.markRead(id, next); } catch (e) { console.warn(e); }
+    }
+  };
 
   return (
     <>
@@ -38,6 +69,13 @@ export function NotificationsPage() {
           {unread > 0 && (
             <span className="text-[11px] font-mono px-1.5 py-px rounded-full bg-semantic-red/15 text-semantic-red">{unread} não lidas</span>
           )}
+          <span className={clsx(
+            'ml-1 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source}
+          </span>
         </div>
         <button onClick={markAllRead} className="px-3 py-1.5 rounded-md text-[12px] font-semibold bg-surface-2 border border-default text-creme-mute hover:text-creme inline-flex items-center gap-1">
           <Check size={11} /> Marcar todas como lidas

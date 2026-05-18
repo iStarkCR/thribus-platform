@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Zap, Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck,
+  Zap, Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck, AlertCircle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { BrandLogo } from '@/components/shared/BrandLogo';
 import { MarketingCarousel } from '@/components/shared/MarketingCarousel';
+import { useSession } from '@/hooks/useSession';
 
 type Mode = 'signin' | 'signup';
 
@@ -15,19 +16,49 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const nav = useNavigate();
+  const { session, configured, signInWithPassword, signUpWithPassword, signInWithOAuth } = useSession();
 
-  const submit = (e: React.FormEvent) => {
+  // Já logado? Vai pro dashboard
+  useEffect(() => {
+    if (session) nav('/');
+  }, [session, nav]);
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
-    // Mock: 800ms de "auth" e vai pro dashboard
-    setTimeout(() => { setLoading(false); nav('/'); }, 800);
+
+    if (!configured) {
+      // Sem Supabase = mock (qualquer credencial passa)
+      setTimeout(() => { setLoading(false); nav('/'); }, 600);
+      return;
+    }
+
+    const action = mode === 'signin' ? signInWithPassword : signUpWithPassword;
+    const { error: err } = await action(email, password);
+    setLoading(false);
+    if (err) {
+      setError(err.message);
+    } else if (mode === 'signin') {
+      nav('/');
+    } else {
+      setError(null);
+      alert('Conta criada! Confira seu email pra confirmar.');
+    }
   };
 
-  const oauthMock = (provider: 'google' | 'apple') => {
+  const oauth = async (provider: 'google' | 'apple') => {
+    setError(null);
     setLoading(true);
-    setTimeout(() => { setLoading(false); nav('/'); }, 800);
-    console.log(`[mock] OAuth ${provider}`);
+    if (!configured) {
+      setTimeout(() => { setLoading(false); nav('/'); }, 600);
+      return;
+    }
+    const { error: err } = await signInWithOAuth(provider);
+    setLoading(false);
+    if (err) setError(err.message);
   };
 
   return (
@@ -104,8 +135,8 @@ export function LoginPage() {
 
           {/* OAuth */}
           <div className="space-y-2.5 mt-6">
-            <OAuthBtn provider="google" label="Continuar com Google" onClick={() => oauthMock('google')} disabled={loading} />
-            <OAuthBtn provider="apple" label="Continuar com Apple" onClick={() => oauthMock('apple')} disabled={loading} />
+            <OAuthBtn provider="google" label="Continuar com Google" onClick={() => oauth('google')} disabled={loading} />
+            <OAuthBtn provider="apple" label="Continuar com Apple" onClick={() => oauth('apple')} disabled={loading} />
           </div>
 
           {/* Divisor */}
@@ -115,6 +146,16 @@ export function LoginPage() {
           </div>
 
           {/* Email + senha */}
+          {!configured && (
+            <div className="mb-3 p-2.5 rounded-md bg-semantic-amber/10 border border-semantic-amber/30 text-[11.5px] text-semantic-amber inline-flex items-center gap-1.5">
+              <AlertCircle size={12} /> Auth em modo demo · qualquer credencial entra
+            </div>
+          )}
+          {error && (
+            <div className="mb-3 p-2.5 rounded-md bg-semantic-red/10 border border-semantic-red/30 text-[12px] text-semantic-red inline-flex items-start gap-1.5">
+              <AlertCircle size={13} className="shrink-0 mt-0.5" /> <span>{error}</span>
+            </div>
+          )}
           <form onSubmit={submit} className="space-y-3">
             <Field label="Email">
               <div className="relative">

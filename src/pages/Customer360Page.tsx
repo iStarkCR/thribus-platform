@@ -1,14 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   UserCircle2, Search, Phone, Mail, MapPin, Flame, ThermometerSun,
   Snowflake, TrendingUp, TrendingDown, Tag, MessageSquare, FileText,
-  DollarSign, Sparkles, Bot,
+  DollarSign, Sparkles, Bot, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_CUSTOMERS, SEED_LEAD_FACTS, SEED_LEAD_INTERACTIONS, SEED_LEAD_CONTRACTS,
   type CustomerProfile, type LeadTemperature, type LeadStage,
+  type LeadFact, type LeadInteraction, type LeadContract,
 } from '@/lib/seed-customer360';
+import * as customers from '@/services/customers';
 
 const STAGE_LABEL: Record<LeadStage, { label: string; color: string }> = {
   novo: { label: 'Novo', color: 'bg-surface-3 text-creme-dim' },
@@ -26,21 +28,52 @@ const TEMP_ICON: Record<LeadTemperature, { Icon: typeof Flame; color: string }> 
 
 export function Customer360Page() {
   const [search, setSearch] = useState('');
-  const [selectedId, setSelectedId] = useState<string>(SEED_CUSTOMERS[0]?.id ?? '');
   const [stageFilter, setStageFilter] = useState<LeadStage | 'all'>('all');
 
+  const [allCustomers, setAllCustomers] = useState<CustomerProfile[]>(SEED_CUSTOMERS);
+  const [selectedId, setSelectedId] = useState<string>(SEED_CUSTOMERS[0]?.id ?? '');
+  const [factsLive, setFactsLive] = useState<LeadFact[] | null>(null);
+  const [interactionsLive, setInteractionsLive] = useState<LeadInteraction[] | null>(null);
+  const [contractsLive, setContractsLive] = useState<LeadContract[] | null>(null);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  // Fetch perfis do workspace
+  useEffect(() => {
+    if (!customers.customersConfigured) return;
+    customers.listCustomers('ws_texnet', 200)
+      .then((rows) => {
+        if (rows.length > 0) {
+          setAllCustomers(rows);
+          setSource('live');
+          if (!rows.find((r) => r.id === selectedId)) setSelectedId(rows[0].id);
+        }
+      })
+      .catch((e) => console.warn('[Customer360] live falhou:', (e as Error).message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Quando seleciona um, busca fatos/interações/contratos reais
+  useEffect(() => {
+    if (source !== 'live' || !selectedId) return;
+    Promise.allSettled([
+      customers.getCustomerFacts(selectedId).then(setFactsLive),
+      customers.getCustomerInteractions(selectedId).then(setInteractionsLive),
+      customers.getCustomerContracts(selectedId).then(setContractsLive),
+    ]);
+  }, [selectedId, source]);
+
   const filtered = useMemo(() => {
-    let r = SEED_CUSTOMERS;
+    let r = allCustomers;
     if (stageFilter !== 'all') r = r.filter((c) => c.stage === stageFilter);
     const q = search.trim().toLowerCase();
     if (q) r = r.filter((c) => c.name.toLowerCase().includes(q) || c.phone.includes(q) || c.tags.some((t) => t.includes(q)));
     return r;
-  }, [search, stageFilter]);
+  }, [search, stageFilter, allCustomers]);
 
-  const selected = useMemo(() => SEED_CUSTOMERS.find((c) => c.id === selectedId) ?? null, [selectedId]);
-  const facts = SEED_LEAD_FACTS.filter((f) => f.leadId === selectedId);
-  const interactions = SEED_LEAD_INTERACTIONS.filter((i) => i.leadId === selectedId);
-  const contracts = SEED_LEAD_CONTRACTS.filter((c) => c.leadId === selectedId);
+  const selected = useMemo(() => allCustomers.find((c) => c.id === selectedId) ?? null, [selectedId, allCustomers]);
+  const facts = factsLive ?? SEED_LEAD_FACTS.filter((f) => f.leadId === selectedId);
+  const interactions = interactionsLive ?? SEED_LEAD_INTERACTIONS.filter((i) => i.leadId === selectedId);
+  const contracts = contractsLive ?? SEED_LEAD_CONTRACTS.filter((c) => c.leadId === selectedId);
 
   return (
     <>
@@ -49,6 +82,13 @@ export function Customer360Page() {
           <UserCircle2 size={16} className="text-creme-mute" /> Customer 360
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · perfil persistente · fatos · interações · contratos
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${allCustomers.length} clientes` : 'mock'}
           </span>
         </div>
       </div>

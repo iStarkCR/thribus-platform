@@ -46,6 +46,8 @@ import { ProfilePage } from '@/pages/ProfilePage';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
+import { useSession } from '@/hooks/useSession';
+import { Navigate } from 'react-router-dom';
 
 export function App() {
   const initialize = useAppStore((s) => s.initialize);
@@ -59,14 +61,37 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/*" element={
-          <AppLayout>
-            <InnerRoutes />
-          </AppLayout>
+          <ProtectedShell />
         } />
       </Routes>
       <ToastContainer />
       <CommandPalette />
     </HashRouter>
+  );
+}
+
+function ProtectedShell() {
+  const { session, loading, configured } = useSession();
+
+  // Loading: spinner mínimo
+  if (loading) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-surface-1">
+        <div className="text-creme-faint text-[12.5px] font-mono">Carregando…</div>
+      </div>
+    );
+  }
+
+  // Se Supabase configurado E sem sessão → redirect login
+  // Sem Supabase configurado = modo demo, deixa entrar
+  if (configured && !session) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return (
+    <AppLayout>
+      <InnerRoutes />
+    </AppLayout>
   );
 }
 

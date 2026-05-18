@@ -1,16 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen, Search, Plus, FileText, Globe, Database, FileSpreadsheet,
   StickyNote, FolderOpen, CheckCircle2, Loader2, AlertTriangle, Clock,
-  Bot, RefreshCw, Trash2, TrendingUp, Zap, Hash,
+  Bot, RefreshCw, Trash2, TrendingUp, Zap, Hash, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_KNOWLEDGE_BASES, SEED_KNOWLEDGE_SOURCES, SEED_KNOWLEDGE_QUERIES,
   type KnowledgeBase, type KnowledgeSource, type KnowledgeSourceType,
-  type KnowledgeSourceStatus,
+  type KnowledgeSourceStatus, type KnowledgeQueryLog,
 } from '@/lib/seed-knowledge';
 import { useAppStore } from '@/hooks/useAppStore';
+import * as knowledge from '@/services/knowledge';
 
 const TYPE_ICON: Record<KnowledgeSourceType, typeof FileText> = {
   pdf: FileText,
@@ -30,9 +31,35 @@ const STATUS_LABEL: Record<KnowledgeSourceStatus, { label: string; color: string
 };
 
 export function KnowledgePage() {
-  const [bases] = useState<KnowledgeBase[]>(SEED_KNOWLEDGE_BASES);
-  const [sources] = useState<KnowledgeSource[]>(SEED_KNOWLEDGE_SOURCES);
+  const [bases, setBases] = useState<KnowledgeBase[]>(SEED_KNOWLEDGE_BASES);
+  const [sources, setSources] = useState<KnowledgeSource[]>(SEED_KNOWLEDGE_SOURCES);
+  const [queries, setQueries] = useState<KnowledgeQueryLog[]>(SEED_KNOWLEDGE_QUERIES);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
   const [selectedBaseId, setSelectedBaseId] = useState<string>(SEED_KNOWLEDGE_BASES[0]?.id ?? '');
+
+  // Load live bases
+  useEffect(() => {
+    if (!knowledge.knowledgeConfigured) return;
+    knowledge.listBases('ws_texnet')
+      .then((rows) => {
+        if (rows.length > 0) {
+          setBases(rows);
+          setSource('live');
+          if (!rows.find((b) => b.id === selectedBaseId)) setSelectedBaseId(rows[0].id);
+        }
+      })
+      .catch((e) => console.warn('[Knowledge] bases live falhou:', (e as Error).message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Quando seleciona base, carrega sources + queries reais
+  useEffect(() => {
+    if (source !== 'live' || !selectedBaseId) return;
+    Promise.allSettled([
+      knowledge.listSources(selectedBaseId).then(setSources),
+      knowledge.listRecentQueries(selectedBaseId, 10).then(setQueries),
+    ]);
+  }, [selectedBaseId, source]);
   const [search, setSearch] = useState('');
   const [ingestOpen, setIngestOpen] = useState(false);
 
@@ -49,8 +76,8 @@ export function KnowledgePage() {
   );
 
   const recentQueries = useMemo(
-    () => SEED_KNOWLEDGE_QUERIES.filter((q) => q.baseId === selectedBaseId).slice(0, 6),
-    [selectedBaseId],
+    () => queries.filter((q) => q.baseId === selectedBaseId).slice(0, 6),
+    [selectedBaseId, queries],
   );
 
   const filteredBases = useMemo(() => {
@@ -70,6 +97,13 @@ export function KnowledgePage() {
           <BookOpen size={16} className="text-creme-mute" /> Knowledge Base
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · {bases.length} bases · RAG semântico
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? 'live · pgvector' : 'mock'}
           </span>
         </div>
         <button
