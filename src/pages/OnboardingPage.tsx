@@ -1,15 +1,35 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Rocket, CheckCircle2, Clock, ChevronRight,
-  Building2, Plug, BookOpen, Bot, Play, Sparkles,
+  Building2, Plug, BookOpen, Bot, Play, Sparkles, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { SEED_ONBOARDING } from '@/lib/seed-final';
+import { SEED_ONBOARDING, type OnboardingStep } from '@/lib/seed-final';
+import * as platform from '@/services/platform';
 
 const STEP_ICON = [Building2, Plug, BookOpen, Bot, Play];
 
 export function OnboardingPage() {
-  const [steps] = useState(SEED_ONBOARDING);
+  const [steps, setSteps] = useState<OnboardingStep[]>(SEED_ONBOARDING);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  useEffect(() => {
+    if (!platform.platformConfigured) return;
+    platform.getOnboardingProgress('ws_texnet').then((p) => {
+      if (!p) return;
+      setSource('live');
+      setSteps((curr) => curr.map((s, idx) => {
+        const stepKey = `ob_${idx + 1}`;
+        const completed = p.stepsCompleted.includes(stepKey);
+        const isCurrent = idx + 1 === p.currentStep && !completed;
+        return {
+          ...s,
+          status: completed ? 'completed' : isCurrent ? 'in_progress' : 'pending',
+        };
+      }));
+    }).catch((e) => console.warn('[Onboarding] live falhou:', (e as Error).message));
+  }, []);
+
   const completed = steps.filter((s) => s.status === 'completed').length;
   const progress = Math.round((completed / steps.length) * 100);
   const current = steps.find((s) => s.status === 'in_progress') ?? steps.find((s) => s.status === 'pending');
@@ -21,6 +41,13 @@ export function OnboardingPage() {
           <Rocket size={16} className="text-creme-mute" /> Onboarding
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · 5 passos guiados pra agente em produção
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${completed}/${steps.length}` : 'mock'}
           </span>
         </div>
       </div>

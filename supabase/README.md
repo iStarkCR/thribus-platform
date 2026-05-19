@@ -33,6 +33,7 @@ supabase db reset
 - `20260518_lgpd.sql` — DSR + consent log + PII scanner com trigger automático
 - `20260518_experiments.sql` — A/B com RPC `experiment_significance` (z-score) + `pick_experiment_variant` (sticky)
 - `20260518_studio.sql` — `studio_canvases` JSONB + versionamento por publish
+- `20260518_round3_complete.sql` — Voice + Marketplace + Sandbox + Insights/VoC + Reports + Onboarding + Status + Help/Academy + Mobile/Push + Partners (10 features em 1 migration)
 
 ## Edge Functions
 

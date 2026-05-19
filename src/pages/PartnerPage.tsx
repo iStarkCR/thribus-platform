@@ -1,9 +1,11 @@
+import { useEffect, useState } from 'react';
 import {
   Handshake, Crown, Award, Medal, Plus, Users, DollarSign,
-  TrendingUp, CheckCircle2, ChevronRight,
+  TrendingUp, CheckCircle2, ChevronRight, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SEED_PARTNERS, SEED_PARTNER_LEADS, type Partner, type PartnerLead } from '@/lib/seed-extras2';
+import * as intel from '@/services/intel';
 
 const TIER_META = {
   silver: { label: 'Silver', color: 'bg-creme-faint/15 text-creme-mute', Icon: Medal },
@@ -24,6 +26,15 @@ export function PartnerPage() {
   const totalMrr = SEED_PARTNERS.reduce((s, p) => s + p.mrrAttributed, 0);
   const totalClients = SEED_PARTNERS.reduce((s, p) => s + p.activeClients, 0);
   const totalPayouts = SEED_PARTNERS.reduce((s, p) => s + p.payoutsYTD, 0);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const [liveCount, setLiveCount] = useState(0);
+
+  useEffect(() => {
+    if (!intel.intelConfigured) return;
+    intel.listPartners('ws_texnet').then((rows) => {
+      if (rows.length > 0) { setLiveCount(rows.length); setSource('live'); }
+    }).catch((e) => console.warn('[Partners] live falhou:', (e as Error).message));
+  }, []);
 
   return (
     <>
@@ -32,6 +43,13 @@ export function PartnerPage() {
           <Handshake size={16} className="text-creme-mute" /> Partner Portal
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · revendedores · affiliate · leads atribuídos · comissão
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${liveCount} partners` : 'mock'}
           </span>
         </div>
         <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all flex items-center gap-1">

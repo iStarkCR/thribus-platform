@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BookMarked, GraduationCap, Search, Clock, Eye, ThumbsUp,
-  PlayCircle, Award,
+  PlayCircle, Award, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_HELP_ARTICLES, SEED_COURSES,
   type HelpArticle, type AcademyCourse,
 } from '@/lib/seed-extras2';
+import * as platform from '@/services/platform';
 
 const CATEGORY_COLOR: Record<HelpArticle['category'], string> = {
   getting_started: 'bg-brand/15 text-brand-bright',
@@ -26,6 +27,20 @@ const LEVEL_COLOR: Record<AcademyCourse['level'], string> = {
 export function HelpPage() {
   const [tab, setTab] = useState<'help' | 'academy'>('help');
   const [search, setSearch] = useState('');
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const [liveCount, setLiveCount] = useState({ articles: 0, courses: 0 });
+
+  useEffect(() => {
+    if (!platform.platformConfigured) return;
+    Promise.allSettled([
+      platform.listKbArticles().then((rows) => {
+        if (rows.length > 0) { setLiveCount((c) => ({ ...c, articles: rows.length })); setSource('live'); }
+      }),
+      platform.listCourses().then((rows) => {
+        if (rows.length > 0) setLiveCount((c) => ({ ...c, courses: rows.length }));
+      }),
+    ]);
+  }, []);
 
   return (
     <>
@@ -34,6 +49,13 @@ export function HelpPage() {
           <BookMarked size={16} className="text-creme-mute" /> Help Center & Academy
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · artigos · cursos · certificação · changelog
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${liveCount.articles} artigos · ${liveCount.courses} cursos` : 'mock'}
           </span>
         </div>
       </div>

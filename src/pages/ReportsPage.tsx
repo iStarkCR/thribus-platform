@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   FileBarChart, Plus, Mail, MessageSquare, FileText, Phone,
   Power, Clock, TrendingUp, TrendingDown, AlertTriangle,
-  Send, CheckCircle2, XCircle, Calendar,
+  Send, CheckCircle2, XCircle, Calendar, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_REPORT_SCHEDULES, SEED_REPORT_RUNS,
   type ReportSchedule, type ReportRun, type ReportChannel,
 } from '@/lib/seed-reports';
+import * as intel from '@/services/intel';
 
 const CHANNEL_ICON: Record<ReportChannel, typeof Mail> = {
   email: Mail,
@@ -20,8 +21,32 @@ const CHANNEL_ICON: Record<ReportChannel, typeof Mail> = {
 export function ReportsPage() {
   const [tab, setTab] = useState<'schedules' | 'history'>('schedules');
   const [schedules, setSchedules] = useState<ReportSchedule[]>(SEED_REPORT_SCHEDULES);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
 
-  const toggle = (id: string) => setSchedules((c) => c.map((s) => s.id === id ? { ...s, enabled: !s.enabled } : s));
+  useEffect(() => {
+    if (!intel.intelConfigured) return;
+    intel.listReportSchedules('ws_texnet').then((rows) => {
+      if (rows.length > 0) {
+        setSchedules(rows.map((r) => ({
+          id: r.id, workspaceId: 'ws_texnet', workspaceName: '',
+          name: r.name, frequency: r.frequency,
+          nextRunAt: r.nextRunAt,
+          channels: r.channels as ReportChannel[],
+          recipients: r.recipients, sections: r.sections,
+          enabled: r.enabled, lastSentAt: r.lastSentAt,
+        })));
+        setSource('live');
+      }
+    }).catch((e) => console.warn('[Reports] live falhou:', (e as Error).message));
+  }, []);
+
+  const toggle = async (id: string) => {
+    const next = !schedules.find((s) => s.id === id)?.enabled;
+    setSchedules((c) => c.map((s) => s.id === id ? { ...s, enabled: next } : s));
+    if (source === 'live') {
+      try { await intel.toggleReportSchedule(id, next); } catch (e) { console.warn(e); }
+    }
+  };
 
   return (
     <>
@@ -30,6 +55,13 @@ export function ReportsPage() {
           <FileBarChart size={16} className="text-creme-mute" /> Reports executivos
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · agendados · gerados por agente · multi-canal
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${schedules.length} schedules` : 'mock'}
           </span>
         </div>
         <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all flex items-center gap-1">

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
+import { useSession } from '@/hooks/useSession';
 
 type Tab = 'general' | 'security' | 'preferences' | 'sessions';
 
@@ -76,28 +77,64 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
 }
 
 function GeneralPanel() {
+  const { user, updateProfile, configured } = useSession();
+
+  const md = (user?.user_metadata ?? {}) as Record<string, string>;
+  const [form, setForm] = useState({
+    name: md.name ?? user?.email?.split('@')[0] ?? 'Charles Andrade',
+    phone: md.phone ?? '+55 53 99999-9999',
+    role: md.role ?? 'CEO',
+    company: md.company ?? 'Thribus Tech',
+    location: md.location ?? 'Bagé/RS · Brasil',
+    bio: md.bio ?? 'CEO da Thribus Tech. Construindo plataforma B2B de colaboradores digitais com Cortex Brain.',
+  });
+  const [saving, setSaving] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  const handleSave = async () => {
+    if (!configured) {
+      setSaving('saved');
+      setTimeout(() => setSaving('idle'), 1500);
+      return;
+    }
+    setSaving('saving');
+    const { error } = await updateProfile(form);
+    if (!error) {
+      setSaving('saved');
+      setTimeout(() => setSaving('idle'), 1500);
+    } else {
+      setSaving('idle');
+      alert(`Erro: ${error.message}`);
+    }
+  };
+
   return (
     <div className="grid grid-cols-2 gap-3">
       <Section title="Identidade">
-        <Field label="Nome completo" icon={<User size={12} />} value="Charles Andrade" />
-        <Field label="Email" icon={<Mail size={12} />} value="developer@thribus.com.br" />
-        <Field label="Telefone" icon={<Phone size={12} />} value="+55 53 99999-9999" />
+        <Field label="Nome completo" icon={<User size={12} />} value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+        <Field label="Email" icon={<Mail size={12} />} value={user?.email ?? ''} readOnly />
+        <Field label="Telefone" icon={<Phone size={12} />} value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
       </Section>
       <Section title="Empresa">
-        <Field label="Cargo" icon={<Briefcase size={12} />} value="CEO" />
-        <Field label="Empresa" icon={<Briefcase size={12} />} value="Thribus Tech" />
-        <Field label="Localização" icon={<MapPin size={12} />} value="Bagé/RS · Brasil" />
+        <Field label="Cargo" icon={<Briefcase size={12} />} value={form.role} onChange={(v) => setForm({ ...form, role: v })} />
+        <Field label="Empresa" icon={<Briefcase size={12} />} value={form.company} onChange={(v) => setForm({ ...form, company: v })} />
+        <Field label="Localização" icon={<MapPin size={12} />} value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
       </Section>
       <Section title="Sobre" full>
         <textarea
           rows={3}
-          defaultValue="CEO da Thribus Tech. Construindo plataforma B2B de colaboradores digitais com Cortex Brain. Codifico no dia-a-dia e lidero estratégia."
+          value={form.bio}
+          onChange={(e) => setForm({ ...form, bio: e.target.value })}
           className="w-full px-3 py-2 rounded-md bg-surface-1 border border-default text-[13px] text-creme placeholder-creme-faint focus:outline-none focus:border-brand resize-none"
         />
       </Section>
-      <div className="col-span-2 flex justify-end gap-2">
+      <div className="col-span-2 flex justify-end items-center gap-2">
+        {saving !== 'idle' && (
+          <span className="text-[11px] font-mono text-creme-faint">
+            {saving === 'saving' ? 'salvando…' : '✓ salvo'}
+          </span>
+        )}
         <button className="px-4 py-1.5 rounded-md text-[12.5px] font-semibold text-creme-mute hover:text-creme">Cancelar</button>
-        <button className="px-4 py-1.5 rounded-md text-[12.5px] font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand inline-flex items-center gap-1.5">
+        <button onClick={handleSave} disabled={saving === 'saving'} className="px-4 py-1.5 rounded-md text-[12.5px] font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand inline-flex items-center gap-1.5 disabled:opacity-60">
           <Save size={12} /> Salvar alterações
         </button>
       </div>
@@ -241,13 +278,18 @@ function Section({ title, full, children }: { title: string; full?: boolean; chi
   );
 }
 
-function Field({ label, icon, value }: { label: string; icon: React.ReactNode; value: string }) {
+function Field({ label, icon, value, onChange, readOnly }: { label: string; icon: React.ReactNode; value: string; onChange?: (v: string) => void; readOnly?: boolean }) {
   return (
     <div>
       <label className="text-[10.5px] uppercase tracking-wider font-bold text-creme-faint inline-flex items-center gap-1 mb-1">{icon} {label}</label>
       <input
-        defaultValue={value}
-        className="w-full px-3 py-2 rounded-md bg-surface-1 border border-default text-[13px] text-creme focus:outline-none focus:border-brand"
+        value={value}
+        onChange={(e) => onChange?.(e.target.value)}
+        readOnly={readOnly}
+        className={clsx(
+          'w-full px-3 py-2 rounded-md bg-surface-1 border border-default text-[13px] text-creme focus:outline-none focus:border-brand',
+          readOnly && 'opacity-60 cursor-not-allowed',
+        )}
       />
     </div>
   );

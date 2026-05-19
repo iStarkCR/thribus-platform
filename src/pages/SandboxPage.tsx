@@ -1,14 +1,39 @@
+import { useEffect, useState } from 'react';
 import {
   Beaker, Plus, Clock, CheckCircle2, MessageSquare, Bot, TrendingUp,
-  Sparkles, Mail, Building2,
+  Sparkles, Mail, Building2, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SEED_TRIALS, type SandboxTrial } from '@/lib/seed-final';
+import * as intel from '@/services/intel';
 
 export function SandboxPage() {
-  const totalTrials = SEED_TRIALS.length;
-  const converted = SEED_TRIALS.filter((t) => t.convertedToPaid).length;
-  const conversionRate = (converted / totalTrials * 100).toFixed(0);
+  const [trials, setTrials] = useState<SandboxTrial[]>(SEED_TRIALS);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  useEffect(() => {
+    if (!intel.intelConfigured) return;
+    intel.listTrials('ws_texnet').then((rows) => {
+      if (rows.length > 0) {
+        setTrials(rows.map((r) => ({
+          ...r,
+          id: r.id, workspaceId: 'ws_texnet',
+          companyName: r.companyName, industry: r.industry,
+          ownerEmail: r.ownerEmail, expiresAt: r.expiresAt,
+          syntheticDataLoaded: r.syntheticDataLoaded,
+          conversationsTested: r.conversationsTested,
+          agentsCreated: r.agentsCreated,
+          convertedToPaid: r.convertedToPaid,
+          daysLeft: r.daysLeft,
+        })));
+        setSource('live');
+      }
+    }).catch((e) => console.warn('[Sandbox] live falhou:', (e as Error).message));
+  }, []);
+
+  const totalTrials = trials.length;
+  const converted = trials.filter((t) => t.convertedToPaid).length;
+  const conversionRate = totalTrials ? (converted / totalTrials * 100).toFixed(0) : '0';
 
   return (
     <>
@@ -17,6 +42,13 @@ export function SandboxPage() {
           <Beaker size={16} className="text-creme-mute" /> Sandbox / Trial
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · workspaces isolados com dados sintéticos · cliente testa antes de pagar
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${totalTrials} trials` : 'mock'}
           </span>
         </div>
         <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand inline-flex items-center gap-1">
@@ -28,7 +60,7 @@ export function SandboxPage() {
         <Stat icon={<Beaker size={12} />} label="Trials ativos" value={totalTrials.toString()} />
         <Stat icon={<CheckCircle2 size={12} />} label="Convertidos" value={converted.toString()} color="green" />
         <Stat icon={<TrendingUp size={12} />} label="Conversão" value={`${conversionRate}%`} color="brand" />
-        <Stat icon={<Sparkles size={12} />} label="Synthetic data" value={SEED_TRIALS.filter((t) => t.syntheticDataLoaded).length.toString()} />
+        <Stat icon={<Sparkles size={12} />} label="Synthetic data" value={trials.filter((t) => t.syntheticDataLoaded).length.toString()} />
       </div>
 
       <div className="bg-brand/5 border border-brand/20 rounded-[10px] p-4 mb-4">
@@ -48,7 +80,7 @@ export function SandboxPage() {
 
       <h3 className="text-[12.5px] font-bold uppercase tracking-wider text-creme-dim mb-2">Trials ativos</h3>
       <div className="space-y-2.5">
-        {SEED_TRIALS.map((t) => <TrialCard key={t.id} trial={t} />)}
+        {trials.map((t) => <TrialCard key={t.id} trial={t} />)}
       </div>
     </>
   );

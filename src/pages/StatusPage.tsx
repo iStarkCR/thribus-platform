@@ -1,12 +1,14 @@
+import { useEffect, useState } from 'react';
 import {
   Activity, CheckCircle2, AlertTriangle, XCircle, Wrench,
-  Clock, RefreshCw, ExternalLink,
+  Clock, RefreshCw, ExternalLink, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_SERVICES, SEED_INCIDENTS,
   type ServiceStatus, type ServiceHealth, type Incident,
 } from '@/lib/seed-extras2';
+import * as platform from '@/services/platform';
 
 const HEALTH_META: Record<ServiceHealth, { label: string; color: string; bg: string; Icon: typeof CheckCircle2 }> = {
   operational: { label: 'operacional', color: 'text-semantic-green', bg: 'bg-semantic-green/10', Icon: CheckCircle2 },
@@ -22,6 +24,16 @@ const SEVERITY_COLOR = {
 };
 
 export function StatusPage() {
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const [liveComponentsCount, setLiveComponentsCount] = useState(0);
+
+  useEffect(() => {
+    if (!platform.platformConfigured) return;
+    platform.listStatusComponents().then((rows) => {
+      if (rows.length > 0) { setLiveComponentsCount(rows.length); setSource('live'); }
+    }).catch((e) => console.warn('[Status] live falhou:', (e as Error).message));
+  }, []);
+
   const allOk = SEED_SERVICES.every((s) => s.health === 'operational');
   const degraded = SEED_SERVICES.filter((s) => s.health === 'degraded' || s.health === 'maintenance');
   const down = SEED_SERVICES.filter((s) => s.health === 'outage');
@@ -38,6 +50,13 @@ export function StatusPage() {
           <Activity size={16} className="text-creme-mute" /> Status público
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · status.thribus.com.br · histórico 90d · subscribers via email/RSS
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${liveComponentsCount} componentes` : 'mock'}
           </span>
         </div>
         <a href="#" className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface-2 border border-default text-creme-mute hover:text-creme hover:border-hover transition-all inline-flex items-center gap-1">

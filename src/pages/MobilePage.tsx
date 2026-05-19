@@ -1,9 +1,11 @@
+import { useEffect, useState } from 'react';
 import {
   Smartphone, Bell, CheckCircle2, AlertTriangle, MessageSquare,
-  FileBarChart, Download, QrCode, Apple,
+  FileBarChart, Download, QrCode, Apple, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SEED_MOBILE_NOTIFS, type MobileNotification } from '@/lib/seed-extras2';
+import * as platform from '@/services/platform';
 
 const TYPE_ICON = {
   approval: CheckCircle2,
@@ -22,6 +24,15 @@ const TYPE_COLOR = {
 
 export function MobilePage() {
   const unread = SEED_MOBILE_NOTIFS.filter((n) => !n.read).length;
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!platform.platformConfigured) return;
+    platform.getNotifPreferences('ws_texnet').then((p) => {
+      if (p) { setSource('live'); setPrefsLoaded(true); }
+    }).catch((e) => console.warn('[Mobile] live falhou:', (e as Error).message));
+  }, []);
 
   return (
     <>
@@ -30,6 +41,13 @@ export function MobilePage() {
           <Smartphone size={16} className="text-creme-mute" /> Mobile / PWA
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · supervisor approval · push notifications · PWA atendente
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · prefs ${prefsLoaded ? 'OK' : '—'}` : 'mock'}
           </span>
         </div>
       </div>

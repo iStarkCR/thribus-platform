@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Lightbulb, MessageSquareQuote, TrendingUp, TrendingDown, AlertTriangle,
-  Sparkles, Trophy, Target, Activity, ChevronRight,
+  Sparkles, Trophy, Target, Activity, ChevronRight, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_INSIGHTS, SEED_VOC,
   type DailyInsight, type VocTheme,
 } from '@/lib/seed-extras2';
+import * as intel from '@/services/intel';
 
 type Tab = 'insights' | 'voc';
 
@@ -30,6 +31,19 @@ const VOC_CATEGORY_COLOR: Record<VocTheme['category'], string> = {
 
 export function InsightsPage() {
   const [tab, setTab] = useState<Tab>('insights');
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const [liveCount, setLiveCount] = useState(0);
+
+  useEffect(() => {
+    if (!intel.intelConfigured) return;
+    Promise.allSettled([
+      intel.listDailyInsights('ws_texnet').then((rows) => {
+        if (rows.length > 0) { setLiveCount(rows.length); setSource('live'); }
+      }),
+      intel.listVocThemes('ws_texnet'),
+    ]);
+  }, []);
+
   return (
     <>
       <div className="flex items-center justify-between mb-3">
@@ -37,6 +51,13 @@ export function InsightsPage() {
           <Lightbulb size={16} className="text-creme-mute" /> Inteligência
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · daily insights · voice of customer · prediction
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${liveCount} insights` : 'mock'}
           </span>
         </div>
       </div>

@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Play,
-  Bot, Volume2, Clock, DollarSign, Settings, FileText,
+  Bot, Volume2, Clock, DollarSign, Settings, FileText, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_VOICE_PROVIDERS, SEED_VOICE_CONFIG, SEED_VOICE_CALLS,
   type VoiceCall, type VoiceCallStatus,
 } from '@/lib/seed-voice';
+import * as voiceService from '@/services/voice';
 
 const STATUS_LABEL: Record<VoiceCallStatus, { label: string; color: string }> = {
   ringing: { label: 'tocando', color: 'bg-semantic-amber/15 text-semantic-amber' },
@@ -27,14 +28,30 @@ const OUTCOME_COLOR: Record<VoiceCall['outcome'], string> = {
 };
 
 export function VoicePage() {
+  const [calls, setCalls] = useState<VoiceCall[]>(SEED_VOICE_CALLS);
   const [selectedId, setSelectedId] = useState<string>(SEED_VOICE_CALLS[0]?.id ?? '');
-  const selected = SEED_VOICE_CALLS.find((c) => c.id === selectedId);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  useEffect(() => {
+    if (!voiceService.voiceConfigured) return;
+    voiceService.listVoiceCalls('ws_texnet', 100)
+      .then((rows) => {
+        if (rows.length > 0) {
+          setCalls(rows); setSource('live');
+          if (!rows.find((c) => c.id === selectedId)) setSelectedId(rows[0].id);
+        }
+      })
+      .catch((e) => console.warn('[Voice] live falhou:', (e as Error).message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selected = calls.find((c) => c.id === selectedId);
 
   const stats = {
-    total: SEED_VOICE_CALLS.length,
-    completed: SEED_VOICE_CALLS.filter((c) => c.status === 'completed').length,
-    avgDuration: Math.round(SEED_VOICE_CALLS.reduce((s, c) => s + c.durationSec, 0) / SEED_VOICE_CALLS.length),
-    totalCost: SEED_VOICE_CALLS.reduce((s, c) => s + c.cost, 0),
+    total: calls.length,
+    completed: calls.filter((c) => c.status === 'completed').length,
+    avgDuration: calls.length ? Math.round(calls.reduce((s, c) => s + c.durationSec, 0) / calls.length) : 0,
+    totalCost: calls.reduce((s, c) => s + c.cost, 0),
   };
 
   return (
@@ -44,6 +61,13 @@ export function VoicePage() {
           <Phone size={16} className="text-creme-mute" /> Canal de Voz
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · ElevenLabs / Vapi · STT + TTS · mesmo agente, agora por telefone
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${calls.length} chamadas` : 'mock'}
           </span>
         </div>
       </div>
@@ -64,7 +88,7 @@ export function VoicePage() {
             </button>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {SEED_VOICE_CALLS.map((call) => <CallRow key={call.id} call={call} selected={call.id === selectedId} onClick={() => setSelectedId(call.id)} />)}
+            {calls.map((call) => <CallRow key={call.id} call={call} selected={call.id === selectedId} onClick={() => setSelectedId(call.id)} />)}
           </div>
         </div>
 

@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Store, Search, Star, Flame, ShieldCheck, Download, TrendingUp,
   Sparkles, Wrench, Layout, GitBranch, Crown, Package, Gift,
-  Users, DollarSign, MessageCircle, BadgeCheck, Lock,
+  Users, DollarSign, MessageCircle, BadgeCheck, Lock, CircleDot,
 } from 'lucide-react';
+import * as marketplaceService from '@/services/marketplace';
 import { clsx } from 'clsx';
 import {
   SEED_MKT_LISTINGS,
@@ -30,6 +31,15 @@ const PRICING_LABEL: Record<ListingPricing, { label: string; color: string }> = 
 
 export function MarketplacePage() {
   const [tab, setTab] = useState<Tab>('catalog');
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const [liveListings, setLiveListings] = useState(0);
+
+  useEffect(() => {
+    if (!marketplaceService.marketplaceConfigured) return;
+    marketplaceService.listListings().then((rows) => {
+      if (rows.length > 0) { setLiveListings(rows.length); setSource('live'); }
+    }).catch((e) => console.warn('[Marketplace] live falhou:', (e as Error).message));
+  }, []);
 
   return (
     <>
@@ -38,6 +48,13 @@ export function MarketplacePage() {
           <Store size={16} className="text-creme-mute" /> Marketplace
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · catálogo · bundles · packs setoriais · earnings · privado
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${liveListings} listings` : 'mock'}
           </span>
         </div>
         <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all flex items-center gap-1">
