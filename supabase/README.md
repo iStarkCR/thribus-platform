@@ -28,6 +28,11 @@ supabase db reset
 - `20260517_customer360.sql` — `customer_profiles` + `customer_facts` + `customer_interactions` + `customer_contracts`
 - `20260517_notifications.sql` — `notifications` com RLS workspace-aware
 - `20260517_knowledge.sql` — pgvector + `knowledge_bases` + `knowledge_sources` + `knowledge_chunks` + RPC `match_knowledge_chunks`
+- `20260518_webhooks_outbound.sql` — `outbound_webhooks` + `webhook_deliveries` + trigger SQL que enfileira eventos
+- `20260518_vault.sql` — `workspace_secrets` (pgcrypto) + `api_keys` (sha256) + RPCs upsert/rotate/create
+- `20260518_lgpd.sql` — DSR + consent log + PII scanner com trigger automático
+- `20260518_experiments.sql` — A/B com RPC `experiment_significance` (z-score) + `pick_experiment_variant` (sticky)
+- `20260518_studio.sql` — `studio_canvases` JSONB + versionamento por publish
 
 ## Edge Functions
 
@@ -83,6 +88,45 @@ supabase functions deploy knowledge-query
 ```
 
 Usa `text-embedding-3-small` (1536 dims, $0.02/M tokens).
+
+### 6. `webhook-dispatch` — processa fila de webhooks outbound
+
+```bash
+supabase functions deploy webhook-dispatch
+```
+
+Roda em cron (Supabase Scheduled Functions ou pg_cron):
+```sql
+select cron.schedule('webhook-dispatch', '* * * * *',
+  $$ select net.http_post(
+    url := 'https://<proj>.supabase.co/functions/v1/webhook-dispatch',
+    headers := jsonb_build_object('Authorization', 'Bearer ' || current_setting('app.service_role_key'))
+  ) $$);
+```
+
+Retry exponencial: 1m, 5m, 30m, 4h, 24h. Após 5 tentativas, marca `failed`.
+HMAC SHA-256 nos headers `X-Thribus-Signature`.
+
+### 7. `lgpd-export` + `lgpd-erase` — direitos do titular (Art. 18)
+
+```bash
+supabase functions deploy lgpd-export
+supabase functions deploy lgpd-erase
+```
+
+`lgpd-export` consolida TODOS os dados do titular em JSON único (customer_profiles, facts, conversations, messages, consent_log, pii_detections).
+
+`lgpd-erase` anonimiza (não deleta) preservando registros agregados pra dever legal.
+
+### 8. Vault — encriptação no DB
+
+Setar a chave de encriptação simétrica do Postgres (pgcrypto):
+```sql
+alter database postgres set app.vault_key = 'sua_chave_forte_de_32_chars_min';
+```
+
+Frontend NUNCA recebe `value_encrypted` — só `masked_value`. Decriptação só
+dentro do worker via RPC `vault_decrypt`.
 
 ## Smoke tests
 

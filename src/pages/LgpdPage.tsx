@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ShieldCheck, FileLock, Download, Trash2, RefreshCw,
   Eye, EyeOff, AlertTriangle, CheckCircle2, Clock, XCircle,
-  CreditCard, IdCard, Phone, Mail,
+  CreditCard, IdCard, Phone, Mail, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_DSR, SEED_PII, SEED_CONSENT,
   type DsrRequest, type DsrType, type DsrStatus,
 } from '@/lib/seed-extras2';
+import * as lgpdService from '@/services/lgpd';
 
 type Tab = 'dsr' | 'pii' | 'consent';
 
@@ -31,6 +32,21 @@ const PII_ICON = { cpf: IdCard, cnpj: IdCard, cartao: CreditCard, cep: IdCard, r
 
 export function LgpdPage() {
   const [tab, setTab] = useState<Tab>('dsr');
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const [liveDsrCount, setLiveDsrCount] = useState<number | null>(null);
+  const [livePiiCount, setLivePiiCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!lgpdService.lgpdConfigured) return;
+    Promise.allSettled([
+      lgpdService.listDsrRequests('ws_texnet').then((rows) => {
+        if (rows.length > 0) { setLiveDsrCount(rows.length); setSource('live'); }
+      }),
+      lgpdService.listPIIDetections('ws_texnet', 100).then((rows) => {
+        if (rows.length > 0) setLivePiiCount(rows.length);
+      }),
+    ]);
+  }, []);
 
   return (
     <>
@@ -39,6 +55,13 @@ export function LgpdPage() {
           <ShieldCheck size={16} className="text-creme-mute" /> LGPD Center
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · DSR · PII scanner · consent log
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${liveDsrCount ?? 0} DSR · ${livePiiCount ?? 0} PII` : 'mock'}
           </span>
         </div>
       </div>

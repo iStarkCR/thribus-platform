@@ -1,18 +1,40 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Webhook, Plus, Power, CheckCircle2, XCircle, RefreshCw,
-  Copy, Send, Clock,
+  Copy, Send, Clock, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_WEBHOOKS, SEED_WEBHOOK_DELIVERIES,
   type OutboundWebhook, type WebhookDelivery,
 } from '@/lib/seed-final';
+import * as webhooksService from '@/services/webhooks';
 
 export function WebhooksPage() {
   const [tab, setTab] = useState<'endpoints' | 'deliveries'>('endpoints');
   const [hooks, setHooks] = useState<OutboundWebhook[]>(SEED_WEBHOOKS);
-  const toggle = (id: string) => setHooks((c) => c.map((w) => w.id === id ? { ...w, active: !w.active } : w));
+  const [deliveries, setDeliveries] = useState<WebhookDelivery[]>(SEED_WEBHOOK_DELIVERIES);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  useEffect(() => {
+    if (!webhooksService.webhooksConfigured) return;
+    Promise.allSettled([
+      webhooksService.listWebhooks('ws_texnet').then((rows) => {
+        if (rows.length > 0) { setHooks(rows); setSource('live'); }
+      }),
+      webhooksService.listDeliveries('ws_texnet', 100).then((rows) => {
+        if (rows.length > 0) setDeliveries(rows);
+      }),
+    ]);
+  }, []);
+
+  const toggle = async (id: string) => {
+    const next = !hooks.find((h) => h.id === id)?.active;
+    setHooks((c) => c.map((w) => w.id === id ? { ...w, active: next } : w));
+    if (source === 'live') {
+      try { await webhooksService.toggleWebhook(id, next); } catch (e) { console.warn(e); }
+    }
+  };
 
   const total30d = hooks.reduce((s, h) => s + h.deliveries30d, 0);
 
@@ -23,6 +45,13 @@ export function WebhooksPage() {
           <Webhook size={16} className="text-creme-mute" /> Webhooks Outbound
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · dispara eventos pra sistemas externos do cliente
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${hooks.length} hooks` : 'mock'}
           </span>
         </div>
         <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand inline-flex items-center gap-1">
@@ -39,7 +68,7 @@ export function WebhooksPage() {
 
       <div className="flex items-center gap-1 mb-4 border-b border-default">
         <TabBtn active={tab === 'endpoints'} onClick={() => setTab('endpoints')} label="Endpoints" count={hooks.length} />
-        <TabBtn active={tab === 'deliveries'} onClick={() => setTab('deliveries')} label="Deliveries" count={SEED_WEBHOOK_DELIVERIES.length} />
+        <TabBtn active={tab === 'deliveries'} onClick={() => setTab('deliveries')} label="Deliveries" count={deliveries.length} />
       </div>
 
       {tab === 'endpoints' && (
@@ -53,7 +82,7 @@ export function WebhooksPage() {
           <div className="grid grid-cols-[140px_180px_1fr_100px_100px_140px] gap-3 px-4 py-2 border-b border-default bg-surface-1/50 text-[10.5px] uppercase tracking-wider font-bold text-creme-faint">
             <div>Event</div><div>Endpoint</div><div>URL</div><div>HTTP</div><div>Status</div><div>Quando</div>
           </div>
-          {SEED_WEBHOOK_DELIVERIES.map((d) => <DeliveryRow key={d.id} delivery={d} hooks={hooks} />)}
+          {deliveries.map((d) => <DeliveryRow key={d.id} delivery={d} hooks={hooks} />)}
         </div>
       )}
     </>

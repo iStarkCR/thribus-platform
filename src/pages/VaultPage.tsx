@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyRound, Lock, Plus, Eye, EyeOff, Copy, RefreshCw, Trash2,
-  Clock, AlertTriangle, CheckCircle2,
+  Clock, AlertTriangle, CheckCircle2, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SEED_SECRETS, SEED_API_KEYS, type SecretEntry, type ApiKey } from '@/lib/seed-final';
+import * as vaultService from '@/services/vault';
 
 type Tab = 'secrets' | 'apikeys';
 
@@ -19,6 +20,21 @@ const CATEGORY_COLOR: Record<SecretEntry['category'], string> = {
 
 export function VaultPage() {
   const [tab, setTab] = useState<Tab>('secrets');
+  const [secrets, setSecrets] = useState<SecretEntry[]>(SEED_SECRETS);
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>(SEED_API_KEYS);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  useEffect(() => {
+    if (!vaultService.vaultConfigured) return;
+    Promise.allSettled([
+      vaultService.listSecrets('ws_texnet').then((rows) => {
+        if (rows.length > 0) { setSecrets(rows); setSource('live'); }
+      }),
+      vaultService.listApiKeys('ws_texnet').then((rows) => {
+        if (rows.length > 0) setApiKeys(rows);
+      }),
+    ]);
+  }, []);
 
   return (
     <>
@@ -28,6 +44,13 @@ export function VaultPage() {
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · secrets do workspace · chaves de API outbound · rotação
           </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${secrets.length} secrets` : 'mock'}
+          </span>
         </div>
         <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand inline-flex items-center gap-1">
           <Plus size={11} /> Novo
@@ -35,8 +58,8 @@ export function VaultPage() {
       </div>
 
       <div className="flex items-center gap-1 mb-4 border-b border-default">
-        <TabBtn active={tab === 'secrets'} onClick={() => setTab('secrets')} label="Secrets (inbound)" count={SEED_SECRETS.length} icon={<Lock size={13} />} />
-        <TabBtn active={tab === 'apikeys'} onClick={() => setTab('apikeys')} label="API Keys (outbound)" count={SEED_API_KEYS.length} icon={<KeyRound size={13} />} />
+        <TabBtn active={tab === 'secrets'} onClick={() => setTab('secrets')} label="Secrets (inbound)" count={secrets.length} icon={<Lock size={13} />} />
+        <TabBtn active={tab === 'apikeys'} onClick={() => setTab('apikeys')} label="API Keys (outbound)" count={apiKeys.length} icon={<KeyRound size={13} />} />
       </div>
 
       {tab === 'secrets' && (
@@ -46,7 +69,7 @@ export function VaultPage() {
             Credenciais que o Thribus usa pra falar com sistemas do cliente (IXC, Stripe, Asaas, Talki). Mascaradas no display, encriptadas em rest.
           </div>
           <div className="space-y-2">
-            {SEED_SECRETS.map((s) => <SecretRow key={s.id} secret={s} />)}
+            {secrets.map((s) => <SecretRow key={s.id} secret={s} />)}
           </div>
         </>
       )}
@@ -58,7 +81,7 @@ export function VaultPage() {
             Chaves que sistemas externos (worker, BI) usam pra falar com Thribus API. Cada chave tem scopes restritos.
           </div>
           <div className="space-y-2">
-            {SEED_API_KEYS.map((k) => <ApiKeyRow key={k.id} apiKey={k} />)}
+            {apiKeys.map((k) => <ApiKeyRow key={k.id} apiKey={k} />)}
           </div>
         </>
       )}

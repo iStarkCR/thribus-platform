@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   TestTube2, Plus, Play, Trophy, CircleDot, CheckCircle2,
   Clock, Zap, Activity,
@@ -8,6 +8,7 @@ import {
   SEED_EXPERIMENTS,
   type Experiment, type ExperimentStatus,
 } from '@/lib/seed-experiments';
+import * as experimentsService from '@/services/experiments';
 
 const STATUS_META: Record<ExperimentStatus, { label: string; color: string; Icon: typeof CircleDot }> = {
   draft: { label: 'rascunho', color: 'bg-surface-3 text-creme-mute', Icon: CircleDot },
@@ -24,8 +25,25 @@ const METRIC_LABEL = {
 };
 
 export function ExperimentsPage() {
+  const [experiments, setExperiments] = useState<Experiment[]>(SEED_EXPERIMENTS);
   const [selectedId, setSelectedId] = useState<string>(SEED_EXPERIMENTS[0]?.id ?? '');
-  const selected = SEED_EXPERIMENTS.find((e) => e.id === selectedId);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  useEffect(() => {
+    if (!experimentsService.experimentsConfigured) return;
+    experimentsService.listExperiments('ws_texnet')
+      .then((rows) => {
+        if (rows.length > 0) {
+          setExperiments(rows);
+          setSource('live');
+          if (!rows.find((e) => e.id === selectedId)) setSelectedId(rows[0].id);
+        }
+      })
+      .catch((e) => console.warn('[Experiments] live falhou:', (e as Error).message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selected = experiments.find((e) => e.id === selectedId);
 
   return (
     <>
@@ -34,6 +52,13 @@ export function ExperimentsPage() {
           <TestTube2 size={16} className="text-creme-mute" /> A/B Tests
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · prompts em produção · 50/50 · vencedor com significância
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${experiments.length} experimentos` : 'mock'}
           </span>
         </div>
         <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all flex items-center gap-1">
@@ -47,7 +72,7 @@ export function ExperimentsPage() {
             <h3 className="text-[12.5px] font-bold uppercase tracking-wider text-creme-dim">Experimentos</h3>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-            {SEED_EXPERIMENTS.map((e) => <ExperimentRow key={e.id} experiment={e} selected={e.id === selectedId} onClick={() => setSelectedId(e.id)} />)}
+            {experiments.map((e) => <ExperimentRow key={e.id} experiment={e} selected={e.id === selectedId} onClick={() => setSelectedId(e.id)} />)}
           </div>
         </div>
 

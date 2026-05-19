@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Blocks, Save, Play, Plus, Trash2, GripVertical,
-  Sparkles,
+  Sparkles, CircleDot, Check,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_STUDIO_CANVAS, STUDIO_BLOCK_PALETTE,
-  type StudioBlock, type BlockType,
+  type StudioBlock, type BlockType, type StudioCanvas,
 } from '@/lib/seed-studio';
+import * as studio from '@/services/studio';
 
 const BLOCK_COLOR: Record<BlockType, string> = {
   persona: 'border-brand/40 bg-brand/10',
@@ -21,8 +22,61 @@ const BLOCK_COLOR: Record<BlockType, string> = {
 };
 
 export function StudioPage() {
-  const [canvas] = useState(SEED_STUDIO_CANVAS);
+  const [canvas, setCanvas] = useState<StudioCanvas>(SEED_STUDIO_CANVAS);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>('b_1');
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const saveTimerRef = useRef<number | null>(null);
+
+  // Carrega canvas real do workspace (primeiro disponível)
+  useEffect(() => {
+    if (!studio.studioConfigured) return;
+    studio.listCanvases('ws_texnet')
+      .then((rows) => {
+        if (rows.length > 0) {
+          setCanvas(rows[0]);
+          setSource('live');
+        }
+      })
+      .catch((e) => console.warn('[Studio] live falhou:', (e as Error).message));
+  }, []);
+
+  // Auto-save debounced — exposto via canvas pra drag/delete chamarem no futuro.
+  // Por ora, atalho Cmd+S salva manualmente.
+  useEffect(() => {
+    if (source !== 'live') return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+        setSavingState('saving');
+        studio.saveCanvas(canvas.id, canvas.blocks)
+          .then(() => {
+            setSavingState('saved');
+            window.setTimeout(() => setSavingState('idle'), 1500);
+          })
+          .catch((err) => {
+            console.warn('[Studio] save falhou:', (err as Error).message);
+            setSavingState('idle');
+          });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canvas.id, canvas.blocks, source]);
+
+  const publish = async () => {
+    if (source !== 'live') {
+      setCanvas((c) => ({ ...c, status: 'published', publishedAt: new Date().toISOString() }));
+      return;
+    }
+    try {
+      const r = await studio.publishCanvas(canvas.id);
+      setCanvas((c) => ({ ...c, status: 'published', publishedAt: r.publishedAt }));
+    } catch (e) {
+      console.warn('[Studio] publish falhou:', (e as Error).message);
+    }
+  };
 
   const selected = canvas.blocks.find((b) => b.id === selectedBlockId);
 
@@ -34,12 +88,24 @@ export function StudioPage() {
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · no-code builder · {canvas.blocksCount} blocos · {canvas.status === 'published' ? 'publicado' : 'rascunho'}
           </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? 'live' : 'mock'}
+          </span>
+          {savingState !== 'idle' && (
+            <span className="text-[10.5px] font-mono text-creme-faint inline-flex items-center gap-1">
+              {savingState === 'saving' ? <><CircleDot size={9} className="animate-spin" /> salvando…</> : <><Check size={9} className="text-semantic-green" /> salvo</>}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface-2 border border-default text-creme-mute hover:text-creme hover:border-hover transition-all flex items-center gap-1">
             <Play size={11} /> Testar
           </button>
-          <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all flex items-center gap-1">
+          <button onClick={publish} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all flex items-center gap-1">
             <Save size={11} /> Publicar
           </button>
         </div>
