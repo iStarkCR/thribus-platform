@@ -1,0 +1,10 @@
+# Vercel só deploya o frontend Vite — ignorar pastas backend
+worker/
+supabase/
+scripts/
+sql/
+docs/
+*.md
+!README.md
+.env.local
+.env.development
