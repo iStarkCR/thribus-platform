@@ -40,11 +40,13 @@ export function NotificationsPage() {
     return unsub;
   }, []);
 
-  const filtered = notifs.filter((n) =>
-    filter === 'all' ? true :
-    filter === 'unread' ? !n.read :
-    n.kind === filter
-  );
+  const filtered = notifs
+    .filter((n) =>
+      filter === 'all' ? true :
+      filter === 'unread' ? !n.read :
+      n.kind === filter
+    )
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   const unread = notifs.filter((n) => !n.read).length;
   const markAllRead = async () => {
