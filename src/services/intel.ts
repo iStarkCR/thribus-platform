@@ -140,6 +140,7 @@ export interface PartnerAccount {
   commissionRate: number; referralCode: string;
   leadsCount: number; conversions: number;
   totalRevenueBrl: number; totalCommissionBrl: number;
+  createdAt: string;
 }
 
 export async function listPartners(workspaceId: string): Promise<PartnerAccount[]> {
@@ -158,5 +159,40 @@ export async function listPartners(workspaceId: string): Promise<PartnerAccount[
     leadsCount: r.leads_count as number, conversions: r.conversions as number,
     totalRevenueBrl: Number(r.total_revenue_brl),
     totalCommissionBrl: Number(r.total_commission_brl),
+    createdAt: r.created_at as string,
   }));
+}
+
+export interface PartnerLeadRow {
+  id: string; partnerId: string; partnerName: string;
+  leadName: string;
+  status: 'new' | 'qualified' | 'demo' | 'proposal' | 'won' | 'lost';
+  estimatedMrr: number; createdAt: string;
+}
+
+const LEAD_STATUS_MAP: Record<string, PartnerLeadRow['status']> = {
+  novo: 'new', contato: 'qualified', demo: 'demo',
+  negociacao: 'proposal', convertido: 'won', perdido: 'lost',
+};
+
+export async function listPartnerLeads(workspaceId: string, limit = 30): Promise<PartnerLeadRow[]> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { data, error } = await supabase
+    .from('partner_leads')
+    .select('id, partner_id, lead_email, lead_company, status, deal_value_brl, created_at, partner_accounts(name)')
+    .eq('workspace_id', workspaceId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => {
+    const partner = r.partner_accounts as { name: string } | { name: string }[] | null;
+    const partnerName = Array.isArray(partner) ? (partner[0]?.name ?? '') : (partner?.name ?? '');
+    return {
+      id: r.id as string, partnerId: r.partner_id as string, partnerName,
+      leadName: (r.lead_company as string) || (r.lead_email as string),
+      status: LEAD_STATUS_MAP[r.status as string] ?? 'new',
+      estimatedMrr: r.deal_value_brl === null ? 0 : Number(r.deal_value_brl),
+      createdAt: r.created_at as string,
+    };
+  });
 }

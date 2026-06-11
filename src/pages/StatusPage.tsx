@@ -23,21 +23,50 @@ const SEVERITY_COLOR = {
   critical: 'bg-semantic-red/30 text-semantic-red',
 };
 
+function mapComponentHealth(status: platform.StatusComponent['status']): ServiceHealth {
+  if (status === 'operational') return 'operational';
+  if (status === 'maintenance') return 'maintenance';
+  if (status === 'major_outage') return 'outage';
+  return 'degraded';
+}
+
 export function StatusPage() {
   const [source, setSource] = useState<'mock' | 'live'>('mock');
-  const [liveComponentsCount, setLiveComponentsCount] = useState(0);
+  const [services, setServices] = useState<ServiceStatus[]>(SEED_SERVICES);
+  const [incidents, setIncidents] = useState<Incident[]>(SEED_INCIDENTS);
 
   useEffect(() => {
     if (!platform.platformConfigured) return;
-    platform.listStatusComponents().then((rows) => {
-      if (rows.length > 0) { setLiveComponentsCount(rows.length); setSource('live'); }
-    }).catch((e) => console.warn('[Status] live falhou:', (e as Error).message));
+    Promise.allSettled([
+      platform.listStatusComponents().then((rows) => {
+        if (rows.length > 0) {
+          setServices(rows.map((c) => ({
+            id: c.id, name: c.name, category: 'core' as const,
+            health: mapComponentHealth(c.status),
+            uptime30d: c.uptime30dPct, latencyMs: 0,
+          })));
+          setSource('live');
+        }
+      }),
+      platform.listStatusIncidents().then((rows) => {
+        if (rows.length > 0) {
+          setIncidents(rows.map((i) => ({
+            id: i.id, title: i.title, severity: i.severity, status: i.status,
+            affectedServices: [], startedAt: i.startedAt,
+            resolvedAt: i.resolvedAt, updates: i.updates,
+          })));
+        }
+      }),
+    ]).then((results) => {
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length) console.warn('[Status] live parcial:', failed.length, 'falhas');
+    });
   }, []);
 
-  const allOk = SEED_SERVICES.every((s) => s.health === 'operational');
-  const degraded = SEED_SERVICES.filter((s) => s.health === 'degraded' || s.health === 'maintenance');
-  const down = SEED_SERVICES.filter((s) => s.health === 'outage');
-  const activeIncidents = SEED_INCIDENTS.filter((i) => i.status !== 'resolved');
+  const allOk = services.every((s) => s.health === 'operational');
+  const degraded = services.filter((s) => s.health === 'degraded' || s.health === 'maintenance');
+  const down = services.filter((s) => s.health === 'outage');
+  const activeIncidents = incidents.filter((i) => i.status !== 'resolved');
 
   const overallColor = down.length ? 'bg-semantic-red/10 border-semantic-red/30' : degraded.length ? 'bg-semantic-amber/10 border-semantic-amber/30' : 'bg-semantic-green/10 border-semantic-green/30';
   const overallText = down.length ? 'text-semantic-red' : degraded.length ? 'text-semantic-amber' : 'text-semantic-green';
@@ -56,7 +85,7 @@ export function StatusPage() {
             source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
           )}>
             <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
-            {source === 'live' ? `live · ${liveComponentsCount} componentes` : 'mock'}
+            {source === 'live' ? `live · ${services.length} componentes` : 'mock'}
           </span>
         </div>
         <a href="#" className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface-2 border border-default text-creme-mute hover:text-creme hover:border-hover transition-all inline-flex items-center gap-1">
@@ -85,12 +114,12 @@ export function StatusPage() {
 
       <h3 className="text-[12.5px] font-bold uppercase tracking-wider text-creme-dim mb-2">Serviços</h3>
       <div className="bg-surface-2 border border-default rounded-[10px] overflow-hidden">
-        {SEED_SERVICES.map((s) => <ServiceRow key={s.id} service={s} />)}
+        {services.map((s) => <ServiceRow key={s.id} service={s} />)}
       </div>
 
       <h3 className="text-[12.5px] font-bold uppercase tracking-wider text-creme-dim mt-4 mb-2">Incidentes resolvidos /30d</h3>
       <div className="space-y-2">
-        {SEED_INCIDENTS.filter((i) => i.status === 'resolved').map((i) => <IncidentCard key={i.id} incident={i} compact />)}
+        {incidents.filter((i) => i.status === 'resolved').map((i) => <IncidentCard key={i.id} incident={i} compact />)}
       </div>
     </>
   );

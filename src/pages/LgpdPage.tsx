@@ -7,9 +7,24 @@ import {
 import { clsx } from 'clsx';
 import {
   SEED_DSR, SEED_PII, SEED_CONSENT,
-  type DsrRequest, type DsrType, type DsrStatus,
+  type DsrRequest, type DsrType, type DsrStatus, type PiiDetection,
 } from '@/lib/seed-extras2';
 import * as lgpdService from '@/services/lgpd';
+
+type ConsentEntry = (typeof SEED_CONSENT)[number];
+
+const KIND_TO_TYPE: Record<lgpdService.DsrKind, DsrType> = {
+  access: 'access', portability: 'portability', erase: 'deletion',
+  rectify: 'rectification', restriction: 'consent_revoke', objection: 'consent_revoke',
+};
+const STATUS_TO_UI: Record<lgpdService.DsrStatus, DsrStatus> = {
+  received: 'pending', verifying: 'in_progress', processing: 'in_progress',
+  completed: 'completed', denied: 'rejected',
+};
+const PII_KIND_TO_CATEGORY: Record<string, PiiDetection['category']> = {
+  cpf: 'cpf', cnpj: 'cnpj', credit_card: 'cartao', phone: 'telefone',
+  email: 'email', rg: 'rg', passport: 'rg', address: 'cep', dob: 'rg',
+};
 
 type Tab = 'dsr' | 'pii' | 'consent';
 
@@ -33,17 +48,44 @@ const PII_ICON = { cpf: IdCard, cnpj: IdCard, cartao: CreditCard, cep: IdCard, r
 export function LgpdPage() {
   const [tab, setTab] = useState<Tab>('dsr');
   const [source, setSource] = useState<'mock' | 'live'>('mock');
-  const [liveDsrCount, setLiveDsrCount] = useState<number | null>(null);
-  const [livePiiCount, setLivePiiCount] = useState<number | null>(null);
+  const [dsrs, setDsrs] = useState<DsrRequest[]>(SEED_DSR);
+  const [piis, setPiis] = useState<PiiDetection[]>(SEED_PII);
+  const [consents, setConsents] = useState<ConsentEntry[]>(SEED_CONSENT);
 
   useEffect(() => {
     if (!lgpdService.lgpdConfigured) return;
     Promise.allSettled([
       lgpdService.listDsrRequests('ws_texnet').then((rows) => {
-        if (rows.length > 0) { setLiveDsrCount(rows.length); setSource('live'); }
+        if (rows.length > 0) {
+          setDsrs(rows.map((d) => ({
+            id: d.id, type: KIND_TO_TYPE[d.kind], status: STATUS_TO_UI[d.status],
+            customerName: d.subjectName, customerEmail: d.subjectEmail ?? '—',
+            workspaceId: d.workspaceId, requestedAt: d.createdAt,
+            completedAt: d.resolvedAt, slaDeadline: d.dueDate,
+          })));
+          setSource('live');
+        }
       }),
       lgpdService.listPIIDetections('ws_texnet', 100).then((rows) => {
-        if (rows.length > 0) setLivePiiCount(rows.length);
+        if (rows.length > 0) {
+          setPiis(rows.map((p) => ({
+            id: p.id, messageId: '—', conversationId: p.conversationId ?? '—',
+            category: PII_KIND_TO_CATEGORY[p.piiKind] ?? 'cpf',
+            value: '', masked: p.maskedExcerpt,
+            action: p.actionTaken === 'logged' ? 'flagged' : (p.actionTaken as PiiDetection['action']),
+            timestamp: p.detectedAt,
+          })));
+          setSource('live');
+        }
+      }),
+      lgpdService.listConsents('ws_texnet', 100).then((rows) => {
+        if (rows.length > 0) {
+          setConsents(rows.map((c) => ({
+            id: c.id, customerName: c.subjectId, customerEmail: '—',
+            purpose: c.purpose as ConsentEntry['purpose'], granted: c.granted,
+            channel: c.legalBasis as ConsentEntry['channel'], timestamp: c.grantedAt,
+          })));
+        }
       }),
     ]);
   }, []);
@@ -61,20 +103,20 @@ export function LgpdPage() {
             source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
           )}>
             <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
-            {source === 'live' ? `live · ${liveDsrCount ?? 0} DSR · ${livePiiCount ?? 0} PII` : 'mock'}
+            {source === 'live' ? `live · ${dsrs.length} DSR · ${piis.length} PII` : 'mock'}
           </span>
         </div>
       </div>
 
       <div className="flex items-center gap-1 mb-4 border-b border-default">
-        <TabBtn active={tab === 'dsr'} onClick={() => setTab('dsr')} icon={<FileLock size={13} />} label="DSR Requests" count={SEED_DSR.length} />
-        <TabBtn active={tab === 'pii'} onClick={() => setTab('pii')} icon={<AlertTriangle size={13} />} label="PII Scanner" count={SEED_PII.length} />
-        <TabBtn active={tab === 'consent'} onClick={() => setTab('consent')} icon={<CheckCircle2 size={13} />} label="Consent Log" count={SEED_CONSENT.length} />
+        <TabBtn active={tab === 'dsr'} onClick={() => setTab('dsr')} icon={<FileLock size={13} />} label="DSR Requests" count={dsrs.length} />
+        <TabBtn active={tab === 'pii'} onClick={() => setTab('pii')} icon={<AlertTriangle size={13} />} label="PII Scanner" count={piis.length} />
+        <TabBtn active={tab === 'consent'} onClick={() => setTab('consent')} icon={<CheckCircle2 size={13} />} label="Consent Log" count={consents.length} />
       </div>
 
-      {tab === 'dsr' && <DsrPanel />}
-      {tab === 'pii' && <PiiPanel />}
-      {tab === 'consent' && <ConsentPanel />}
+      {tab === 'dsr' && <DsrPanel dsrs={dsrs} />}
+      {tab === 'pii' && <PiiPanel piis={piis} />}
+      {tab === 'consent' && <ConsentPanel consents={consents} />}
     </>
   );
 }
@@ -88,7 +130,7 @@ function TabBtn({ active, onClick, icon, label, count }: { active: boolean; onCl
   );
 }
 
-function DsrPanel() {
+function DsrPanel({ dsrs }: { dsrs: DsrRequest[] }) {
   return (
     <>
       <div className="bg-surface-2 border border-default rounded-[10px] p-3 mb-3 text-[12px] text-creme-mute leading-relaxed">
@@ -96,7 +138,7 @@ function DsrPanel() {
         Solicitações de titular (LGPD Art. 18) — você tem <b>15 dias</b> pra atender. Cliente recebe email automático em cada update.
       </div>
       <div className="space-y-2">
-        {SEED_DSR.map((d) => <DsrRow key={d.id} dsr={d} />)}
+        {dsrs.map((d) => <DsrRow key={d.id} dsr={d} />)}
       </div>
     </>
   );
@@ -138,7 +180,7 @@ function DsrRow({ dsr: d }: { dsr: DsrRequest }) {
   );
 }
 
-function PiiPanel() {
+function PiiPanel({ piis }: { piis: PiiDetection[] }) {
   return (
     <>
       <div className="bg-surface-2 border border-default rounded-[10px] p-3 mb-3 text-[12px] text-creme-mute leading-relaxed">
@@ -146,7 +188,7 @@ function PiiPanel() {
         Toda mensagem é escaneada antes de logar. PII detectada é mascarada, sinalizada ou bloqueada conforme política.
       </div>
       <div className="space-y-2">
-        {SEED_PII.map((p) => {
+        {piis.map((p) => {
           const Icon = PII_ICON[p.category];
           return (
             <div key={p.id} className="bg-surface-2 border border-default rounded-[10px] p-3 flex items-center gap-3">
@@ -177,7 +219,7 @@ function PiiPanel() {
   );
 }
 
-function ConsentPanel() {
+function ConsentPanel({ consents }: { consents: ConsentEntry[] }) {
   return (
     <div className="bg-surface-2 border border-default rounded-[10px] overflow-hidden">
       <div className="grid grid-cols-[1fr_140px_120px_140px_140px] gap-3 px-4 py-2 border-b border-default bg-surface-1/50 text-[10.5px] uppercase tracking-wider font-bold text-creme-faint">
@@ -187,7 +229,7 @@ function ConsentPanel() {
         <div>Canal</div>
         <div>Quando</div>
       </div>
-      {SEED_CONSENT.map((c) => (
+      {consents.map((c) => (
         <div key={c.id} className="grid grid-cols-[1fr_140px_120px_140px_140px] gap-3 px-4 py-2.5 text-[12px] border-t border-default hover:bg-surface-hover/30">
           <div>
             <div className="text-creme font-semibold truncate">{c.customerName}</div>
