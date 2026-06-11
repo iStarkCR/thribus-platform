@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   FileCheck, CheckCircle2, AlertTriangle, XCircle, Download,
-  Clock, ShieldCheck, FileText,
+  Clock, ShieldCheck, FileText, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SEED_COMPLIANCE_BUILDS, type CompliancePackBuild } from '@/lib/seed-final';
+import * as complianceService from '@/services/compliance';
 
 const STATUS_META = {
   idle: { label: 'não iniciado', color: 'bg-surface-3 text-creme-mute' },
@@ -13,9 +14,29 @@ const STATUS_META = {
   expired: { label: 'expirado', color: 'bg-semantic-red/15 text-semantic-red' },
 };
 
+const WORKSPACE_ID = 'ws_texnet';
+
 export function CompliancePage() {
+  const [builds, setBuilds] = useState<CompliancePackBuild[]>(SEED_COMPLIANCE_BUILDS);
   const [selectedId, setSelectedId] = useState<string>(SEED_COMPLIANCE_BUILDS[0]?.id ?? '');
-  const selected = SEED_COMPLIANCE_BUILDS.find((b) => b.id === selectedId);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+  const selected = builds.find((b) => b.id === selectedId);
+
+  useEffect(() => {
+    if (!complianceService.complianceConfigured) return;
+    complianceService.listPackBuilds(WORKSPACE_ID).then((rows) => {
+      if (rows.length > 0) {
+        setBuilds(rows);
+        setSelectedId(rows[0].id);
+        setSource('live');
+      }
+    }).catch(() => {});
+  }, []);
+
+  const startBuild = (id: string) => {
+    setBuilds((curr) => curr.map((b) => (b.id === id ? { ...b, status: 'building' } : b)));
+    if (source === 'live') complianceService.startBuild(id).catch(() => {});
+  };
 
   return (
     <>
@@ -25,16 +46,23 @@ export function CompliancePage() {
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · LGPD · SOC 2 · ISO 27001 · evidence packs prontos pra auditor
           </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${builds.length} packs` : 'mock'}
+          </span>
         </div>
       </div>
 
       <div className="grid grid-cols-[360px_1fr] gap-3 h-[calc(100vh-160px)] min-h-[500px]">
         <div className="space-y-2">
-          {SEED_COMPLIANCE_BUILDS.map((b) => <PackRow key={b.id} pack={b} selected={b.id === selectedId} onClick={() => setSelectedId(b.id)} />)}
+          {builds.map((b) => <PackRow key={b.id} pack={b} selected={b.id === selectedId} onClick={() => setSelectedId(b.id)} />)}
         </div>
 
         <div className="bg-surface-2 border border-default rounded-[10px] overflow-y-auto">
-          {selected && <PackDetail pack={selected} />}
+          {selected && <PackDetail pack={selected} onBuild={() => startBuild(selected.id)} />}
         </div>
       </div>
     </>
@@ -72,7 +100,7 @@ function PackRow({ pack: b, selected, onClick }: { pack: CompliancePackBuild; se
   );
 }
 
-function PackDetail({ pack: b }: { pack: CompliancePackBuild }) {
+function PackDetail({ pack: b, onBuild }: { pack: CompliancePackBuild; onBuild: () => void }) {
   const meta = STATUS_META[b.status];
   const okSections = b.sections.filter((s) => s.status === 'ok').length;
   const warningSections = b.sections.filter((s) => s.status === 'warning').length;
@@ -96,7 +124,7 @@ function PackDetail({ pack: b }: { pack: CompliancePackBuild }) {
             </button>
           )}
           {b.status === 'idle' && (
-            <button className="px-3 py-1.5 rounded-md bg-brand-dim border border-brand text-creme text-[12px] font-semibold inline-flex items-center gap-1">
+            <button onClick={onBuild} className="px-3 py-1.5 rounded-md bg-brand-dim border border-brand text-creme text-[12px] font-semibold inline-flex items-center gap-1">
               <FileText size={11} /> Gerar pack
             </button>
           )}

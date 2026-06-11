@@ -1,20 +1,64 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Shield, Users, FileLock, Clock, DollarSign, Target, Palette,
   CheckCircle2, AlertTriangle, XCircle, Lock, KeyRound, Search,
-  TrendingUp, TrendingDown, Plus, Eye,
+  TrendingUp, TrendingDown, Plus, Eye, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_ROLES, SEED_MEMBERS, SEED_AUDIT, SEED_RETENTION, SEED_COST_BREAKDOWN,
   SEED_AGENT_COSTS, SEED_SLA, SEED_BRANDING,
-  type Member, type RoleName, type AuditEntry,
+  type Member, type RoleName, type AuditEntry, type RetentionPolicy,
+  type AgentCost, type SLATarget, type BrandingConfig,
 } from '@/lib/seed-governance';
+import * as governance from '@/services/governance';
+import { fetchAgentCosts } from '@/services/cost';
 
 type Tab = 'rbac' | 'audit' | 'retention' | 'cost' | 'sla' | 'branding';
 
+const WORKSPACE_ID = 'ws_texnet';
+
 export function GovernancePage() {
   const [tab, setTab] = useState<Tab>('rbac');
+  const [members, setMembers] = useState<Member[]>(SEED_MEMBERS);
+  const [audit, setAudit] = useState<AuditEntry[]>(SEED_AUDIT);
+  const [retention, setRetention] = useState<RetentionPolicy[]>(SEED_RETENTION);
+  const [sla, setSla] = useState<SLATarget[]>(SEED_SLA);
+  const [branding, setBranding] = useState<BrandingConfig[]>(SEED_BRANDING);
+  const [agentCosts, setAgentCosts] = useState<AgentCost[]>(SEED_AGENT_COSTS);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
+
+  useEffect(() => {
+    if (!governance.governanceConfigured) return;
+    Promise.allSettled([
+      governance.listMembers(WORKSPACE_ID).then((rows) => {
+        if (rows.length > 0) { setMembers(rows); setSource('live'); }
+      }),
+      governance.listAudit(WORKSPACE_ID).then((rows) => {
+        if (rows.length > 0) { setAudit(rows); setSource('live'); }
+      }),
+      governance.listRetention().then((rows) => {
+        if (rows.length > 0) setRetention(rows);
+      }),
+      governance.listSla(WORKSPACE_ID).then((rows) => {
+        if (rows.length > 0) setSla(rows);
+      }),
+      governance.listBranding().then((rows) => {
+        if (rows.length > 0) setBranding(rows);
+      }),
+      fetchAgentCosts(WORKSPACE_ID, 30).then((rows) => {
+        if (rows.length > 0) {
+          setAgentCosts(rows.map((r) => ({
+            agentId: r.agentId, agentName: r.agentName, workspaceId: WORKSPACE_ID,
+            conversations30d: r.conversations30d,
+            tokens30d: r.tokensIn + r.tokensOut,
+            llmCost: r.llmCost, toolsCost: 0, totalCost: r.llmCost,
+            revenueAttributed: 0, roi: 0,
+          })));
+        }
+      }),
+    ]);
+  }, []);
 
   return (
     <>
@@ -23,6 +67,13 @@ export function GovernancePage() {
           <Shield size={16} className="text-creme-mute" /> Governança
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · RBAC · audit · retenção · custos · SLA · white-label
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${members.length} membros · ${audit.length} eventos` : 'mock'}
           </span>
         </div>
       </div>
@@ -36,12 +87,12 @@ export function GovernancePage() {
         <TabBtn active={tab === 'branding'} onClick={() => setTab('branding')} icon={<Palette size={13} />} label="White-label" />
       </div>
 
-      {tab === 'rbac' && <RbacPanel />}
-      {tab === 'audit' && <AuditPanel />}
-      {tab === 'retention' && <RetentionPanel />}
-      {tab === 'cost' && <CostPanel />}
-      {tab === 'sla' && <SlaPanel />}
-      {tab === 'branding' && <BrandingPanel />}
+      {tab === 'rbac' && <RbacPanel members={members} live={source === 'live'} />}
+      {tab === 'audit' && <AuditPanel entries={audit} />}
+      {tab === 'retention' && <RetentionPanel policies={retention} />}
+      {tab === 'cost' && <CostPanel agentCosts={agentCosts} live={source === 'live'} />}
+      {tab === 'sla' && <SlaPanel targets={sla} />}
+      {tab === 'branding' && <BrandingPanel configs={branding} />}
     </>
   );
 }
@@ -67,8 +118,7 @@ const ROLE_COLOR: Record<RoleName, string> = {
   auditor: 'bg-semantic-amber/15 text-semantic-amber',
 };
 
-function RbacPanel() {
-  const [members] = useState<Member[]>(SEED_MEMBERS);
+function RbacPanel({ members, live }: { members: Member[]; live: boolean }) {
   const [search, setSearch] = useState('');
   const filtered = members.filter((m) =>
     !search.trim() ||
@@ -79,20 +129,23 @@ function RbacPanel() {
   return (
     <>
       <div className="grid grid-cols-4 gap-2.5 mb-4">
-        {SEED_ROLES.map((r) => (
-          <div key={r.name} className="bg-surface-2 border border-default rounded-[10px] p-3">
-            <div className="flex items-center gap-2">
-              <span className={clsx('px-2 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider', ROLE_COLOR[r.name])}>
-                {r.label}
-              </span>
-              <span className="ml-auto text-[16px] font-bold font-mono text-creme">{r.memberCount}</span>
+        {SEED_ROLES.map((r) => {
+          const count = live ? members.filter((m) => m.role === r.name).length : r.memberCount;
+          return (
+            <div key={r.name} className="bg-surface-2 border border-default rounded-[10px] p-3">
+              <div className="flex items-center gap-2">
+                <span className={clsx('px-2 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider', ROLE_COLOR[r.name])}>
+                  {r.label}
+                </span>
+                <span className="ml-auto text-[16px] font-bold font-mono text-creme">{count}</span>
+              </div>
+              <p className="text-[11.5px] text-creme-mute mt-2 leading-snug line-clamp-3">{r.description}</p>
+              <div className="text-[10.5px] text-creme-faint mt-2 font-mono">
+                {r.permissions.length} recurso{r.permissions.length !== 1 ? 's' : ''} · {r.permissions.reduce((s, p) => s + p.actions.length, 0)} permissões
+              </div>
             </div>
-            <p className="text-[11.5px] text-creme-mute mt-2 leading-snug line-clamp-3">{r.description}</p>
-            <div className="text-[10.5px] text-creme-faint mt-2 font-mono">
-              {r.permissions.length} recurso{r.permissions.length !== 1 ? 's' : ''} · {r.permissions.reduce((s, p) => s + p.actions.length, 0)} permissões
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="bg-surface-2 border border-default rounded-[10px] overflow-hidden">
@@ -150,8 +203,7 @@ function RbacPanel() {
   );
 }
 
-function AuditPanel() {
-  const [entries] = useState<AuditEntry[]>(SEED_AUDIT);
+function AuditPanel({ entries }: { entries: AuditEntry[] }) {
   const [search, setSearch] = useState('');
   const filtered = entries.filter((e) =>
     !search.trim() ||
@@ -207,10 +259,10 @@ function AuditPanel() {
   );
 }
 
-function RetentionPanel() {
+function RetentionPanel({ policies }: { policies: RetentionPolicy[] }) {
   return (
     <div className="space-y-3">
-      {SEED_RETENTION.map((r) => (
+      {policies.map((r) => (
         <div key={r.id} className="bg-surface-2 border border-default rounded-[10px] p-4">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-[14px] font-bold text-creme">Workspace <code className="font-mono text-brand-bright">{r.workspaceId}</code></h4>
@@ -255,14 +307,14 @@ function RetentionItem({ label, days }: { label: string; days: number | null }) 
   );
 }
 
-function CostPanel() {
+function CostPanel({ agentCosts, live }: { agentCosts: AgentCost[]; live: boolean }) {
   const total = SEED_COST_BREAKDOWN.reduce((s, i) => s + i.amount, 0);
   return (
     <>
       <div className="grid grid-cols-[1fr_320px] gap-3 mb-4">
         <div className="bg-surface-2 border border-default rounded-[10px] p-4">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="text-[13px] font-bold text-creme">Breakdown mensal</h4>
+            <h4 className="text-[13px] font-bold text-creme">Breakdown mensal{live ? ' (estimativa)' : ''}</h4>
             <span className="text-[20px] font-bold font-mono text-creme">US$ {total.toFixed(2)}</span>
           </div>
           <div className="space-y-2">
@@ -296,14 +348,14 @@ function CostPanel() {
           <h4 className="text-[13px] font-bold text-creme mb-2">ROI por agente</h4>
           <p className="text-[11.5px] text-creme-faint mb-3">Custo total vs. receita atribuível (30d)</p>
           <div className="space-y-3">
-            {SEED_AGENT_COSTS.map((a) => (
+            {agentCosts.map((a) => (
               <div key={a.agentId}>
                 <div className="flex items-center justify-between text-[12px]">
                   <span className="font-semibold text-creme">{a.agentName}</span>
-                  <span className="font-mono text-brand-bright">{a.roi.toFixed(0)}×</span>
+                  <span className="font-mono text-brand-bright">{a.roi > 0 ? `${a.roi.toFixed(0)}×` : '—'}</span>
                 </div>
                 <div className="text-[10.5px] font-mono text-creme-faint mt-0.5">
-                  custo US$ {a.totalCost.toFixed(0)} · receita R$ {a.revenueAttributed.toLocaleString('pt-BR')}
+                  custo US$ {a.totalCost.toFixed(2)}{a.revenueAttributed > 0 ? ` · receita R$ ${a.revenueAttributed.toLocaleString('pt-BR')}` : ' · receita não atribuída'}
                 </div>
               </div>
             ))}
@@ -320,14 +372,14 @@ function CostPanel() {
           <div>Receita atrib.</div>
           <div className="text-right">ROI</div>
         </div>
-        {SEED_AGENT_COSTS.map((a) => (
+        {agentCosts.map((a) => (
           <div key={a.agentId} className="grid grid-cols-[1fr_120px_120px_120px_140px_100px] gap-3 px-4 py-2.5 text-[12px] border-t border-default hover:bg-surface-hover/30">
             <div className="font-semibold text-creme">{a.agentName}</div>
             <div className="font-mono text-creme-dim">{a.conversations30d.toLocaleString('pt-BR')}</div>
             <div className="font-mono text-creme-dim">{(a.tokens30d / 1_000_000).toFixed(1)}M</div>
             <div className="font-mono text-creme-dim">US$ {a.llmCost.toFixed(2)}</div>
-            <div className="font-mono text-creme-dim">R$ {a.revenueAttributed.toLocaleString('pt-BR')}</div>
-            <div className="font-mono text-brand-bright text-right font-bold">{a.roi.toFixed(0)}×</div>
+            <div className="font-mono text-creme-dim">{a.revenueAttributed > 0 ? `R$ ${a.revenueAttributed.toLocaleString('pt-BR')}` : '—'}</div>
+            <div className="font-mono text-brand-bright text-right font-bold">{a.roi > 0 ? `${a.roi.toFixed(0)}×` : '—'}</div>
           </div>
         ))}
       </div>
@@ -335,10 +387,10 @@ function CostPanel() {
   );
 }
 
-function SlaPanel() {
+function SlaPanel({ targets }: { targets: SLATarget[] }) {
   return (
     <div className="grid grid-cols-2 gap-3">
-      {SEED_SLA.map((s) => {
+      {targets.map((s) => {
         const meta = {
           meeting: { color: 'text-semantic-green', bg: 'bg-semantic-green/10 border-semantic-green/20', Icon: CheckCircle2 },
           at_risk: { color: 'text-semantic-amber', bg: 'bg-semantic-amber/10 border-semantic-amber/20', Icon: AlertTriangle },
@@ -383,10 +435,10 @@ function SlaPanel() {
   );
 }
 
-function BrandingPanel() {
+function BrandingPanel({ configs }: { configs: BrandingConfig[] }) {
   return (
     <div className="space-y-3">
-      {SEED_BRANDING.map((b) => (
+      {configs.map((b) => (
         <div key={b.workspaceId} className="bg-surface-2 border border-default rounded-[10px] p-4">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 rounded-lg border border-default flex items-center justify-center" style={{ backgroundColor: b.primaryColor }}>
