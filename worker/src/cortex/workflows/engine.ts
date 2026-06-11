@@ -12,8 +12,9 @@
 
 import { supabase } from '../../db/supabase.js';
 import { createLogger } from '../observability/logger.js';
-import { notify } from '../notifications/service.js';
+import { notify, type NotificationChannel } from '../notifications/service.js';
 import { emit } from '../webhooks/outgoing.js';
+import { orchestrate } from '../brain/orchestrator.js';
 
 const logger = createLogger('cortex.workflows');
 
@@ -84,7 +85,7 @@ async function runStep(step: WorkflowStep, ctx: RunContext): Promise<{ ok: boole
     case 'notify': {
       const r = await notify({
         tenantId: ctx.tenantId,
-        channel: (config.channel as 'email' | 'slack' | 'in_app') ?? 'in_app',
+        channel: (config.channel as NotificationChannel) ?? 'in_app',
         destination: config.destination as string | undefined,
         userId: config.user_id as string | undefined,
         title: String(config.title ?? 'Workflow notification'),
@@ -181,13 +182,123 @@ async function runStep(step: WorkflowStep, ctx: RunContext): Promise<{ ok: boole
       return { ok: true };
     }
 
-    case 'agent_call':
-      // Stub — chamar /cortex/analyze internamente. Por ora retorna placeholder.
-      return { ok: true, output: { stub: 'agent_call not yet wired in v1' } };
+    case 'agent_call': {
+      // Chama o Brain internamente (mesmo caminho do POST /cortex/analyze).
+      // config: { input (obrigatório), session_id?, channel?, agent?, entity? }
+      const input = String(config.input ?? '');
+      if (!input) return { ok: false, output: { error: 'agent_call requer config.input' } };
+      try {
+        const result = await orchestrate(
+          { tenantId: ctx.tenantId },
+          {
+            sessionId: String(config.session_id ?? `workflow:${ctx.workflowId}:${ctx.runId}`),
+            input,
+            channel: (config.channel as string | undefined) ?? 'workflow',
+            entity: config.entity as { type: string; id: string } | undefined,
+            hints: config.agent ? { forceAgent: String(config.agent) } : undefined,
+            meta: { workflow_id: ctx.workflowId, run_id: ctx.runId },
+          },
+        );
+        return {
+          ok: true,
+          output: {
+            reply: result.reply,
+            agent_used: result.metrics.agentUsed ?? null,
+            actions: result.actions,
+            trace_id: result.traceId,
+          },
+        };
+      } catch (err) {
+        return { ok: false, output: { error: (err as Error).message } };
+      }
+    }
 
     default:
       return { ok: false, output: { error: 'unknown step type' } };
   }
+}
+
+/**
+ * Executa steps a partir de startIndex, persistindo estado no run.
+ * Compartilhado entre runWorkflow (start = 0) e resumeWorkflow (start = current_step).
+ */
+async function executeFrom(
+  steps: WorkflowStep[],
+  ctx: RunContext,
+  startIndex: number,
+): Promise<{ runId: number; status: string }> {
+  if (!supabase) throw new Error('supabase not configured');
+  const { runId } = ctx;
+
+  for (let i = startIndex; i < steps.length; i++) {
+    const step = steps[i];
+    const ts = new Date().toISOString();
+    try {
+      const result = await runStep(step, ctx);
+      ctx.stepsLog.push({
+        stepId: step.id,
+        status: result.ok ? 'success' : 'failed',
+        output: result.output,
+        ts,
+      });
+      if (result.output !== undefined) ctx.vars[`step_${step.id}`] = result.output;
+      if (result.pause) {
+        await supabase
+          .from('cortex_workflow_runs')
+          .update({
+            status: 'paused',
+            current_step: i + 1,
+            steps_log: ctx.stepsLog,
+            context: ctx.vars,
+          })
+          .eq('id', runId);
+        return { runId, status: 'paused' };
+      }
+      if (!result.ok && step.on_failure !== 'continue') {
+        await supabase
+          .from('cortex_workflow_runs')
+          .update({
+            status: 'failed',
+            current_step: i,
+            steps_log: ctx.stepsLog,
+            error: 'step_failed',
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', runId);
+        logger.warn('workflow failed', { workflowId: ctx.workflowId, runId, stepId: step.id });
+        return { runId, status: 'failed' };
+      }
+    } catch (err) {
+      const msg = (err as Error).message;
+      ctx.stepsLog.push({ stepId: step.id, status: 'error', error: msg, ts });
+      if (step.on_failure !== 'continue') {
+        await supabase
+          .from('cortex_workflow_runs')
+          .update({
+            status: 'failed',
+            current_step: i,
+            steps_log: ctx.stepsLog,
+            error: msg,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', runId);
+        return { runId, status: 'failed' };
+      }
+    }
+  }
+
+  await supabase
+    .from('cortex_workflow_runs')
+    .update({
+      status: 'completed',
+      current_step: steps.length,
+      steps_log: ctx.stepsLog,
+      context: ctx.vars,
+      completed_at: new Date().toISOString(),
+    })
+    .eq('id', runId);
+
+  return { runId, status: 'completed' };
 }
 
 export async function runWorkflow(
@@ -221,78 +332,11 @@ export async function runWorkflow(
     stepsLog: [],
   };
 
-  for (let i = 0; i < workflow.steps.length; i++) {
-    const step = workflow.steps[i];
-    const ts = new Date().toISOString();
-    try {
-      const result = await runStep(step, ctx);
-      ctx.stepsLog.push({
-        stepId: step.id,
-        status: result.ok ? 'success' : 'failed',
-        output: result.output,
-        ts,
-      });
-      if (result.pause) {
-        await supabase
-          .from('cortex_workflow_runs')
-          .update({
-            status: 'paused',
-            current_step: i + 1,
-            steps_log: ctx.stepsLog,
-            context: ctx.vars,
-          })
-          .eq('id', runId);
-        return { runId, status: 'paused' };
-      }
-      if (!result.ok && step.on_failure !== 'continue') {
-        await supabase
-          .from('cortex_workflow_runs')
-          .update({
-            status: 'failed',
-            current_step: i,
-            steps_log: ctx.stepsLog,
-            error: 'step_failed',
-            completed_at: new Date().toISOString(),
-          })
-          .eq('id', runId);
-        logger.warn('workflow failed', { workflowId: workflow.id, runId, stepId: step.id });
-        return { runId, status: 'failed' };
-      }
-    } catch (err) {
-      const msg = (err as Error).message;
-      ctx.stepsLog.push({ stepId: step.id, status: 'error', error: msg, ts });
-      if (step.on_failure !== 'continue') {
-        await supabase
-          .from('cortex_workflow_runs')
-          .update({
-            status: 'failed',
-            current_step: i,
-            steps_log: ctx.stepsLog,
-            error: msg,
-            completed_at: new Date().toISOString(),
-          })
-          .eq('id', runId);
-        return { runId, status: 'failed' };
-      }
-    }
-  }
-
-  await supabase
-    .from('cortex_workflow_runs')
-    .update({
-      status: 'completed',
-      current_step: workflow.steps.length,
-      steps_log: ctx.stepsLog,
-      context: ctx.vars,
-      completed_at: new Date().toISOString(),
-    })
-    .eq('id', runId);
-
-  return { runId, status: 'completed' };
+  return executeFrom(workflow.steps, ctx, 0);
 }
 
-/** Resume workflow pausado (após approval). */
-export async function resumeWorkflow(runId: number, _approvalOutcome: 'approved' | 'rejected'): Promise<void> {
+/** Resume workflow pausado (após approval) — retoma do current_step. */
+export async function resumeWorkflow(runId: number, approvalOutcome: 'approved' | 'rejected'): Promise<void> {
   if (!supabase) return;
   const { data: run } = await supabase
     .from('cortex_workflow_runs')
@@ -301,11 +345,29 @@ export async function resumeWorkflow(runId: number, _approvalOutcome: 'approved'
     .maybeSingle();
   if (!run || run.status !== 'paused') return;
 
-  // Continua a partir do current_step. Implementação completa pendente.
-  // V1: marca como completed se approved, failed se rejected
-  const newStatus = _approvalOutcome === 'approved' ? 'completed' : 'failed';
+  if (approvalOutcome === 'rejected') {
+    await supabase
+      .from('cortex_workflow_runs')
+      .update({ status: 'failed', error: 'approval_rejected', completed_at: new Date().toISOString() })
+      .eq('id', runId);
+    return;
+  }
+
+  const wf = run.cortex_workflows as { steps?: WorkflowStep[] } | null;
+  const steps = wf?.steps ?? [];
+  const ctx: RunContext = {
+    runId,
+    workflowId: run.workflow_id as string,
+    tenantId: run.tenant_id as string,
+    vars: (run.context as Record<string, unknown>) ?? {},
+    stepsLog: (run.steps_log as RunContext['stepsLog']) ?? [],
+  };
+  ctx.vars.approval = { outcome: approvalOutcome };
+
   await supabase
     .from('cortex_workflow_runs')
-    .update({ status: newStatus, completed_at: new Date().toISOString() })
+    .update({ status: 'running' })
     .eq('id', runId);
+
+  await executeFrom(steps, ctx, (run.current_step as number) ?? 0);
 }

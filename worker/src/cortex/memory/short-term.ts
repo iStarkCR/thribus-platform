@@ -17,6 +17,14 @@ interface SessionEntry {
 
 const store = new Map<string, SessionEntry>();
 
+/**
+ * Hook chamado quando uma sessão estoura MAX_MESSAGES_PER_SESSION — permite
+ * ao consolidation worker resumir as mensagens antes do descarte, sem
+ * import circular entre os módulos.
+ */
+type OverflowHandler = (session: CortexSession) => void;
+let overflowHandler: OverflowHandler | null = null;
+
 function sessionKey(tenantId: string, sessionId: string): string {
   return `${tenantId}::${sessionId}`;
 }
@@ -82,7 +90,8 @@ export const shortTermMemory = {
       ts: msg.ts ?? new Date().toISOString(),
     });
     if (entry.session.messages.length > MAX_MESSAGES_PER_SESSION) {
-      // Mantém só as últimas N — TODO: consolidar em memória longa na fase 1
+      // Consolida em memória longa antes de descartar as antigas
+      overflowHandler?.(entry.session);
       entry.session.messages = entry.session.messages.slice(
         -MAX_MESSAGES_PER_SESSION,
       );
@@ -108,5 +117,10 @@ export const shortTermMemory = {
   /** Lista todas as sessões — usado pelo consolidation worker. */
   listAll(): CortexSession[] {
     return Array.from(store.values()).map((e) => e.session);
+  },
+
+  /** Registra o handler de overflow (consolidation worker). */
+  setOverflowHandler(fn: OverflowHandler | null): void {
+    overflowHandler = fn;
   },
 };

@@ -26,6 +26,46 @@ function requireSb(res: Response): boolean {
   return true;
 }
 
+/**
+ * Health-check de conectividade por provider — chamada mínima autenticada.
+ * Lança erro com motivo se a credencial for inválida ou o provider não responder.
+ */
+async function checkProviderHealth(provider: string, token: string): Promise<void> {
+  const bearer = { Authorization: `Bearer ${token}` };
+  const timeout = AbortSignal.timeout(10_000);
+
+  switch (provider) {
+    case 'hubspot': {
+      const r = await fetch('https://api.hubapi.com/crm/v3/objects/contacts?limit=1', { headers: bearer, signal: timeout });
+      if (!r.ok) throw new Error(`hubspot_${r.status}`);
+      return;
+    }
+    case 'pipedrive': {
+      const r = await fetch(`https://api.pipedrive.com/v1/users/me?api_token=${encodeURIComponent(token)}`, { signal: timeout });
+      if (!r.ok) throw new Error(`pipedrive_${r.status}`);
+      return;
+    }
+    case 'slack': {
+      const r = await fetch('https://slack.com/api/auth.test', { method: 'POST', headers: bearer, signal: timeout });
+      const body = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!r.ok || !body.ok) throw new Error(`slack_${body.error ?? r.status}`);
+      return;
+    }
+    case 'asaas': {
+      const r = await fetch('https://api.asaas.com/v3/customers?limit=1', { headers: { access_token: token }, signal: timeout });
+      if (!r.ok) throw new Error(`asaas_${r.status}`);
+      return;
+    }
+    case 'google_calendar': {
+      const r = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1', { headers: bearer, signal: timeout });
+      if (!r.ok) throw new Error(`google_${r.status}`);
+      return;
+    }
+    default:
+      throw new Error(`provider_check_not_implemented: ${provider}`);
+  }
+}
+
 export function createM3Router(): Router {
   const router = Router();
   router.use(express.json({ limit: '512kb' }));
@@ -145,17 +185,40 @@ export function createM3Router(): Router {
   router.post('/integrations/:id/sync', async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
     if (!requireSb(res)) return;
-    // Stub: marca um sync forçado
+
+    const { data: integration } = await supabase!
+      .from('cortex_integrations')
+      .select('id, provider, enabled, access_token_encrypted')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (!integration) return void res.status(404).json({ error: 'integration not found' });
+    if (!integration.enabled) return void res.status(400).json({ error: 'integration disabled' });
+
+    let syncStatus: string;
+    if (!integration.access_token_encrypted) {
+      syncStatus = 'error: missing_credentials';
+    } else {
+      try {
+        await checkProviderHealth(
+          integration.provider as string,
+          integration.access_token_encrypted as string,
+        );
+        syncStatus = 'success';
+      } catch (err) {
+        syncStatus = `error: ${(err as Error).message.slice(0, 180)}`;
+      }
+    }
+
     const { data } = await supabase!
       .from('cortex_integrations')
       .update({
         last_sync_at: new Date().toISOString(),
-        last_sync_status: 'queued',
+        last_sync_status: syncStatus,
       })
       .eq('id', req.params.id)
       .select()
       .maybeSingle();
-    res.json({ integration: data, stub: true });
+    res.status(syncStatus === 'success' ? 200 : 422).json({ integration: data, sync_status: syncStatus });
   });
 
   router.post('/integrations/:id/revoke', async (req: Request, res: Response) => {
