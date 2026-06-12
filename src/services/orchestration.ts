@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/services/governance';
 import type {
   RouterRule, Workflow, WorkflowStep, WorkflowTriggerType,
   AgentHandoff, DecisionTrace, DecisionTraceStep,
@@ -43,8 +44,17 @@ export async function listRouterRules(workspaceId: string): Promise<RouterRule[]
 
 export async function toggleRouterRule(id: string, enabled: boolean): Promise<void> {
   if (!supabase) throw new Error('Supabase não configurado');
-  const { error } = await supabase.from('router_rules').update({ enabled }).eq('id', id);
+  const { data, error } = await supabase
+    .from('router_rules').update({ enabled }).eq('id', id)
+    .select('workspace_id').maybeSingle();
   if (error) throw error;
+  if (data) {
+    logAudit({
+      workspaceId: data.workspace_id as string,
+      action: 'workspace.settings_changed', resource: 'router_rule', resourceId: id,
+      diff: `enabled → ${enabled}`,
+    });
+  }
 }
 
 interface WorkflowRow {
@@ -77,8 +87,17 @@ export async function listWorkflows(workspaceId: string): Promise<Workflow[]> {
 
 export async function toggleWorkflow(id: string, enabled: boolean): Promise<void> {
   if (!supabase) throw new Error('Supabase não configurado');
-  const { error } = await supabase.from('orchestration_workflows').update({ enabled }).eq('id', id);
+  const { data, error } = await supabase
+    .from('orchestration_workflows').update({ enabled }).eq('id', id)
+    .select('workspace_id').maybeSingle();
   if (error) throw error;
+  if (data) {
+    logAudit({
+      workspaceId: data.workspace_id as string,
+      action: 'workspace.settings_changed', resource: 'workflow', resourceId: id,
+      diff: `enabled → ${enabled}`,
+    });
+  }
 }
 
 interface HandoffRow {

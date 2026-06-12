@@ -33,6 +33,17 @@ export function CompliancePage() {
     }).catch(() => {});
   }, []);
 
+  // Enquanto houver build em andamento, refaz a leitura até o worker concluir
+  useEffect(() => {
+    if (source !== 'live' || !builds.some((b) => b.status === 'building')) return;
+    const t = setInterval(() => {
+      complianceService.listPackBuilds(WORKSPACE_ID)
+        .then((rows) => { if (rows.length > 0) setBuilds(rows); })
+        .catch(() => {});
+    }, 20_000);
+    return () => clearInterval(t);
+  }, [source, builds]);
+
   const startBuild = (id: string) => {
     setBuilds((curr) => curr.map((b) => (b.id === id ? { ...b, status: 'building' } : b)));
     if (source === 'live') complianceService.startBuild(id).catch(() => {});

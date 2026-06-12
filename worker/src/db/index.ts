@@ -574,6 +574,39 @@ export const db = {
         })
         .eq('id', conversationId);
       if (error) throw error;
+
+      // Trilha no painel (agent_handoffs) — fire-and-forget
+      void (async () => {
+        const [{ data: conv }, { data: agentsRows }] = await Promise.all([
+          supabase!
+            .from('conversations')
+            .select('customer_name, customer_phone')
+            .eq('id', conversationId)
+            .maybeSingle(),
+          supabase!
+            .from('agents')
+            .select('id, name, workspace_id')
+            .in('id', [newAgentId, fromAgentId]),
+        ]);
+        const fromAgent = agentsRows?.find((a) => a.id === fromAgentId);
+        const toAgent = agentsRows?.find((a) => a.id === newAgentId);
+        const workspaceId = toAgent?.workspace_id ?? fromAgent?.workspace_id;
+        if (!workspaceId) return;
+        const { error: hErr } = await supabase!.from('agent_handoffs').insert({
+          workspace_id: workspaceId,
+          conversation_id: conversationId,
+          customer_name: conv?.customer_name ?? conv?.customer_phone ?? 'desconhecido',
+          from_agent_id: fromAgentId,
+          from_agent_name: fromAgent?.name ?? fromAgentId,
+          to_agent_id: newAgentId,
+          to_agent_name: toAgent?.name ?? newAgentId,
+          reason: reason.slice(0, 500),
+          context_preserved: true,
+        });
+        if (hErr) console.warn('[db.conversations.transferToAgent] handoff log falhou:', hErr.message);
+      })().catch((err) =>
+        console.warn('[db.conversations.transferToAgent] handoff log falhou:', (err as Error).message),
+      );
     },
 
     async close(id: string): Promise<void> {

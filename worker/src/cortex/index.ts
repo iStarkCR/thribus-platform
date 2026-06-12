@@ -8,6 +8,7 @@
 
 import type { Express } from 'express';
 import { loadBuiltInAgents, agentRegistry } from './agents/registry.js';
+import { startComplianceBuilder } from './compliance/builder.js';
 import { createCortexRouter } from './inject/rest.js';
 import { startConsolidationWorker } from './memory/consolidation.js';
 import { loadBuiltInModules, moduleRegistry } from './modules/registry.js';
@@ -20,6 +21,9 @@ export function mountCortex(app: Express): void {
   app.use('/cortex', createCortexRouter());
   if (process.env.CORTEX_CONSOLIDATION_DISABLED !== '1') {
     startConsolidationWorker();
+  }
+  if (process.env.COMPLIANCE_BUILDER_DISABLED !== '1') {
+    startComplianceBuilder();
   }
   console.log('[cortex] mounted at /cortex');
 }

@@ -4,6 +4,11 @@
 
 import express, { type Request, type Response, Router } from 'express';
 import { supabase } from '../../db/supabase.js';
+import {
+  credentialsConfigured,
+  decryptCredential,
+  encryptCredential,
+} from '../integrations/credentials.js';
 
 function requireAdmin(req: Request, res: Response): boolean {
   const adminSecret = process.env.ADMIN_SECRET;
@@ -156,9 +161,15 @@ export function createM3Router(): Router {
       provider?: string;
       display_name?: string;
       sync_direction?: 'push' | 'pull' | 'bidirectional';
+      access_token?: string;
+      refresh_token?: string;
     };
     if (!body.tenant_id || !body.provider) {
       res.status(400).json({ error: 'tenant_id + provider obrigatórios' });
+      return;
+    }
+    if (body.access_token && !credentialsConfigured) {
+      res.status(503).json({ error: 'CORTEX_CRED_KEY não configurada — não é possível armazenar credenciais' });
       return;
     }
     const { data, error } = await supabase!
@@ -170,10 +181,12 @@ export function createM3Router(): Router {
           display_name: body.display_name ?? body.provider,
           sync_direction: body.sync_direction ?? 'bidirectional',
           enabled: true,
+          ...(body.access_token ? { access_token_encrypted: encryptCredential(body.access_token) } : {}),
+          ...(body.refresh_token ? { refresh_token_encrypted: encryptCredential(body.refresh_token) } : {}),
         },
         { onConflict: 'tenant_id,provider' },
       )
-      .select()
+      .select('id, provider, display_name, enabled, last_sync_at, last_sync_status, sync_direction, created_at')
       .maybeSingle();
     if (error) {
       res.status(400).json({ error: error.message });
@@ -199,10 +212,8 @@ export function createM3Router(): Router {
       syncStatus = 'error: missing_credentials';
     } else {
       try {
-        await checkProviderHealth(
-          integration.provider as string,
-          integration.access_token_encrypted as string,
-        );
+        const token = decryptCredential(integration.access_token_encrypted as string);
+        await checkProviderHealth(integration.provider as string, token);
         syncStatus = 'success';
       } catch (err) {
         syncStatus = `error: ${(err as Error).message.slice(0, 180)}`;

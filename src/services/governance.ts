@@ -152,4 +152,37 @@ export async function inviteMember(params: {
     email: params.email, role: params.role, status: 'invited',
   });
   if (error) throw error;
+  logAudit({
+    workspaceId: params.workspaceId, action: 'member.invited',
+    resource: 'member', resourceId: params.email,
+  });
+}
+
+/**
+ * Registra ação no audit log — fire-and-forget (append-only via RLS).
+ * Ator vem da sessão Supabase Auth; falha de auditoria não bloqueia a ação.
+ */
+export function logAudit(params: {
+  workspaceId: string;
+  action: string;
+  resource: string;
+  resourceId: string;
+  diff?: string;
+}): void {
+  if (!supabase) return;
+  void (async () => {
+    const { data } = await supabase!.auth.getUser();
+    const user = data.user;
+    await supabase!.from('audit_log').insert({
+      workspace_id: params.workspaceId,
+      actor_name: (user?.user_metadata?.name as string) ?? user?.email ?? 'desconhecido',
+      actor_email: user?.email ?? 'desconhecido',
+      action: params.action,
+      resource: params.resource,
+      resource_id: params.resourceId,
+      ip: 'client',
+      user_agent: navigator.userAgent.slice(0, 200),
+      diff: params.diff ?? null,
+    });
+  })().catch(() => {});
 }

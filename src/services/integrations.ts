@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { logAudit } from '@/services/governance';
 import type { Integration, ToolApprovalRequest, CustomToolDef } from '@/lib/seed-integrations';
 
 export const integrationsConfigured = Boolean(import.meta.env.VITE_SUPABASE_URL);
@@ -76,7 +77,7 @@ export async function reviewApproval(params: {
   id: string; decision: 'approved' | 'rejected'; reviewedBy: string; notes?: string;
 }): Promise<void> {
   if (!supabase) throw new Error('Supabase não configurado');
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('tool_approvals')
     .update({
       status: params.decision,
@@ -85,8 +86,18 @@ export async function reviewApproval(params: {
       notes: params.notes ?? null,
     })
     .eq('id', params.id)
-    .eq('status', 'pending');
+    .eq('status', 'pending')
+    .select('workspace_id, tool_name')
+    .maybeSingle();
   if (error) throw error;
+  if (data) {
+    logAudit({
+      workspaceId: data.workspace_id as string,
+      action: params.decision === 'approved' ? 'tool.approved' : 'tool.rejected',
+      resource: 'tool_approval', resourceId: params.id,
+      diff: data.tool_name as string,
+    });
+  }
 }
 
 interface CustomToolRow {

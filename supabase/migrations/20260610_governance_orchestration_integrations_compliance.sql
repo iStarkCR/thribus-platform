@@ -263,9 +263,13 @@ begin
   end loop;
 end $$;
 
--- Audit log: imutável pelo client — só leitura (insert via service role)
+-- Audit log: append-only pelo client — select + insert, sem update/delete
 drop policy if exists "audit_log_workspace_select" on public.audit_log;
 create policy "audit_log_workspace_select" on public.audit_log for select using (
+  workspace_id in (select workspace_id from public.user_workspaces where user_id = auth.uid())
+);
+drop policy if exists "audit_log_workspace_insert" on public.audit_log;
+create policy "audit_log_workspace_insert" on public.audit_log for insert with check (
   workspace_id in (select workspace_id from public.user_workspaces where user_id = auth.uid())
 );
 
