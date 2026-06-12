@@ -67,9 +67,9 @@ export function ActivityPage() {
       </div>
 
       <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-        <FilterBtn active={filter === 'all'} onClick={() => setFilter('all')} label="Todos" count={SEED_ACTIVITY.length} />
+        <FilterBtn active={filter === 'all'} onClick={() => setFilter('all')} label="Todos" count={events.length} />
         {(Object.keys(TYPE_META) as ActivityType[]).map((t) => {
-          const c = SEED_ACTIVITY.filter((e) => e.type === t).length;
+          const c = events.filter((e) => e.type === t).length;
           if (c === 0) return null;
           return <FilterBtn key={t} active={filter === t} onClick={() => setFilter(t)} label={t.replace('_', ' ')} count={c} />;
         })}

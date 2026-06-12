@@ -1,29 +1,57 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Network, Route, GitBranch, Sparkles, Power, Clock,
   ArrowRight, CheckCircle2, AlertTriangle, XCircle, Brain, Wrench,
-  MessageSquare, ChevronRight, Zap,
+  MessageSquare, ChevronRight, Zap, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_ROUTER_RULES, SEED_WORKFLOWS, SEED_HANDOFFS, SEED_TRACES,
-  type RouterRule, type Workflow, type DecisionTrace,
+  type RouterRule, type Workflow, type DecisionTrace, type AgentHandoff,
 } from '@/lib/seed-orchestration';
+import * as orchestration from '@/services/orchestration';
 
 type Tab = 'router' | 'workflows' | 'traces' | 'handoffs';
+
+const WORKSPACE_ID = 'ws_texnet';
 
 export function OrchestrationPage() {
   const [tab, setTab] = useState<Tab>('router');
   const [rules, setRules] = useState<RouterRule[]>(SEED_ROUTER_RULES);
   const [workflows, setWorkflows] = useState<Workflow[]>(SEED_WORKFLOWS);
-  const handoffs = SEED_HANDOFFS;
-  const traces = SEED_TRACES;
+  const [handoffs, setHandoffs] = useState<AgentHandoff[]>(SEED_HANDOFFS);
+  const [traces, setTraces] = useState<DecisionTrace[]>(SEED_TRACES);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
 
-  const toggleRule = (id: string) =>
-    setRules((curr) => curr.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
+  useEffect(() => {
+    if (!orchestration.orchestrationConfigured) return;
+    Promise.allSettled([
+      orchestration.listRouterRules(WORKSPACE_ID).then((rows) => {
+        if (rows.length > 0) { setRules(rows); setSource('live'); }
+      }),
+      orchestration.listWorkflows(WORKSPACE_ID).then((rows) => {
+        if (rows.length > 0) { setWorkflows(rows); setSource('live'); }
+      }),
+      orchestration.listHandoffs(WORKSPACE_ID).then((rows) => {
+        if (rows.length > 0) setHandoffs(rows);
+      }),
+      orchestration.listTraces(WORKSPACE_ID).then((rows) => {
+        if (rows.length > 0) setTraces(rows);
+      }),
+    ]);
+  }, []);
 
-  const toggleWorkflow = (id: string) =>
-    setWorkflows((curr) => curr.map((w) => (w.id === id ? { ...w, enabled: !w.enabled } : w)));
+  const toggleRule = (id: string) => {
+    const next = !rules.find((r) => r.id === id)?.enabled;
+    setRules((curr) => curr.map((r) => (r.id === id ? { ...r, enabled: next } : r)));
+    if (source === 'live') orchestration.toggleRouterRule(id, next).catch(() => {});
+  };
+
+  const toggleWorkflow = (id: string) => {
+    const next = !workflows.find((w) => w.id === id)?.enabled;
+    setWorkflows((curr) => curr.map((w) => (w.id === id ? { ...w, enabled: next } : w)));
+    if (source === 'live') orchestration.toggleWorkflow(id, next).catch(() => {});
+  };
 
   return (
     <>
@@ -32,6 +60,13 @@ export function OrchestrationPage() {
           <Network size={16} className="text-creme-mute" /> Orquestração
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · router · workflows · traces · handoffs
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${rules.length} regras · ${workflows.length} workflows` : 'mock'}
           </span>
         </div>
       </div>
@@ -317,7 +352,7 @@ function TraceCard({ trace: t, expanded, onToggle }: { trace: DecisionTrace; exp
   );
 }
 
-function HandoffsPanel({ handoffs }: { handoffs: typeof SEED_HANDOFFS }) {
+function HandoffsPanel({ handoffs }: { handoffs: AgentHandoff[] }) {
   return (
     <div className="space-y-2">
       {handoffs.map((h) => (

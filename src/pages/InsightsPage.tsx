@@ -29,18 +29,51 @@ const VOC_CATEGORY_COLOR: Record<VocTheme['category'], string> = {
   concorrente: 'text-semantic-red',
 };
 
+const INSIGHT_KIND_TO_CATEGORY: Record<string, DailyInsight['category']> = {
+  top_objection: 'risk', rising_intent: 'opportunity', agent_alert: 'anomaly',
+  cost_anomaly: 'anomaly', opportunity: 'opportunity',
+};
+const SEVERITY_TO_IMPACT: Record<string, DailyInsight['impact']> = {
+  info: 'low', warning: 'medium', critical: 'high',
+};
+const VOC_DB_CATEGORY: Record<string, VocTheme['category']> = {
+  pain: 'qualidade', wish: 'preço', praise: 'atendimento',
+  question: 'cobertura', complaint: 'cobrança',
+};
+
 export function InsightsPage() {
   const [tab, setTab] = useState<Tab>('insights');
   const [source, setSource] = useState<'mock' | 'live'>('mock');
-  const [liveCount, setLiveCount] = useState(0);
+  const [insights, setInsights] = useState<DailyInsight[]>(SEED_INSIGHTS);
+  const [vocThemes, setVocThemes] = useState<VocTheme[]>(SEED_VOC);
 
   useEffect(() => {
     if (!intel.intelConfigured) return;
     Promise.allSettled([
       intel.listDailyInsights('ws_texnet').then((rows) => {
-        if (rows.length > 0) { setLiveCount(rows.length); setSource('live'); }
+        if (rows.length > 0) {
+          setInsights(rows.map((i) => ({
+            id: i.id, workspaceId: 'ws_texnet', date: i.insightDate,
+            category: INSIGHT_KIND_TO_CATEGORY[i.kind] ?? 'anomaly',
+            title: i.title, body: i.body,
+            impact: SEVERITY_TO_IMPACT[i.severity] ?? 'low',
+            metric: i.metricValue !== undefined ? String(i.metricValue) : undefined,
+          })));
+          setSource('live');
+        }
       }),
-      intel.listVocThemes('ws_texnet'),
+      intel.listVocThemes('ws_texnet').then((rows) => {
+        if (rows.length > 0) {
+          setVocThemes(rows.map((v) => ({
+            id: v.id, theme: v.theme,
+            category: VOC_DB_CATEGORY[v.category] ?? 'qualidade',
+            mentions30d: v.mentions, trend: (v.trend7d ?? 0) / 100,
+            sentimentAvg: v.sentimentAvg ?? 0,
+            representativeQuote: v.sampleQuote ?? '',
+          })));
+          setSource('live');
+        }
+      }),
     ]);
   }, []);
 
@@ -57,7 +90,7 @@ export function InsightsPage() {
             source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
           )}>
             <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
-            {source === 'live' ? `live · ${liveCount} insights` : 'mock'}
+            {source === 'live' ? `live · ${insights.length} insights · ${vocThemes.length} temas` : 'mock'}
           </span>
         </div>
       </div>
@@ -65,11 +98,11 @@ export function InsightsPage() {
       <div className="flex items-center gap-1 mb-4 border-b border-default">
         <button onClick={() => setTab('insights')} className={clsx('flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold border-b-2 -mb-px', tab === 'insights' ? 'text-brand-bright border-brand' : 'text-creme-mute border-transparent')}>
           <Sparkles size={13} /> Daily Insights
-          <span className={clsx('text-[11px] font-mono px-1.5 py-px rounded-full', tab === 'insights' ? 'bg-brand/15 text-brand-bright' : 'bg-surface-3 text-creme-faint')}>{SEED_INSIGHTS.length}</span>
+          <span className={clsx('text-[11px] font-mono px-1.5 py-px rounded-full', tab === 'insights' ? 'bg-brand/15 text-brand-bright' : 'bg-surface-3 text-creme-faint')}>{insights.length}</span>
         </button>
         <button onClick={() => setTab('voc')} className={clsx('flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold border-b-2 -mb-px', tab === 'voc' ? 'text-brand-bright border-brand' : 'text-creme-mute border-transparent')}>
           <MessageSquareQuote size={13} /> Voice of Customer
-          <span className={clsx('text-[11px] font-mono px-1.5 py-px rounded-full', tab === 'voc' ? 'bg-brand/15 text-brand-bright' : 'bg-surface-3 text-creme-faint')}>{SEED_VOC.length}</span>
+          <span className={clsx('text-[11px] font-mono px-1.5 py-px rounded-full', tab === 'voc' ? 'bg-brand/15 text-brand-bright' : 'bg-surface-3 text-creme-faint')}>{vocThemes.length}</span>
         </button>
       </div>
 
@@ -87,12 +120,12 @@ export function InsightsPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {SEED_INSIGHTS.map((i) => <InsightCard key={i.id} insight={i} />)}
+            {insights.map((i) => <InsightCard key={i.id} insight={i} />)}
           </div>
         </>
       )}
 
-      {tab === 'voc' && <VocPanel />}
+      {tab === 'voc' && <VocPanel themes={vocThemes} />}
     </>
   );
 }
@@ -133,10 +166,10 @@ function InsightCard({ insight: i }: { insight: DailyInsight }) {
   );
 }
 
-function VocPanel() {
+function VocPanel({ themes }: { themes: VocTheme[] }) {
   return (
     <div className="space-y-2.5">
-      {SEED_VOC.map((v) => (
+      {themes.map((v) => (
         <div key={v.id} className="bg-surface-2 border border-default rounded-[10px] p-4">
           <div className="flex items-start justify-between gap-3 mb-2">
             <div className="flex-1 min-w-0">

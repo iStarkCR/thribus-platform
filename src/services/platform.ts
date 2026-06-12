@@ -49,6 +49,7 @@ export interface StatusIncident {
   severity: 'minor' | 'major' | 'critical';
   status: 'investigating' | 'identified' | 'monitoring' | 'resolved';
   startedAt: string; resolvedAt?: string;
+  updates: { timestamp: string; message: string }[];
 }
 
 export async function listStatusComponents(): Promise<StatusComponent[]> {
@@ -82,6 +83,7 @@ export async function listStatusIncidents(limit = 20): Promise<StatusIncident[]>
     status: r.status as StatusIncident['status'],
     startedAt: r.started_at as string,
     resolvedAt: (r.resolved_at as string) ?? undefined,
+    updates: (r.updates as { timestamp: string; message: string }[]) ?? [],
   }));
 }
 

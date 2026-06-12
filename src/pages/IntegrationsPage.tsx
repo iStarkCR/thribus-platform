@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Plug, Search, Plus, CheckCircle2, AlertTriangle, Star, Lock, Code,
-  Shield, Clock, XCircle, Eye, ChevronRight, Activity,
+  Shield, Clock, XCircle, Eye, ChevronRight, Activity, CircleDot,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_INTEGRATIONS, SEED_APPROVALS, SEED_CUSTOM_TOOLS,
   type Integration, type IntegrationCategory, type ToolApprovalRequest,
 } from '@/lib/seed-integrations';
+import * as integrationsService from '@/services/integrations';
 import { BrandLogo } from '@/components/shared/BrandLogo';
 
 type Tab = 'catalog' | 'approvals' | 'custom';
@@ -22,14 +23,32 @@ const CATEGORY_LABEL: Record<IntegrationCategory, string> = {
   custom: 'Custom',
 };
 
+const WORKSPACE_ID = 'ws_texnet';
+
 export function IntegrationsPage() {
   const [tab, setTab] = useState<Tab>('catalog');
-  const [integrations] = useState<Integration[]>(SEED_INTEGRATIONS);
+  const [integrations, setIntegrations] = useState<Integration[]>(SEED_INTEGRATIONS);
   const [approvals, setApprovals] = useState<ToolApprovalRequest[]>(SEED_APPROVALS);
-  const [customTools] = useState(SEED_CUSTOM_TOOLS);
+  const [customTools, setCustomTools] = useState(SEED_CUSTOM_TOOLS);
+  const [source, setSource] = useState<'mock' | 'live'>('mock');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<IntegrationCategory | 'all'>('all');
   const [showOnlyConnected, setShowOnlyConnected] = useState(false);
+
+  useEffect(() => {
+    if (!integrationsService.integrationsConfigured) return;
+    Promise.allSettled([
+      integrationsService.listCatalog().then((rows) => {
+        if (rows.length > 0) { setIntegrations(rows); setSource('live'); }
+      }),
+      integrationsService.listApprovals(WORKSPACE_ID).then((rows) => {
+        if (rows.length > 0) setApprovals(rows);
+      }),
+      integrationsService.listCustomTools(WORKSPACE_ID).then((rows) => {
+        if (rows.length > 0) setCustomTools(rows);
+      }),
+    ]);
+  }, []);
 
   const filtered = useMemo(() => {
     let r = integrations;
@@ -54,6 +73,9 @@ export function IntegrationsPage() {
           : a,
       ),
     );
+    if (source === 'live') {
+      integrationsService.reviewApproval({ id, decision, reviewedBy: 'Charles Andrade' }).catch(() => {});
+    }
   };
 
   return (
@@ -63,6 +85,13 @@ export function IntegrationsPage() {
           <Plug size={16} className="text-creme-mute" /> Integrações
           <span className="text-[12px] font-mono font-normal text-creme-faint ml-1">
             · catálogo · approval queue · custom tools
+          </span>
+          <span className={clsx(
+            'ml-2 text-[10.5px] font-mono px-1.5 py-px rounded-full inline-flex items-center gap-1',
+            source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
+          )}>
+            <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
+            {source === 'live' ? `live · ${integrations.length} integrações` : 'mock'}
           </span>
         </div>
         <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all">

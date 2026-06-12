@@ -17,6 +17,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { calculateCost } from '../../llm/cost.js';
+import { supabase } from '../../db/supabase.js';
 import { executeAgent } from '../agents/executor.js';
 import { agentRegistry } from '../agents/registry.js';
 import { HANDOFF_TOOL_NAME } from '../agents/tools/handoff.js';
@@ -44,6 +45,59 @@ import { analyze } from './analyzer.js';
 
 /** Limite de handoffs em cadeia — evita loops infinitos entre agentes. */
 const MAX_HANDOFFS = 3;
+
+/**
+ * Grava decision trace no painel (tabela decision_traces) — fire-and-forget.
+ * Só quando o tenant tem workspaceId mapeado (FK em public.workspaces).
+ */
+function saveDecisionTrace(params: {
+  workspaceId: string;
+  sessionId: string;
+  agentName: string;
+  userQuery: string;
+  finalAnswer: string | null;
+  reasoning: string;
+  intent: string;
+  actions: BrainAction[];
+  totalLatencyMs: number;
+  totalTokens: number;
+  status: 'resolved' | 'escalated' | 'failed';
+}): void {
+  if (!supabase) return;
+  const steps: Array<Record<string, unknown>> = [];
+  let n = 1;
+  const push = (type: string, label: string, detail: string, extra?: Record<string, unknown>) =>
+    steps.push({ id: `s${n}`, step: n++, type, label, detail: detail.slice(0, 500), durationMs: 0, ...extra });
+
+  push('thought', `intent: ${params.intent}`, params.reasoning);
+  for (const a of params.actions) {
+    if (a.type === 'tool_call' && a.tool) {
+      const p = (a.payload ?? {}) as { input?: unknown; output?: unknown; error?: string; durationMs?: number };
+      push('tool_call', a.tool, JSON.stringify(p.input ?? {}), { durationMs: p.durationMs ?? 0 });
+      push('tool_result', p.error ? 'erro' : 'ok', JSON.stringify(p.error ?? p.output ?? null));
+    }
+  }
+  if (params.finalAnswer) {
+    push('response', 'Resposta gerada', params.finalAnswer, { tokensUsed: params.totalTokens });
+  }
+
+  void supabase
+    .from('decision_traces')
+    .insert({
+      workspace_id: params.workspaceId,
+      conversation_id: params.sessionId,
+      agent_name: params.agentName,
+      user_query: params.userQuery.slice(0, 2000),
+      final_answer: params.finalAnswer?.slice(0, 4000) ?? null,
+      steps,
+      total_latency_ms: params.totalLatencyMs,
+      total_tokens: params.totalTokens,
+      status: params.status,
+    })
+    .then(({ error }) => {
+      if (error) logger.warn('saveDecisionTrace falhou', { error: error.message });
+    });
+}
 
 function buildBrainContext(
   insights: BrainInsight[],
@@ -288,6 +342,22 @@ export async function orchestrate(
             payload: { handoff_from: def.id, reason },
             riskLevel: 1,
           });
+          if (tenant.workspaceId && supabase) {
+            void supabase
+              .from('agent_handoffs')
+              .insert({
+                workspace_id: tenant.workspaceId,
+                conversation_id: req.sessionId,
+                customer_name: req.entity?.displayName ?? req.entity?.id ?? 'desconhecido',
+                from_agent_name: def.name,
+                to_agent_name: targetDef.name,
+                reason: reason.slice(0, 500),
+                context_preserved: Boolean(contextSummary),
+              })
+              .then(({ error }) => {
+                if (error) logger.warn('handoff log falhou', { error: error.message });
+              });
+          }
           handoffContext =
             `${buildBrainContext(insights, req, combinedMemory)}\n\nHANDOFF de ${def.name}:\n` +
             `Motivo: ${reason}\nResumo: ${contextSummary || '(sem resumo)'}`;
@@ -411,6 +481,23 @@ export async function orchestrate(
     model: modelUsed,
     status: 'ok',
   });
+
+  // ─── 6. Decision trace pro painel (fire-and-forget) ────────────────────
+  if (tenant.workspaceId) {
+    saveDecisionTrace({
+      workspaceId: tenant.workspaceId,
+      sessionId: req.sessionId,
+      agentName: selectedAgentId ?? 'brain',
+      userQuery: req.input,
+      finalAnswer: replyText,
+      reasoning,
+      intent,
+      actions,
+      totalLatencyMs: latencyMs,
+      totalTokens: totalInputTokens + totalOutputTokens,
+      status: 'resolved',
+    });
+  }
 
   return {
     sessionId: req.sessionId,

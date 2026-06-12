@@ -1,11 +1,12 @@
 /**
  * Cortex M2 — Módulo Faturamento BR.
  *
- * Boleto + PIX + cartão recorrente via Asaas (stub). NF.e via NFe.io (stub).
+ * Boleto + PIX + cartão recorrente via Asaas. NF.e via NFe.io.
  * Régua de cobrança automática (Marcos dispara via workflow).
  *
- * V1 desse módulo: schema + CRUD + stubs de integração. Asaas real vem com
- * config das credenciais reais (ASAAS_API_KEY) no env.
+ * Com ASAAS_API_KEY no env, cria customer + payment reais no Asaas.
+ * Com NFEIO_API_KEY + NFEIO_COMPANY_ID, emite NF.e real via NFe.io.
+ * Sem as keys, opera em modo stub explícito (response carrega stub: true).
  */
 
 import express, { type Request, type Response, Router } from 'express';
@@ -29,6 +30,44 @@ export const billingBrModule: Omit<ModuleDefinition, 'buildRouter'> = {
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
 const ASAAS_BASE_URL = process.env.ASAAS_BASE_URL ?? 'https://api.asaas.com/v3';
 
+async function asaasRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const resp = await fetch(`${ASAAS_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      access_token: ASAAS_API_KEY!,
+      ...(init?.headers as Record<string, string> | undefined),
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`asaas_${resp.status}: ${text.slice(0, 300)}`);
+  }
+  return resp.json() as Promise<T>;
+}
+
+async function asaasFindOrCreateCustomer(name: string, document?: string): Promise<string> {
+  const cpfCnpj = document?.replace(/\D/g, '');
+  if (cpfCnpj) {
+    const found = await asaasRequest<{ data: Array<{ id: string }> }>(
+      `/customers?cpfCnpj=${encodeURIComponent(cpfCnpj)}&limit=1`,
+    );
+    if (found.data.length > 0) return found.data[0].id;
+  }
+  const created = await asaasRequest<{ id: string }>('/customers', {
+    method: 'POST',
+    body: JSON.stringify({ name, cpfCnpj }),
+  });
+  return created.id;
+}
+
+const ASAAS_BILLING_TYPE: Record<string, string> = {
+  boleto: 'BOLETO',
+  pix: 'PIX',
+  card: 'CREDIT_CARD',
+};
+
 async function asaasCreateCharge(invoice: {
   customer_name: string;
   customer_document?: string;
@@ -38,13 +77,84 @@ async function asaasCreateCharge(invoice: {
   payment_method: 'boleto' | 'pix' | 'card';
 }): Promise<{ id: string; pix_qrcode?: string; boleto_url?: string; barcode?: string } | null> {
   if (!ASAAS_API_KEY) return null;
-  // Implementação real: criar customer + payment no Asaas, retornar refs
-  // Stub: simula que conseguiu criar
+
+  const customerId = await asaasFindOrCreateCustomer(invoice.customer_name, invoice.customer_document);
+  const payment = await asaasRequest<{ id: string; bankSlipUrl?: string; invoiceUrl?: string }>('/payments', {
+    method: 'POST',
+    body: JSON.stringify({
+      customer: customerId,
+      billingType: ASAAS_BILLING_TYPE[invoice.payment_method],
+      value: invoice.amount,
+      dueDate: invoice.due_date,
+      description: invoice.description.slice(0, 500),
+    }),
+  });
+
+  let pixQrcode: string | undefined;
+  let barcode: string | undefined;
+  if (invoice.payment_method === 'pix') {
+    try {
+      const qr = await asaasRequest<{ payload: string }>(`/payments/${payment.id}/pixQrCode`);
+      pixQrcode = qr.payload;
+    } catch {
+      // QR pode demorar a ficar disponível — invoice fica sem, consulta depois
+    }
+  }
+  if (invoice.payment_method === 'boleto') {
+    try {
+      const field = await asaasRequest<{ identificationField: string }>(`/payments/${payment.id}/identificationField`);
+      barcode = field.identificationField;
+    } catch {
+      // linha digitável pode não estar pronta na criação
+    }
+  }
+
   return {
-    id: `pay_stub_${Date.now()}`,
-    pix_qrcode: invoice.payment_method === 'pix' ? '00020126...' : undefined,
-    boleto_url: invoice.payment_method === 'boleto' ? `${ASAAS_BASE_URL}/boleto/stub` : undefined,
+    id: payment.id,
+    pix_qrcode: pixQrcode,
+    boleto_url: payment.bankSlipUrl ?? payment.invoiceUrl,
+    barcode,
   };
+}
+
+// ─── NF.e via NFe.io ─────────────────────────────────────────────────────────
+const NFEIO_API_KEY = process.env.NFEIO_API_KEY;
+const NFEIO_COMPANY_ID = process.env.NFEIO_COMPANY_ID;
+const NFEIO_CITY_SERVICE_CODE = process.env.NFEIO_CITY_SERVICE_CODE;
+
+async function nfeioIssueServiceInvoice(invoice: {
+  customer_name: string;
+  customer_email?: string | null;
+  customer_document?: string | null;
+  description: string;
+  amount: number;
+}): Promise<{ id: string } | null> {
+  if (!NFEIO_API_KEY || !NFEIO_COMPANY_ID) return null;
+  const federalTaxNumber = invoice.customer_document?.replace(/\D/g, '');
+  const resp = await fetch(`https://api.nfe.io/v1/companies/${NFEIO_COMPANY_ID}/serviceinvoices`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: NFEIO_API_KEY,
+    },
+    body: JSON.stringify({
+      borrower: {
+        name: invoice.customer_name,
+        email: invoice.customer_email ?? undefined,
+        federalTaxNumber: federalTaxNumber ? Number(federalTaxNumber) : undefined,
+      },
+      cityServiceCode: NFEIO_CITY_SERVICE_CODE ?? undefined,
+      description: invoice.description.slice(0, 600),
+      servicesAmount: invoice.amount,
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`nfeio_${resp.status}: ${text.slice(0, 300)}`);
+  }
+  const data = (await resp.json().catch(() => ({}))) as { id?: string };
+  return { id: data.id ?? '' };
 }
 
 async function tid(req: Request, res: Response): Promise<string | null> {
@@ -88,17 +198,24 @@ export function buildBillingBrRouter(): Router {
     if (!body.customer_name || !body.description || !body.amount || !body.due_date) {
       return void res.status(400).json({ error: 'customer_name, description, amount, due_date obrigatórios' });
     }
-    // Tenta criar charge no provider (stub se sem env)
+    // Cria charge real no Asaas quando ASAAS_API_KEY presente.
+    // Falha no provider não bloqueia a invoice local — registra o erro na resposta.
     let providerRefs: Awaited<ReturnType<typeof asaasCreateCharge>> = null;
+    let providerError: string | null = null;
     if (body.payment_method) {
-      providerRefs = await asaasCreateCharge({
-        customer_name: body.customer_name,
-        customer_document: body.customer_document,
-        amount: body.amount,
-        due_date: body.due_date,
-        description: body.description,
-        payment_method: body.payment_method,
-      });
+      try {
+        providerRefs = await asaasCreateCharge({
+          customer_name: body.customer_name,
+          customer_document: body.customer_document,
+          amount: body.amount,
+          due_date: body.due_date,
+          description: body.description,
+          payment_method: body.payment_method,
+        });
+      } catch (err) {
+        providerError = (err as Error).message;
+        console.warn('[billing-br] asaas falhou:', providerError);
+      }
     }
     const { data, error } = await supabase!.from('cortex_billing_invoices').insert({
       tenant_id: tenantId,
@@ -119,7 +236,11 @@ export function buildBillingBrRouter(): Router {
     }).select().maybeSingle();
     if (error) return void res.status(400).json({ error: error.message });
     void emit({ type: 'invoice.created', tenantId, data: { invoice: data } });
-    res.status(201).json({ invoice: data, provider_stub: !ASAAS_API_KEY });
+    res.status(201).json({
+      invoice: data,
+      provider_stub: !ASAAS_API_KEY,
+      ...(providerError ? { provider_error: providerError } : {}),
+    });
   });
 
   router.patch('/invoices/:id', async (req: Request, res: Response) => {
@@ -138,16 +259,51 @@ export function buildBillingBrRouter(): Router {
     res.json({ invoice: data });
   });
 
-  // NF.e — stub
+  // NF.e — real via NFe.io quando NFEIO_API_KEY + NFEIO_COMPANY_ID configurados
   router.post('/invoices/:id/issue-nfe', async (req: Request, res: Response) => {
     const tenantId = await tid(req, res);
     if (!tenantId || !sb(res)) return;
-    // Stub: marca como pendente; em produção, chama NFe.io e webhook atualiza
-    const { data } = await supabase!.from('cortex_billing_invoices').update({
-      nfe_status: 'processing',
-      nfe_number: `NFE-STUB-${Date.now()}`,
-    }).eq('tenant_id', tenantId).eq('id', req.params.id).select().maybeSingle();
-    res.json({ invoice: data, stub: true, message: 'configurar NFEIO_API_KEY pra emissão real' });
+
+    const { data: invoice } = await supabase!
+      .from('cortex_billing_invoices')
+      .select('id, customer_name, customer_email, customer_document, description, amount, nfe_status')
+      .eq('tenant_id', tenantId)
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (!invoice) return void res.status(404).json({ error: 'invoice not found' });
+    if (invoice.nfe_status === 'processing' || invoice.nfe_status === 'issued') {
+      return void res.status(409).json({ error: `nfe já em status ${invoice.nfe_status}` });
+    }
+
+    if (!NFEIO_API_KEY || !NFEIO_COMPANY_ID) {
+      // Sem provider configurado — registra intenção e sinaliza stub explicitamente
+      const { data } = await supabase!.from('cortex_billing_invoices').update({
+        nfe_status: 'processing',
+        nfe_number: `NFE-STUB-${Date.now()}`,
+      }).eq('tenant_id', tenantId).eq('id', req.params.id).select().maybeSingle();
+      return void res.json({ invoice: data, stub: true, message: 'configurar NFEIO_API_KEY + NFEIO_COMPANY_ID pra emissão real' });
+    }
+
+    try {
+      const issued = await nfeioIssueServiceInvoice({
+        customer_name: invoice.customer_name as string,
+        customer_email: invoice.customer_email as string | null,
+        customer_document: invoice.customer_document as string | null,
+        description: invoice.description as string,
+        amount: Number(invoice.amount),
+      });
+      // NFe.io processa async — webhook de status atualiza pra 'issued' com número final
+      const { data } = await supabase!.from('cortex_billing_invoices').update({
+        nfe_status: 'processing',
+        nfe_number: issued?.id ?? null,
+      }).eq('tenant_id', tenantId).eq('id', req.params.id).select().maybeSingle();
+      res.json({ invoice: data, stub: false });
+    } catch (err) {
+      const msg = (err as Error).message;
+      await supabase!.from('cortex_billing_invoices').update({ nfe_status: 'failed' })
+        .eq('tenant_id', tenantId).eq('id', req.params.id);
+      res.status(502).json({ error: 'nfe_issue_failed', message: msg });
+    }
   });
 
   // Métricas: inadimplência + a receber

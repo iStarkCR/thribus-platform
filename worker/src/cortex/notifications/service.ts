@@ -35,6 +35,10 @@ export interface NotificationInput {
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = process.env.RESEND_FROM ?? 'Cortex Brain <noreply@cortex.thribus.com.br>';
 
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE;
+
 async function sendEmailViaResend(to: string, title: string, body: string): Promise<void> {
   if (!RESEND_API_KEY) throw new Error('RESEND_API_KEY not configured');
   const resp = await fetch('https://api.resend.com/emails', {
@@ -52,6 +56,52 @@ async function sendEmailViaResend(to: string, title: string, body: string): Prom
   });
   if (!resp.ok) {
     throw new Error(`resend_${resp.status}: ${await resp.text()}`);
+  }
+}
+
+/** Webhook genérico — POST JSON na URL de destino. */
+async function sendWebhook(url: string, input: NotificationInput): Promise<void> {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Cortex-Event': 'notification',
+    },
+    body: JSON.stringify({
+      tenant_id: input.tenantId,
+      title: input.title,
+      body: input.body ?? null,
+      category: input.category ?? null,
+      priority: input.priority ?? 'normal',
+      source: input.source ?? null,
+      data: input.data ?? {},
+      sent_at: new Date().toISOString(),
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!resp.ok) throw new Error(`webhook_${resp.status}`);
+}
+
+/** WhatsApp via Evolution API — destination é o número E.164 (553299...). */
+async function sendWhatsApp(number: string, title: string, body?: string): Promise<void> {
+  if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY || !EVOLUTION_INSTANCE) {
+    throw new Error('EVOLUTION_API_URL/EVOLUTION_API_KEY/EVOLUTION_INSTANCE not configured');
+  }
+  const text = body ? `*${title}*\n\n${body}` : title;
+  const resp = await fetch(
+    `${EVOLUTION_API_URL.replace(/\/$/, '')}/message/sendText/${EVOLUTION_INSTANCE}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: EVOLUTION_API_KEY,
+      },
+      body: JSON.stringify({ number: number.replace(/\D/g, ''), text }),
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!resp.ok) {
+    throw new Error(`evolution_${resp.status}: ${(await resp.text().catch(() => '')).slice(0, 200)}`);
   }
 }
 
@@ -126,9 +176,12 @@ async function dispatch(id: number, input: NotificationInput): Promise<void> {
         // Já está no DB — apenas marca sent
         break;
       case 'webhook':
+        if (!input.destination) throw new Error('destination (url) required for webhook');
+        await sendWebhook(input.destination, input);
+        break;
       case 'whatsapp':
-        // Stubs — implementados em integrações específicas
-        logger.info('channel pending implementation', { channel: input.channel });
+        if (!input.destination) throw new Error('destination (phone) required for whatsapp');
+        await sendWhatsApp(input.destination, input.title, input.body);
         break;
       default:
         throw new Error(`unknown channel: ${input.channel}`);

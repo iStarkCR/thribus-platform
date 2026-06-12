@@ -23,17 +23,42 @@ const STATUS_META = {
 };
 
 export function PartnerPage() {
-  const totalMrr = SEED_PARTNERS.reduce((s, p) => s + p.mrrAttributed, 0);
-  const totalClients = SEED_PARTNERS.reduce((s, p) => s + p.activeClients, 0);
-  const totalPayouts = SEED_PARTNERS.reduce((s, p) => s + p.payoutsYTD, 0);
+  const [partners, setPartners] = useState<Partner[]>(SEED_PARTNERS);
+  const [leads, setLeads] = useState<PartnerLead[]>(SEED_PARTNER_LEADS);
   const [source, setSource] = useState<'mock' | 'live'>('mock');
-  const [liveCount, setLiveCount] = useState(0);
+
+  const totalMrr = partners.reduce((s, p) => s + p.mrrAttributed, 0);
+  const totalClients = partners.reduce((s, p) => s + p.activeClients, 0);
+  const totalPayouts = partners.reduce((s, p) => s + p.payoutsYTD, 0);
 
   useEffect(() => {
     if (!intel.intelConfigured) return;
-    intel.listPartners('ws_texnet').then((rows) => {
-      if (rows.length > 0) { setLiveCount(rows.length); setSource('live'); }
-    }).catch((e) => console.warn('[Partners] live falhou:', (e as Error).message));
+    Promise.allSettled([
+      intel.listPartners('ws_texnet').then((rows) => {
+        if (rows.length > 0) {
+          setPartners(rows.map((p) => ({
+            id: p.id, name: p.name, tier: p.tier,
+            commissionRate: p.commissionRate,
+            totalReferrals: p.leadsCount, activeClients: p.conversions,
+            mrrAttributed: p.totalRevenueBrl, payoutsYTD: p.totalCommissionBrl,
+            joinedAt: p.createdAt,
+          })));
+          setSource('live');
+        }
+      }),
+      intel.listPartnerLeads('ws_texnet').then((rows) => {
+        if (rows.length > 0) {
+          setLeads(rows.map((l) => ({
+            id: l.id, partnerId: l.partnerId, partnerName: l.partnerName,
+            leadName: l.leadName, status: l.status,
+            estimatedMrr: l.estimatedMrr, createdAt: l.createdAt,
+          })));
+        }
+      }),
+    ]).then((results) => {
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length) console.warn('[Partners] live parcial:', failed.length, 'falhas');
+    });
   }, []);
 
   return (
@@ -49,7 +74,7 @@ export function PartnerPage() {
             source === 'live' ? 'bg-semantic-green/15 text-semantic-green' : 'bg-semantic-amber/15 text-semantic-amber',
           )}>
             <CircleDot size={9} className={source === 'live' ? 'animate-pulse' : ''} />
-            {source === 'live' ? `live · ${liveCount} partners` : 'mock'}
+            {source === 'live' ? `live · ${partners.length} partners` : 'mock'}
           </span>
         </div>
         <button className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-dim border border-brand text-creme hover:bg-brand transition-all flex items-center gap-1">
@@ -58,7 +83,7 @@ export function PartnerPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-2.5 mb-4">
-        <StatCard icon={<Users size={12} />} label="Parceiros ativos" value={SEED_PARTNERS.length.toString()} />
+        <StatCard icon={<Users size={12} />} label="Parceiros ativos" value={partners.length.toString()} />
         <StatCard icon={<CheckCircle2 size={12} />} label="Clientes atribuídos" value={totalClients.toString()} />
         <StatCard icon={<DollarSign size={12} />} label="MRR via partners" value={`R$ ${totalMrr.toLocaleString('pt-BR')}`} />
         <StatCard icon={<TrendingUp size={12} />} label="Payouts YTD" value={`R$ ${(totalPayouts / 1000).toFixed(1)}k`} />
@@ -68,13 +93,13 @@ export function PartnerPage() {
         <div>
           <h3 className="text-[12.5px] font-bold uppercase tracking-wider text-creme-dim mb-2">Parceiros</h3>
           <div className="space-y-2.5">
-            {SEED_PARTNERS.map((p) => <PartnerCard key={p.id} partner={p} />)}
+            {partners.map((p) => <PartnerCard key={p.id} partner={p} />)}
           </div>
         </div>
         <div>
           <h3 className="text-[12.5px] font-bold uppercase tracking-wider text-creme-dim mb-2">Pipeline de leads</h3>
           <div className="space-y-2">
-            {SEED_PARTNER_LEADS.map((l) => <LeadCard key={l.id} lead={l} />)}
+            {leads.map((l) => <LeadCard key={l.id} lead={l} />)}
           </div>
         </div>
       </div>

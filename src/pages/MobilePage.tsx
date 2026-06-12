@@ -5,7 +5,9 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SEED_MOBILE_NOTIFS, type MobileNotification } from '@/lib/seed-extras2';
+import type { NotifKind } from '@/lib/seed-final';
 import * as platform from '@/services/platform';
+import * as notificationsService from '@/services/notifications';
 
 const TYPE_ICON = {
   approval: CheckCircle2,
@@ -22,16 +24,37 @@ const TYPE_COLOR = {
   report: 'text-creme-mute',
 };
 
+const KIND_TO_MOBILE_TYPE: Record<NotifKind, MobileNotification['type']> = {
+  approval: 'approval', alert: 'alert', mention: 'mention',
+  workflow: 'report', billing: 'report', announcement: 'report', system: 'alert',
+};
+
 export function MobilePage() {
-  const unread = SEED_MOBILE_NOTIFS.filter((n) => !n.read).length;
+  const [notifs, setNotifs] = useState<MobileNotification[]>(SEED_MOBILE_NOTIFS);
   const [source, setSource] = useState<'mock' | 'live'>('mock');
   const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const unread = notifs.filter((n) => !n.read).length;
 
   useEffect(() => {
     if (!platform.platformConfigured) return;
-    platform.getNotifPreferences('ws_texnet').then((p) => {
-      if (p) { setSource('live'); setPrefsLoaded(true); }
-    }).catch((e) => console.warn('[Mobile] live falhou:', (e as Error).message));
+    Promise.allSettled([
+      platform.getNotifPreferences('ws_texnet').then((p) => {
+        if (p) { setSource('live'); setPrefsLoaded(true); }
+      }),
+      notificationsService.listNotifications('ws_texnet', 30).then((rows) => {
+        if (rows.length > 0) {
+          setNotifs(rows.map((n) => ({
+            id: n.id, type: KIND_TO_MOBILE_TYPE[n.kind],
+            title: n.title, body: n.body,
+            timestamp: n.timestamp, read: n.read, pushSent: false,
+          })));
+          setSource('live');
+        }
+      }),
+    ]).then((results) => {
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length) console.warn('[Mobile] live parcial:', failed.length, 'falhas');
+    });
   }, []);
 
   return (
@@ -98,7 +121,7 @@ export function MobilePage() {
             <span className="text-[11px] font-mono px-1.5 py-px rounded-full bg-semantic-red/15 text-semantic-red">{unread} não lidas</span>
           </div>
           <div className="flex-1 overflow-y-auto divide-y divide-default">
-            {SEED_MOBILE_NOTIFS.map((n) => <NotifRow key={n.id} notif={n} />)}
+            {notifs.map((n) => <NotifRow key={n.id} notif={n} />)}
           </div>
         </div>
 

@@ -4,6 +4,11 @@
 
 import express, { type Request, type Response, Router } from 'express';
 import { supabase } from '../../db/supabase.js';
+import {
+  credentialsConfigured,
+  decryptCredential,
+  encryptCredential,
+} from '../integrations/credentials.js';
 
 function requireAdmin(req: Request, res: Response): boolean {
   const adminSecret = process.env.ADMIN_SECRET;
@@ -24,6 +29,46 @@ function requireSb(res: Response): boolean {
     return false;
   }
   return true;
+}
+
+/**
+ * Health-check de conectividade por provider — chamada mínima autenticada.
+ * Lança erro com motivo se a credencial for inválida ou o provider não responder.
+ */
+async function checkProviderHealth(provider: string, token: string): Promise<void> {
+  const bearer = { Authorization: `Bearer ${token}` };
+  const timeout = AbortSignal.timeout(10_000);
+
+  switch (provider) {
+    case 'hubspot': {
+      const r = await fetch('https://api.hubapi.com/crm/v3/objects/contacts?limit=1', { headers: bearer, signal: timeout });
+      if (!r.ok) throw new Error(`hubspot_${r.status}`);
+      return;
+    }
+    case 'pipedrive': {
+      const r = await fetch(`https://api.pipedrive.com/v1/users/me?api_token=${encodeURIComponent(token)}`, { signal: timeout });
+      if (!r.ok) throw new Error(`pipedrive_${r.status}`);
+      return;
+    }
+    case 'slack': {
+      const r = await fetch('https://slack.com/api/auth.test', { method: 'POST', headers: bearer, signal: timeout });
+      const body = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!r.ok || !body.ok) throw new Error(`slack_${body.error ?? r.status}`);
+      return;
+    }
+    case 'asaas': {
+      const r = await fetch('https://api.asaas.com/v3/customers?limit=1', { headers: { access_token: token }, signal: timeout });
+      if (!r.ok) throw new Error(`asaas_${r.status}`);
+      return;
+    }
+    case 'google_calendar': {
+      const r = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1', { headers: bearer, signal: timeout });
+      if (!r.ok) throw new Error(`google_${r.status}`);
+      return;
+    }
+    default:
+      throw new Error(`provider_check_not_implemented: ${provider}`);
+  }
 }
 
 export function createM3Router(): Router {
@@ -116,9 +161,15 @@ export function createM3Router(): Router {
       provider?: string;
       display_name?: string;
       sync_direction?: 'push' | 'pull' | 'bidirectional';
+      access_token?: string;
+      refresh_token?: string;
     };
     if (!body.tenant_id || !body.provider) {
       res.status(400).json({ error: 'tenant_id + provider obrigatórios' });
+      return;
+    }
+    if (body.access_token && !credentialsConfigured) {
+      res.status(503).json({ error: 'CORTEX_CRED_KEY não configurada — não é possível armazenar credenciais' });
       return;
     }
     const { data, error } = await supabase!
@@ -130,10 +181,12 @@ export function createM3Router(): Router {
           display_name: body.display_name ?? body.provider,
           sync_direction: body.sync_direction ?? 'bidirectional',
           enabled: true,
+          ...(body.access_token ? { access_token_encrypted: encryptCredential(body.access_token) } : {}),
+          ...(body.refresh_token ? { refresh_token_encrypted: encryptCredential(body.refresh_token) } : {}),
         },
         { onConflict: 'tenant_id,provider' },
       )
-      .select()
+      .select('id, provider, display_name, enabled, last_sync_at, last_sync_status, sync_direction, created_at')
       .maybeSingle();
     if (error) {
       res.status(400).json({ error: error.message });
@@ -145,17 +198,38 @@ export function createM3Router(): Router {
   router.post('/integrations/:id/sync', async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
     if (!requireSb(res)) return;
-    // Stub: marca um sync forçado
+
+    const { data: integration } = await supabase!
+      .from('cortex_integrations')
+      .select('id, provider, enabled, access_token_encrypted')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (!integration) return void res.status(404).json({ error: 'integration not found' });
+    if (!integration.enabled) return void res.status(400).json({ error: 'integration disabled' });
+
+    let syncStatus: string;
+    if (!integration.access_token_encrypted) {
+      syncStatus = 'error: missing_credentials';
+    } else {
+      try {
+        const token = decryptCredential(integration.access_token_encrypted as string);
+        await checkProviderHealth(integration.provider as string, token);
+        syncStatus = 'success';
+      } catch (err) {
+        syncStatus = `error: ${(err as Error).message.slice(0, 180)}`;
+      }
+    }
+
     const { data } = await supabase!
       .from('cortex_integrations')
       .update({
         last_sync_at: new Date().toISOString(),
-        last_sync_status: 'queued',
+        last_sync_status: syncStatus,
       })
       .eq('id', req.params.id)
       .select()
       .maybeSingle();
-    res.json({ integration: data, stub: true });
+    res.status(syncStatus === 'success' ? 200 : 422).json({ integration: data, sync_status: syncStatus });
   });
 
   router.post('/integrations/:id/revoke', async (req: Request, res: Response) => {

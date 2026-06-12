@@ -204,17 +204,36 @@ async function persistConsolidation(
   }
 }
 
-/** Encontra sessões elegíveis pra consolidação. Single-instance only (Fase 3). */
-function findEligibleSessions(): CortexSession[] {
-  const stats = shortTermMemory.stats();
-  if (stats.totalSessions === 0) return [];
+/**
+ * Overflow handler — sessão estourou o limite da memória curta antes do pass
+ * periódico. Consolida o que vai ser descartado SEM limpar a sessão (ela
+ * continua ativa). Debounce de 60s por sessão pra não consolidar a cada msg.
+ */
+const overflowInFlight = new Set<string>();
 
-  // Acesso direto ao Map seria mais eficiente; aqui fazemos via API pública
-  // que não expõe iteração. Como fase 3 é single-instance, vamos usar
-  // a abordagem indireta: caller passa lista de candidatas via outra rota.
-  // Em vez disso, expomos um helper temporário aqui via reflection do módulo:
-  // (Fase 4: Redis-backed listing nativo)
-  return []; // placeholder — será preenchido via runConsolidationFor() abaixo
+function handleOverflow(session: CortexSession): void {
+  const key = `${session.tenantId}::${session.sessionId}`;
+  if (overflowInFlight.has(key)) return;
+  overflowInFlight.add(key);
+  void (async () => {
+    try {
+      const result = await consolidateSession(session);
+      if (result) {
+        await persistConsolidation(session, result.output, result.costUsd);
+        incrementCounter('cortex_consolidations_total', { tenant: session.tenantId });
+        logger.info('overflow consolidation', {
+          tenantId: session.tenantId,
+          sessionId: session.sessionId,
+          facts: result.output.facts.length,
+        });
+      }
+    } catch (err) {
+      logger.warn('overflow consolidation failed', { error: (err as Error).message });
+    } finally {
+      const t = setTimeout(() => overflowInFlight.delete(key), 60_000);
+      t.unref?.();
+    }
+  })();
 }
 
 /**
@@ -259,6 +278,7 @@ export function startConsolidationWorker(): void {
     idleMs: IDLE_MS,
     maxMsgs: MAX_MSGS,
   });
+  shortTermMemory.setOverflowHandler(handleOverflow);
   intervalHandle = setInterval(() => {
     void runConsolidationPass().catch((err) =>
       logger.error('consolidation pass failed', { error: (err as Error).message }),
@@ -272,6 +292,7 @@ export function stopConsolidationWorker(): void {
   if (intervalHandle) {
     clearInterval(intervalHandle);
     intervalHandle = null;
+    shortTermMemory.setOverflowHandler(null);
     logger.info('consolidation worker stopped');
   }
 }
@@ -304,5 +325,3 @@ export async function runConsolidationPass(): Promise<{ consolidated: number }> 
   return { consolidated };
 }
 
-// Silence unused warning
-void findEligibleSessions;
