@@ -30,6 +30,12 @@ const SPRING_FORCE = 0.1;
 const PARALLAX_LERP = 0.045;
 const MAX_LINE_PAIRS = 6000;
 
+// Onda viajante na superfície (deslocamento radial fluido) + drift de cor.
+const WAVE_AMP = 0.16;
+const WAVE_FREQ = 1.25;
+const WAVE_SPEED = 1.6;
+const HUE_DRIFT = 0.06; // amplitude do desvio de matiz (verde ↔ teal/azulado)
+
 function readPrimaryColor(): THREE.Color {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--brand-bright').trim();
   const m = v.match(/(\d+)\s+(\d+)\s+(\d+)/);
@@ -170,10 +176,14 @@ export function NeuralSphere({
 
     const tempVec = new THREE.Vector3();
     const mouseVec = new THREE.Vector3();
+    const waveTarget = new THREE.Vector3();
+    // matiz base (pra fazer o drift de cor)
+    const baseHSL = { h: 0, s: 0, l: 0 };
+    baseColor.getHSL(baseHSL);
     let raf = 0;
     const startTime = performance.now();
 
-    const updateShell = (shell: Shell, geometry: THREE.BufferGeometry, count: number, connectDist: number, linePosArray: Float32Array, geomLines: THREE.BufferGeometry) => {
+    const updateShell = (shell: Shell, geometry: THREE.BufferGeometry, count: number, connectDist: number, linePosArray: Float32Array, geomLines: THREE.BufferGeometry, now: number) => {
       const posAttr = geometry.attributes.position as THREE.BufferAttribute;
       mouseVec.set(mouse.x, mouse.y, 0);
       const arr = posAttr.array as Float32Array;
@@ -183,7 +193,13 @@ export function NeuralSphere({
         const orig = shell.originals[i];
         const vel = shell.velocities[i];
 
-        tempVec.subVectors(orig, pos).multiplyScalar(SPRING_FORCE);
+        // Onda viajante: alvo da mola = posição original deslocada radialmente
+        // por uma senoide que percorre a esfera (sensação de "respiração líquida").
+        const phase = (orig.x + orig.y * 0.7 + orig.z) * WAVE_FREQ - now * WAVE_SPEED;
+        const radial = 1 + (Math.sin(phase) * WAVE_AMP) / (orig.length() || 1);
+        waveTarget.copy(orig).multiplyScalar(radial);
+
+        tempVec.subVectors(waveTarget, pos).multiplyScalar(SPRING_FORCE);
         vel.add(tempVec);
 
         if (mouse.active) {
@@ -233,26 +249,24 @@ export function NeuralSphere({
     };
 
     const animate = () => {
-      let ambientPulse = 0;
-      if (ambient) {
-        const tA = performance.now() * 0.001;
-        const period = 1.5;
-        const phase = (tA % period) / period;
-        const lub = Math.exp(-Math.pow((phase - 0.1) / 0.045, 2));
-        const dub = Math.exp(-Math.pow((phase - 0.26) / 0.055, 2)) * 0.7;
-        const drift = Math.sin(tA * 0.43) * 0.08;
-        ambientPulse = 0.18 + (lub + dub) * 0.7 + drift;
-      }
-      const I = Math.max(0, Math.min(1, ambientPulse));
+      const now = performance.now() * 0.001;
+      const I = ambient ? 0.18 + Math.sin(now * 0.5) * 0.06 : 0; // brilho ambiente suave
 
       const dynOuterConnect = OUTER_CONNECT_DISTANCE * (1 + I * 0.18);
       const dynInnerConnect = INNER_CONNECT_DISTANCE * (1 + I * 0.22);
 
-      updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry);
-      updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry);
+      updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now);
+      updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now);
+
+      // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
+      const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;
+      outer.pointsMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
+      outer.lineMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
+      inner.pointsMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.1), Math.min(1, baseHSL.l + 0.12));
+      inner.lineMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.1), Math.min(1, baseHSL.l + 0.12));
 
       const t = (performance.now() - startTime) * 0.00085;
-      const breath = 1 + Math.sin(t * 0.85) * 0.022 + I * 0.05;
+      const breath = 1 + Math.sin(t * 0.85) * 0.018;
       parallaxGroup.scale.setScalar(breath);
 
       const innerPulse = 0.86 + Math.sin(t * 1.3) * 0.08 + I * 0.22;
