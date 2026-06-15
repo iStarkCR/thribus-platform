@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useWakeWordListener } from '@/hooks/useWakeWordListener';
+import { useOrbConversation } from '@/hooks/useOrbConversation';
 import { OrbChat } from '@/components/voice/OrbChat';
 
 const ORB_SIZE = 88;
@@ -42,12 +43,13 @@ export function FloatingOrb() {
   const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
   const voiceModeActive = useAppStore((s) => s.voiceModeActive);
 
+  const conv = useOrbConversation();
+
   const [pos, setPos] = useState<Pos>(loadPos);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [wakeFlash, setWakeFlash] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [voiceSignal, setVoiceSignal] = useState(0);
   const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number } | null>(null);
 
   // Mantém o orbe dentro da viewport ao redimensionar.
@@ -57,21 +59,18 @@ export function FloatingOrb() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Abre a conversa direta com o Bukowiski no próprio orbe (não navega).
-  const openChat = useCallback((withVoice: boolean) => {
-    setChatOpen(true);
-    if (withVoice) setVoiceSignal((n) => n + 1);
-  }, []);
-
-  // Wake word "Bukowiski" → abre a conversa e já entra no modo voz.
+  // Wake word "Bukowiski" → conversa SÓ por voz (não abre o chat). A esfera muda
+  // de cor; "Bukowiski off" encerra.
+  const startVoiceRef = useRef(conv.startVoice);
+  startVoiceRef.current = conv.startVoice;
   const onWake = useCallback(() => {
     setWakeFlash(true);
     setTimeout(() => setWakeFlash(false), 2200);
-    openChat(true);
-  }, [openChat]);
+    startVoiceRef.current();
+  }, []);
 
   useWakeWordListener({
-    enabled: orbEnabled && wakeWordEnabled && !chatOpen && !voiceModeActive,
+    enabled: orbEnabled && wakeWordEnabled && !conv.voiceActive && !chatOpen && !voiceModeActive,
     onWake,
   });
 
@@ -103,9 +102,12 @@ export function FloatingOrb() {
 
   if (!orbEnabled) return null;
 
-  const active = chatOpen;
-  const intensity = active ? 0.9 : hovered ? 0.7 : wakeFlash ? 0.6 : 0.32;
-  const listening = wakeWordEnabled && !chatOpen && !voiceModeActive;
+  const active = conv.voiceActive || chatOpen;
+  const intensity = conv.voiceActive ? 0.95 : chatOpen ? 0.85 : hovered ? 0.7 : wakeFlash ? 0.6 : 0.32;
+  const listening = wakeWordEnabled && !conv.voiceActive && !chatOpen && !voiceModeActive;
+  // Esfera muda de cor pelo estado do modo voz: verde (ouvindo) → âmbar (pensando) → azul (respondendo).
+  const hue = conv.voiceActive ? (conv.state === 'thinking' ? -62 : conv.state === 'speaking' ? 95 : 6) : 0;
+  const haloColor = conv.state === 'thinking' ? '250,190,90' : conv.state === 'speaking' ? '110,170,250' : 'var(--brand-bright)';
 
   return (
     <>
@@ -127,27 +129,28 @@ export function FloatingOrb() {
           transform: hovered && !dragging ? 'scale(1.1)' : 'scale(1)',
         }}
       >
-        {/* Halo externo — cresce/acende no hover */}
+        {/* Halo externo — cor segue o estado do modo voz */}
         <div
-          className="absolute -inset-3 rounded-full transition-opacity duration-300 pointer-events-none"
+          className="absolute -inset-3 rounded-full transition-all duration-500 pointer-events-none"
           style={{
-            background: 'radial-gradient(circle, rgba(var(--brand-bright)/0.35) 0%, transparent 68%)',
+            background: `radial-gradient(circle, rgba(${haloColor}/0.4) 0%, transparent 68%)`,
             opacity: active ? 1 : hovered ? 0.85 : 0.5,
           }}
         />
         <style>{`@keyframes orbBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}`}</style>
-        {/* Esfera — bem menos linhas; pulsa quando ativo */}
+        {/* Esfera — pulsa e muda de cor (hue-rotate) quando em modo voz */}
         <div
-          className="absolute inset-0 rounded-full overflow-hidden"
+          className="absolute inset-0 rounded-full overflow-hidden transition-[filter] duration-500"
           style={{
             WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)',
             maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)',
             animation: active ? 'orbBreath 1.7s ease-in-out infinite' : undefined,
+            filter: hue ? `hue-rotate(${hue}deg)` : undefined,
           }}
         >
           <NeuralSphere className="absolute inset-0" intensity={intensity} connectScale={0.62} />
         </div>
-        {/* Anel só em hover/ativo (no repouso fica esmaecida como a grande) */}
+        {/* Anel só em hover/ativo */}
         <div className={`absolute inset-0 rounded-full transition-all pointer-events-none ${active ? 'ring-2 ring-brand/50' : hovered ? 'ring-1 ring-brand/30' : ''}`} />
         {active && (
           <div className="absolute inset-0 rounded-full ring-2 ring-brand/40 animate-ping pointer-events-none" />
@@ -165,7 +168,7 @@ export function FloatingOrb() {
       </button>
 
       {chatOpen && (
-        <OrbChat orb={{ x: pos.x, y: pos.y, size: ORB_SIZE }} onClose={() => setChatOpen(false)} startVoiceSignal={voiceSignal} />
+        <OrbChat orb={{ x: pos.x, y: pos.y, size: ORB_SIZE }} onClose={() => setChatOpen(false)} conv={conv} />
       )}
     </>
   );
