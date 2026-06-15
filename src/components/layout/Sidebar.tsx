@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   ChevronRight, Zap, Settings, Building2, Bell, Lock,
-  LogOut, User, Moon, HelpCircle,
+  LogOut, User, Moon, HelpCircle, PanelLeftClose, PanelLeft,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -15,6 +15,8 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const agents = useAppStore((s) => s.agents);
+  const collapsed = useAppStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const { allowedPaths } = useAccess();
 
   // allowedPaths null = admin (vê tudo). Caso contrário filtra pelos grants do
@@ -24,29 +26,44 @@ export function Sidebar() {
     .filter((g) => g.items.length > 0);
 
   return (
-    <aside className="fixed left-0 top-0 bottom-0 w-[244px] bg-surface-1 border-r border-default flex flex-col z-50">
-      {/* Brand + sino */}
-      <div className="h-14 px-3 flex items-center gap-2.5 border-b border-default shrink-0">
+    <aside className={clsx('fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-50 transition-[width] duration-200', collapsed ? 'w-[64px]' : 'w-[244px]')}>
+      {/* Brand + sino + recolher */}
+      <div className={clsx('h-14 flex items-center border-b border-default shrink-0', collapsed ? 'justify-center px-2' : 'px-3 gap-2.5')}>
         <div className="w-[30px] h-[30px] rounded-lg bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center shrink-0">
           <Zap size={14} className="text-white" />
         </div>
-        <div className="flex flex-col flex-1 min-w-0">
-          <span className="text-[15px] font-bold text-creme leading-tight tracking-tight truncate">Thribus Tech</span>
-          <span className="text-[11.5px] font-semibold text-brand uppercase tracking-wider leading-tight truncate">Colaboradores Digitais</span>
-        </div>
-        <NotifBell onClick={() => navigate('/notifications')} />
+        {!collapsed && (
+          <>
+            <div className="flex flex-col flex-1 min-w-0">
+              <span className="text-[15px] font-bold text-creme leading-tight tracking-tight truncate">Thribus Tech</span>
+              <span className="text-[11.5px] font-semibold text-brand uppercase tracking-wider leading-tight truncate">Colaboradores Digitais</span>
+            </div>
+            <NotifBell onClick={() => navigate('/notifications')} />
+            <button onClick={() => setSidebarCollapsed(true)} title="Recolher" className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
+              <PanelLeftClose size={15} />
+            </button>
+          </>
+        )}
       </div>
 
+      {collapsed && (
+        <button onClick={() => setSidebarCollapsed(false)} title="Expandir" className="mx-auto mt-2 w-9 h-9 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
+          <PanelLeft size={16} />
+        </button>
+      )}
+
       {/* Seletor de conta (Talki-style) */}
-      <WorkspaceSwitcher />
+      {!collapsed && <WorkspaceSwitcher />}
 
       {/* Nav */}
       <nav className="flex-1 p-2.5 overflow-y-auto">
         {groups.map((group) => (
-          <div key={group.group} className="mb-5">
-            <div className="text-[11.5px] font-bold uppercase tracking-widest text-creme-faint px-2.5 mb-1.5">
-              {group.group}
-            </div>
+          <div key={group.group} className={collapsed ? 'mb-2' : 'mb-5'}>
+            {!collapsed && (
+              <div className="text-[11.5px] font-bold uppercase tracking-widest text-creme-faint px-2.5 mb-1.5">
+                {group.group}
+              </div>
+            )}
             {group.items.map((item) => {
               const isActive = location.pathname === item.path;
               const Icon = item.icon;
@@ -54,8 +71,10 @@ export function Sidebar() {
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
+                  title={collapsed ? item.label : undefined}
                   className={clsx(
-                    'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[15px] font-medium transition-all duration-150 relative',
+                    'w-full flex items-center py-2 rounded-lg text-[15px] font-medium transition-all duration-150 relative',
+                    collapsed ? 'justify-center px-0' : 'gap-2.5 px-2.5',
                     isActive
                       ? 'bg-brand/10 text-brand-bright'
                       : 'text-creme-mute hover:bg-surface-hover hover:text-creme-dim',
@@ -65,8 +84,8 @@ export function Sidebar() {
                     <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2.5px] h-4 bg-brand rounded-r" />
                   )}
                   <Icon size={16} className={clsx('shrink-0', isActive ? 'opacity-100' : 'opacity-50')} />
-                  {item.label}
-                  {item.badge && (
+                  {!collapsed && item.label}
+                  {!collapsed && item.badge && (
                     <span className="ml-auto text-[12px] font-semibold font-mono bg-brand/10 text-brand px-1.5 py-px rounded-full">
                       {agents.filter((a) => a.status === 'online').length}
                     </span>
@@ -79,12 +98,12 @@ export function Sidebar() {
       </nav>
 
       {/* Footer — User menu */}
-      <UserMenu />
+      <UserMenu collapsed={collapsed} />
     </aside>
   );
 }
 
-function UserMenu() {
+function UserMenu({ collapsed }: { collapsed: boolean }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -114,19 +133,25 @@ function UserMenu() {
     <div ref={ref} className="relative p-2.5 border-t border-default shrink-0">
       <button
         onClick={() => setOpen(!open)}
+        title={collapsed ? displayName : undefined}
         className={clsx(
-          'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors',
+          'w-full flex items-center py-2 rounded-lg transition-colors',
+          collapsed ? 'justify-center px-0' : 'gap-2.5 px-2.5',
           open ? 'bg-surface-hover' : 'hover:bg-surface-hover',
         )}
       >
         <div className="w-[30px] h-[30px] rounded-full bg-gradient-to-br from-brand-dim to-brand border border-hover flex items-center justify-center text-[13px] font-bold text-creme shrink-0">
           {initials}
         </div>
-        <div className="flex-1 min-w-0 text-left">
-          <div className="text-xs font-semibold text-creme truncate">{displayName}</div>
-          <div className="text-[12px] text-creme-faint truncate">{role}</div>
-        </div>
-        <ChevronRight size={14} className={clsx('text-creme-faint shrink-0 transition-transform', open && '-rotate-90')} />
+        {!collapsed && (
+          <>
+            <div className="flex-1 min-w-0 text-left">
+              <div className="text-xs font-semibold text-creme truncate">{displayName}</div>
+              <div className="text-[12px] text-creme-faint truncate">{role}</div>
+            </div>
+            <ChevronRight size={14} className={clsx('text-creme-faint shrink-0 transition-transform', open && '-rotate-90')} />
+          </>
+        )}
       </button>
 
       {open && (

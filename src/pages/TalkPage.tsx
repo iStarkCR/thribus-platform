@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
-  Users, Check, Settings2, Mic, Volume2, VolumeX,
+  Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -10,10 +10,11 @@ import { useVoice } from '@/hooks/useVoice';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, type ChatMessage } from '@/services/collaboratorChat';
 import {
-  listFolders, createFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession,
+  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession,
   type ChatFolder, type ChatSession,
 } from '@/services/chatSessions';
-import { PromptDialog, ConfirmDialog } from '@/components/shared/Dialogs';
+
+const FOLDER_COLORS = ['#6B8F5E', '#3b82f6', '#8b5cf6', '#ef4444', '#f59e0b', '#14b8a6', '#ec4899', '#64748b'];
 import { AgentInfoModal } from '@/components/agents/AgentInfoModal';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
 
@@ -46,9 +47,8 @@ export function TalkPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [folderDialog, setFolderDialog] = useState(false);
-  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -138,9 +138,11 @@ export function TalkPage() {
     messages[messages.length - 1].role === 'user' &&
     ['pending', 'processing'].includes(messages[messages.length - 1].status);
 
-  // Agrupa sessões por pasta.
+  // Agrupa sessões por pasta + hierarquia de pastas.
   const ungrouped = sessions.filter((s) => !s.folderId);
   const byFolder = (fid: string) => sessions.filter((s) => s.folderId === fid);
+  const rootFolders = folders.filter((f) => !f.parentId);
+  const childFolders = (pid: string) => folders.filter((f) => f.parentId === pid);
 
   async function newSession(folderId: string | null = null) {
     if (!agentId || !userId) return;
@@ -150,37 +152,47 @@ export function TalkPage() {
     setMessages([]);
   }
 
-  async function createFolderNamed(name: string) {
+  async function newFolder(parentId: string | null = null) {
     if (!agentId || !userId) return;
-    setFolderDialog(false);
-    const f = await createFolder(agentId, userId, name);
+    const name = (await useAppStore.getState().askPrompt({ title: parentId ? 'Nova subpasta' : 'Nova pasta', label: 'Nome', placeholder: 'Ex: Estratégia' }))?.trim();
+    if (!name) return;
+    const f = await createFolder(agentId, userId, name, { parentId });
     setFolders((prev) => [...prev, f]);
+    if (parentId) setCollapsed((c) => { const n = new Set(c); n.delete(parentId); return n; });
   }
 
-  function removeSession(id: string) {
-    setConfirm({
-      title: 'Apagar conversa',
-      message: 'Esta conversa e todas as mensagens dela serão apagadas. Não dá pra desfazer.',
-      onConfirm: async () => {
-        setConfirm(null);
-        await deleteSession(id);
-        setSessions((prev) => prev.filter((s) => s.id !== id));
-        if (activeId === id) setActiveId(null);
-      },
-    });
+  async function renameFolderAction(f: ChatFolder) {
+    const name = (await useAppStore.getState().askPrompt({ title: 'Renomear pasta', label: 'Nome', initial: f.name }))?.trim();
+    if (!name) return;
+    await updateFolder(f.id, { name });
+    setFolders((prev) => prev.map((x) => (x.id === f.id ? { ...x, name } : x)));
   }
 
-  function removeFolder(f: ChatFolder) {
-    setConfirm({
-      title: 'Apagar pasta',
-      message: `A pasta "${f.name}" será apagada. As conversas dentro dela voltam para "Sem pasta".`,
-      onConfirm: async () => {
-        setConfirm(null);
-        await deleteFolder(f.id);
-        setFolders((prev) => prev.filter((x) => x.id !== f.id));
-        setSessions((prev) => prev.map((s) => (s.folderId === f.id ? { ...s, folderId: null } : s)));
-      },
-    });
+  async function setFolderColor(f: ChatFolder, color: string | null) {
+    await updateFolder(f.id, { color });
+    setFolders((prev) => prev.map((x) => (x.id === f.id ? { ...x, color } : x)));
+  }
+
+  async function renameSessionAction(s: ChatSession) {
+    const title = (await useAppStore.getState().askPrompt({ title: 'Renomear conversa', label: 'Título', initial: s.title }))?.trim();
+    if (!title) return;
+    await renameSession(s.id, title);
+    setSessions((prev) => prev.map((x) => (x.id === s.id ? { ...x, title } : x)));
+  }
+
+  async function removeSession(id: string) {
+    const ok = await useAppStore.getState().askConfirm({ title: 'Apagar conversa', message: 'Esta conversa e todas as mensagens dela serão apagadas. Não dá pra desfazer.', confirmLabel: 'Apagar' });
+    if (!ok) return;
+    await deleteSession(id);
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+    if (activeId === id) setActiveId(null);
+  }
+
+  async function removeFolder(f: ChatFolder) {
+    const ok = await useAppStore.getState().askConfirm({ title: 'Apagar pasta', message: `A pasta "${f.name}" (e subpastas) será apagada. As conversas voltam para "Sem pasta".`, confirmLabel: 'Apagar' });
+    if (!ok) return;
+    await deleteFolder(f.id);
+    await loadTree();
   }
 
   function toggle(fid: string) {
@@ -233,6 +245,52 @@ export function TalkPage() {
     }
   }
 
+  // Render recursivo de pasta → subpastas → sessões.
+  const renderFolder = (f: ChatFolder, depth: number) => {
+    const open = !collapsed.has(f.id);
+    const sess = byFolder(f.id);
+    const subs = childFolders(f.id);
+    const dot = f.color ?? '#64748b';
+    return (
+      <div key={f.id}>
+        <div className="group flex items-center gap-1 pr-1 py-1.5 rounded-md hover:bg-surface-hover" style={{ paddingLeft: depth * 12 + 6 }}>
+          <button onClick={() => toggle(f.id)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+            {open ? <ChevronDown size={13} className="text-creme-faint shrink-0" /> : <ChevronRight size={13} className="text-creme-faint shrink-0" />}
+            <Folder size={13} className="shrink-0" style={{ color: dot }} />
+            <span className="text-[12.5px] font-semibold text-creme-dim truncate">{f.name}</span>
+            <span className="text-[10.5px] text-creme-faint">{sess.length + subs.length}</span>
+          </button>
+          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0">
+            <button onClick={() => newSession(f.id)} title="Nova sessão" className="text-creme-faint hover:text-brand p-0.5"><Plus size={12} /></button>
+            <button onClick={() => newFolder(f.id)} title="Nova subpasta" className="text-creme-faint hover:text-brand p-0.5"><SubfolderIcon size={11} /></button>
+            <button onClick={() => setColorPickerFor(colorPickerFor === f.id ? null : f.id)} title="Cor" className="text-creme-faint hover:text-creme p-0.5"><Palette size={11} /></button>
+            <button onClick={() => renameFolderAction(f)} title="Renomear" className="text-creme-faint hover:text-creme p-0.5"><Pencil size={11} /></button>
+            <button onClick={() => removeFolder(f)} title="Apagar" className="text-creme-faint hover:text-semantic-red p-0.5"><Trash2 size={11} /></button>
+          </div>
+        </div>
+        {colorPickerFor === f.id && (
+          <div className="flex items-center gap-1.5 py-1.5" style={{ paddingLeft: depth * 12 + 26 }}>
+            {FOLDER_COLORS.map((c) => (
+              <button key={c} onClick={() => { setFolderColor(f, c); setColorPickerFor(null); }} className="w-4 h-4 rounded-full border border-default hover:scale-110 transition-transform" style={{ background: c }} />
+            ))}
+            <button onClick={() => { setFolderColor(f, null); setColorPickerFor(null); }} title="Sem cor" className="w-4 h-4 rounded-full border border-default text-[10px] text-creme-faint flex items-center justify-center">×</button>
+          </div>
+        )}
+        {open && (
+          <div>
+            {subs.map((sf) => renderFolder(sf, depth + 1))}
+            {sess.map((s) => (
+              <SessionItem key={s.id} session={s} active={s.id === activeId} depth={depth + 1} onClick={() => setActiveId(s.id)} onRename={() => renameSessionAction(s)} onDelete={() => removeSession(s.id)} />
+            ))}
+            {sess.length === 0 && subs.length === 0 && (
+              <div className="text-[11px] text-creme-faint italic py-1" style={{ paddingLeft: (depth + 1) * 12 + 14 }}>vazia</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (!chatConfigured) {
     return <div className="p-6 text-creme-mute text-[13px]">Supabase não configurado — defina <code className="font-mono text-creme">.env.local</code>.</div>;
   }
@@ -252,44 +310,15 @@ export function TalkPage() {
             <Plus size={16} /> Nova sessão
           </button>
           <button
-            onClick={() => setFolderDialog(true)}
+            onClick={() => newFolder(null)}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-2 border border-default text-creme-mute text-[13px] hover:bg-surface-hover transition-colors"
           >
             <FolderPlus size={14} /> Nova pasta
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {folders.map((f) => {
-            const open = !collapsed.has(f.id);
-            const list = byFolder(f.id);
-            return (
-              <div key={f.id}>
-                <div className="group flex items-center gap-1 px-1.5 py-1.5 rounded-md hover:bg-surface-hover">
-                  <button onClick={() => toggle(f.id)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
-                    {open ? <ChevronDown size={13} className="text-creme-faint shrink-0" /> : <ChevronRight size={13} className="text-creme-faint shrink-0" />}
-                    <Folder size={13} className="text-creme-faint shrink-0" />
-                    <span className="text-[12.5px] font-semibold text-creme-dim truncate">{f.name}</span>
-                    <span className="text-[10.5px] text-creme-faint">{list.length}</span>
-                  </button>
-                  <button onClick={() => newSession(f.id)} title="Nova sessão na pasta" className="opacity-0 group-hover:opacity-100 text-creme-faint hover:text-brand p-0.5">
-                    <Plus size={12} />
-                  </button>
-                  <button onClick={() => removeFolder(f)} title="Apagar pasta" className="opacity-0 group-hover:opacity-100 text-creme-faint hover:text-semantic-red p-0.5">
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-                {open && (
-                  <div className="ml-3 pl-2 border-l border-default/60 space-y-0.5">
-                    {list.map((s) => (
-                      <SessionItem key={s.id} session={s} active={s.id === activeId} onClick={() => setActiveId(s.id)} onDelete={() => removeSession(s.id)} />
-                    ))}
-                    {list.length === 0 && <div className="px-2 py-1 text-[11px] text-creme-faint italic">vazia</div>}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+          {rootFolders.map((f) => renderFolder(f, 0))}
 
           {/* Sessões sem pasta */}
           {ungrouped.length > 0 && (
@@ -299,7 +328,7 @@ export function TalkPage() {
               )}
               <div className="space-y-0.5">
                 {ungrouped.map((s) => (
-                  <SessionItem key={s.id} session={s} active={s.id === activeId} onClick={() => setActiveId(s.id)} onDelete={() => removeSession(s.id)} />
+                  <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => setActiveId(s.id)} onRename={() => renameSessionAction(s)} onDelete={() => removeSession(s.id)} />
                 ))}
               </div>
             </div>
@@ -466,42 +495,29 @@ export function TalkPage() {
         </div>
       </div>
 
-      {folderDialog && (
-        <PromptDialog
-          title="Nova pasta"
-          label="Nome da pasta"
-          placeholder="Ex: Estratégia, Financeiro…"
-          onConfirm={createFolderNamed}
-          onClose={() => setFolderDialog(false)}
-        />
-      )}
-      {confirm && (
-        <ConfirmDialog
-          title={confirm.title}
-          message={confirm.message}
-          confirmLabel="Apagar"
-          onConfirm={confirm.onConfirm}
-          onClose={() => setConfirm(null)}
-        />
-      )}
       {infoOpen && <AgentInfoModal agent={agent} onClose={() => setInfoOpen(false)} onEdit={() => setEditOpen(true)} />}
       {editOpen && <AgentDetailModal agent={agent} onClose={() => setEditOpen(false)} />}
     </div>
   );
 }
 
-function SessionItem({ session, active, onClick, onDelete }: { session: ChatSession; active: boolean; onClick: () => void; onDelete: () => void }) {
+function SessionItem({ session, active, depth = 0, onClick, onRename, onDelete }: { session: ChatSession; active: boolean; depth?: number; onClick: () => void; onRename: () => void; onDelete: () => void }) {
   return (
-    <div className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${active ? 'bg-brand/10' : 'hover:bg-surface-hover'}`} onClick={onClick}>
+    <div
+      className={`group flex items-center gap-2 pr-2 py-2 rounded-lg cursor-pointer transition-colors ${active ? 'bg-brand/10' : 'hover:bg-surface-hover'}`}
+      style={{ paddingLeft: depth * 12 + 10 }}
+      onClick={onClick}
+    >
       <MessageSquare size={13} className="text-creme-faint shrink-0" />
       <span className={`flex-1 min-w-0 text-[13.5px] truncate ${active ? 'text-creme font-medium' : 'text-creme-mute'}`}>{session.title}</span>
-      <button
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        className="opacity-0 group-hover:opacity-100 text-creme-faint hover:text-semantic-red p-0.5 shrink-0"
-        title="Apagar conversa"
-      >
-        <Trash2 size={11} />
-      </button>
+      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0">
+        <button onClick={(e) => { e.stopPropagation(); onRename(); }} className="text-creme-faint hover:text-creme p-0.5" title="Renomear conversa">
+          <Pencil size={11} />
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-creme-faint hover:text-semantic-red p-0.5" title="Apagar conversa">
+          <Trash2 size={11} />
+        </button>
+      </div>
     </div>
   );
 }

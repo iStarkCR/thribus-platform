@@ -25,6 +25,9 @@ interface AppState {
   // UI
   loading: boolean;
   currentPage: string;
+  /** Sidebar recolhida (só ícones). Padrão recolhido no chat. */
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (v: boolean) => void;
   toasts: Array<{ id: string; message: string; type: 'green' | 'amber' | 'red' | 'blue' }>;
   /** Confirmação imperativa no padrão do sistema (substitui window.confirm). */
   confirmRequest: { title: string; message: string; confirmLabel?: string; danger?: boolean; resolve: (v: boolean) => void } | null;
@@ -103,6 +106,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   templates: [],
   loading: true,
   currentPage: 'dashboard',
+  sidebarCollapsed: false,
+  setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
   toasts: [],
   confirmRequest: null,
   promptRequest: null,
