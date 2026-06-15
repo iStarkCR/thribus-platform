@@ -3,8 +3,10 @@ import {
   Settings, Database, Cable, ShieldCheck, HardDrive,
   CheckCircle2, XCircle, AlertTriangle, ExternalLink, Copy,
   Server, KeyRound, Bot, Wrench, Pencil, Sun, Moon, Palette,
+  Sparkles, Ear,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
+import { isWakeWordSupported } from '@/hooks/useWakeWordListener';
 import { WorkspaceEditModal } from '@/components/settings/WorkspaceEditModal';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
@@ -19,6 +21,10 @@ import { useTheme } from '@/hooks/useTheme';
  */
 export function SettingsPage() {
   const { workspaces, agents, tools, addToast } = useAppStore();
+  const orbEnabled = useAppStore((s) => s.orbEnabled);
+  const setOrbEnabled = useAppStore((s) => s.setOrbEnabled);
+  const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
+  const setWakeWordEnabled = useAppStore((s) => s.setWakeWordEnabled);
   const { theme, setTheme } = useTheme();
 
   // ─── Env vars (frontend-side via Vite) ─────────────────────────────────────
@@ -142,6 +148,48 @@ export function SettingsPage() {
               {theme === opt.id && <CheckCircle2 size={14} className="text-brand" />}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* ─── Assistente de voz (orbe + wake word) ───────────────────────── */}
+      <div className="bg-surface-1 border border-default rounded-[10px] p-4 mb-5">
+        <div className="flex items-center gap-2 text-[13.5px] font-bold text-creme mb-0.5">
+          <Sparkles size={15} className="text-creme-mute" /> Assistente de voz
+        </div>
+        <div className="text-[12.5px] text-creme-faint mb-3">Orbe do Bukowiski flutuando pelos módulos e ativação por voz.</div>
+        <div className="space-y-3 max-w-xl">
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <div className="flex items-start gap-2.5">
+              <Sparkles size={16} className="text-brand mt-0.5 shrink-0" />
+              <div>
+                <div className="text-[13.5px] font-semibold text-creme">Orbe flutuante</div>
+                <div className="text-[12px] text-creme-faint">Esfera do Bukowiski te acompanha em todas as telas. Clique nela pra ligar o modo voz; arraste pra reposicionar.</div>
+              </div>
+            </div>
+            <button onClick={() => setOrbEnabled(!orbEnabled)} className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${orbEnabled ? 'bg-brand' : 'bg-surface-3 border border-default'}`}>
+              <span className={`absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white transition-all ${orbEnabled ? 'left-[calc(100%-21px)]' : 'left-[3px]'}`} />
+            </button>
+          </label>
+
+          <label className={`flex items-center justify-between gap-3 ${orbEnabled ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'}`}>
+            <div className="flex items-start gap-2.5">
+              <Ear size={16} className="text-brand mt-0.5 shrink-0" />
+              <div>
+                <div className="text-[13.5px] font-semibold text-creme">Palavra de ativação “Bukowiski”</div>
+                <div className="text-[12px] text-creme-faint">Diga <span className="font-semibold text-creme-dim">“Bukowiski”</span> pra ligar o modo voz; diga de novo pra desligar. Escuta em segundo plano.</div>
+              </div>
+            </div>
+            <button disabled={!orbEnabled} onClick={() => setWakeWordEnabled(!wakeWordEnabled)} className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${wakeWordEnabled && orbEnabled ? 'bg-brand' : 'bg-surface-3 border border-default'}`}>
+              <span className={`absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white transition-all ${wakeWordEnabled && orbEnabled ? 'left-[calc(100%-21px)]' : 'left-[3px]'}`} />
+            </button>
+          </label>
+
+          {!isWakeWordSupported() && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-semantic-amber/10 text-semantic-amber text-[11.5px]">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              <span>Este navegador não suporta reconhecimento de voz (SpeechRecognition). Use Chrome/Edge pra wake word.</span>
+            </div>
+          )}
         </div>
       </div>
 

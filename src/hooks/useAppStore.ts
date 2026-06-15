@@ -28,6 +28,19 @@ interface AppState {
   /** Sidebar recolhida (só ícones). Padrão recolhido no chat. */
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
+  /** Orbe flutuante Bukowiski — acompanha por todos os módulos. Persistido. */
+  orbEnabled: boolean;
+  setOrbEnabled: (v: boolean) => void;
+  /** Wake word "Bukowiski" liga o modo voz por voz. Persistido, off por padrão. */
+  wakeWordEnabled: boolean;
+  setWakeWordEnabled: (v: boolean) => void;
+  /** Sinal transitório: TalkPage deve iniciar o modo voz ao montar (orbe/wake word). */
+  voiceAutostart: boolean;
+  requestVoiceMode: () => void;
+  consumeVoiceAutostart: () => void;
+  /** Modo voz ativo no TalkPage — o orbe pausa seu recognizer pra não disputar o mic. */
+  voiceModeActive: boolean;
+  setVoiceModeActive: (v: boolean) => void;
   toasts: Array<{ id: string; message: string; type: 'green' | 'amber' | 'red' | 'blue' }>;
   /** Confirmação imperativa no padrão do sistema (substitui window.confirm). */
   confirmRequest: { title: string; message: string; confirmLabel?: string; danger?: boolean; resolve: (v: boolean) => void } | null;
@@ -108,6 +121,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentPage: 'dashboard',
   sidebarCollapsed: false,
   setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
+  orbEnabled: typeof localStorage !== 'undefined' && localStorage.getItem('orbEnabled') === '1',
+  setOrbEnabled: (v) => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('orbEnabled', v ? '1' : '0');
+    set({ orbEnabled: v });
+  },
+  wakeWordEnabled: typeof localStorage !== 'undefined' && localStorage.getItem('wakeWordEnabled') === '1',
+  setWakeWordEnabled: (v) => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('wakeWordEnabled', v ? '1' : '0');
+    set({ wakeWordEnabled: v });
+  },
+  voiceAutostart: false,
+  requestVoiceMode: () => set({ voiceAutostart: true }),
+  consumeVoiceAutostart: () => set({ voiceAutostart: false }),
+  voiceModeActive: false,
+  setVoiceModeActive: (v) => set({ voiceModeActive: v }),
   toasts: [],
   confirmRequest: null,
   promptRequest: null,

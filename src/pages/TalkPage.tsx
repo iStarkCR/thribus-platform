@@ -29,6 +29,9 @@ const BUKOWISKI_ID = 'bukowiski-thribus';
  */
 export function TalkPage() {
   const agents = useAppStore((s) => s.agents);
+  const voiceAutostart = useAppStore((s) => s.voiceAutostart);
+  const consumeVoiceAutostart = useAppStore((s) => s.consumeVoiceAutostart);
+  const setVoiceModeActive = useAppStore((s) => s.setVoiceModeActive);
   const { user } = useSession();
   const userId = user?.id ?? null;
   const navigate = useNavigate();
@@ -84,6 +87,18 @@ export function TalkPage() {
   const voiceCfgRef = useRef<VoiceConfig | null>(null);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
   useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
+
+  // Auto-start do modo voz quando vindo do orbe flutuante / wake word.
+  useEffect(() => {
+    if (voiceAutostart && agentId && voice.sttSupported && !voiceModeRef.current) {
+      consumeVoiceAutostart();
+      startVoiceMode();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceAutostart, agentId, voice.sttSupported]);
+
+  // Limpa o flag global de modo voz ao sair da página.
+  useEffect(() => () => setVoiceModeActive(false), [setVoiceModeActive]);
 
   useEffect(() => {
     if (!agentId) return;
@@ -172,8 +187,12 @@ export function TalkPage() {
   }, [messages, ttsOn]);
 
   function onVoiceResult(text: string) {
-    if (voiceModeRef.current) send(text);
-    else setInput((cur) => (cur ? `${cur} ${text}` : text));
+    if (voiceModeRef.current) {
+      // "Bukowiski" sozinho durante o modo voz = comando pra desligar.
+      const stripped = text.trim().toLowerCase().replace(/[.,!?]/g, '');
+      if (/^(ei |oi |olá )?buk?o?[wv]isk\w*$/.test(stripped)) { stopVoiceMode(); return; }
+      send(text);
+    } else setInput((cur) => (cur ? `${cur} ${text}` : text));
   }
   function startListenOnce() {
     if (voice.sttSupported) voice.startListening(onVoiceResult);
@@ -185,11 +204,13 @@ export function TalkPage() {
   function startVoiceMode() {
     setVoiceMode(true);
     voiceModeRef.current = true;
+    setVoiceModeActive(true);
     startListenOnce();
   }
   function stopVoiceMode() {
     setVoiceMode(false);
     voiceModeRef.current = false;
+    setVoiceModeActive(false);
     voice.stopListening();
     voice.cancelSpeak();
     audioRef.current?.pause();

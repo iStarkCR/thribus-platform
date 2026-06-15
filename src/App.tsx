@@ -45,6 +45,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { AccessPage } from '@/pages/AccessPage';
 import { TalkPage } from '@/pages/TalkPage';
+import { FloatingOrb } from '@/components/voice/FloatingOrb';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { ConfirmDialog, PromptDialog } from '@/components/shared/Dialogs';
@@ -99,6 +100,7 @@ function ProtectedShell() {
       <RoleGuard>
         <InnerRoutes />
       </RoleGuard>
+      <FloatingOrb />
     </AppLayout>
   );
 }
