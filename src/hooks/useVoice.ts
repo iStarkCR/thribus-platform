@@ -24,19 +24,31 @@ export function useVoice() {
   const startListening = useCallback(
     (onResult: (text: string) => void) => {
       if (!SR) return;
+      recogRef.current?.stop(); // nunca deixa dois reconhecimentos rodando juntos
       const recog = new SR();
       recog.lang = 'pt-BR';
       recog.interimResults = false;
       recog.continuous = false;
       recog.maxAlternatives = 1;
+      // Entrega o transcript UMA vez, no fim da fala (onend) — não a cada segmento.
+      // Sem isso o Chrome dispara onresult várias vezes numa fala contínua e cada
+      // disparo virava uma mensagem (flood "alô alô alô…").
+      let finalText = '';
+      let delivered = false;
       recog.onresult = (e: any) => {
-        const text = Array.from(e.results)
+        finalText = Array.from(e.results)
+          .filter((r: any) => r.isFinal)
           .map((r: any) => r[0].transcript)
-          .join(' ')
-          .trim();
-        if (text) onResult(text);
+          .join(' ');
       };
-      recog.onend = () => setListening(false);
+      recog.onend = () => {
+        setListening(false);
+        if (!delivered) {
+          delivered = true;
+          const t = finalText.trim();
+          if (t) onResult(t);
+        }
+      };
       recog.onerror = () => setListening(false);
       recogRef.current = recog;
       setListening(true);

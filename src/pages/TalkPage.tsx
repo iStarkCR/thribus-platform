@@ -84,6 +84,7 @@ export function TalkPage() {
   const [speakingProvider, setSpeakingProvider] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceModeRef = useRef(false);
+  const waitingRef = useRef(false); // já há mensagem do usuário aguardando resposta
   const voiceCfgRef = useRef<VoiceConfig | null>(null);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
   useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
@@ -188,9 +189,10 @@ export function TalkPage() {
 
   function onVoiceResult(text: string) {
     if (voiceModeRef.current) {
-      // "Bukowiski" sozinho durante o modo voz = comando pra desligar.
+      // "Bukowiski chega" (ou só "Bukowiski") durante o modo voz = desligar.
       const stripped = text.trim().toLowerCase().replace(/[.,!?]/g, '');
-      if (/^(ei |oi |olá )?buk?o?[wv]isk\w*$/.test(stripped)) { stopVoiceMode(); return; }
+      if (/^(ei |oi |olá )?buk?o?[wv]isk\w*( chega)?$/.test(stripped) || /\bbuk?o?[wv]isk\w*\s+chega\b/.test(stripped)) { stopVoiceMode(); return; }
+      if (waitingRef.current) return; // turn-based: espera a resposta
       send(text);
     } else setInput((cur) => (cur ? `${cur} ${text}` : text));
   }
@@ -222,6 +224,7 @@ export function TalkPage() {
     messages.length > 0 &&
     messages[messages.length - 1].role === 'user' &&
     ['pending', 'processing'].includes(messages[messages.length - 1].status);
+  waitingRef.current = waiting;
 
   // Agrupa sessões por pasta + hierarquia de pastas.
   const ungrouped = sessions.filter((s) => !s.folderId);

@@ -40,6 +40,7 @@ export function OrbChat({ orb, onClose, startVoiceSignal }: { orb: { x: number; 
   const cfgRef = useRef<VoiceConfig | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const waitingRef = useRef(false); // já há mensagem do usuário aguardando resposta
   useEffect(() => { voiceOnRef.current = voiceOn; }, [voiceOn]);
   useEffect(() => { sessionRef.current = sessionId; }, [sessionId]);
 
@@ -132,6 +133,7 @@ export function OrbChat({ orb, onClose, startVoiceSignal }: { orb: { x: number; 
   function onVoiceResult(text: string) {
     if (voiceOnRef.current) {
       if (isStopPhrase(text)) { stopVoice(); onClose(); return; }
+      if (waitingRef.current) return; // turn-based: espera a resposta antes de mandar de novo
       send(text);
     } else {
       setInput((cur) => (cur ? `${cur} ${text}` : text));
@@ -180,6 +182,7 @@ export function OrbChat({ orb, onClose, startVoiceSignal }: { orb: { x: number; 
   const listening = voice.listening;
   const speaking = voice.speaking || speakingProvider;
   const waiting = messages.length > 0 && messages[messages.length - 1].role === 'user' && ['pending', 'processing'].includes(messages[messages.length - 1].status);
+  waitingRef.current = waiting;
 
   return (
     <div className="fixed z-[61] flex flex-col rounded-2xl border border-default bg-surface-1/95 backdrop-blur-xl shadow-2xl overflow-hidden" style={style}>
