@@ -17,17 +17,24 @@ export function isWakeWordSupported(): boolean {
   return Boolean(SR);
 }
 
-// Variações de STT pra "Bukowiski" (português costuma errar nomes próprios).
+// Variações de STT pra "Bukowiski" (português erra muito nome próprio).
+// Bem permissivo: b + u/o + c/k + (vogal) + (w/v) + (i) + sk → cobre quase todo
+// jeito que o reconhecimento escreve o nome, em uma palavra ou separado.
 const WAKE_PATTERNS = [
-  /buko?w?isk/i, // bukowiski, bukowski, bukowisk
-  /buko?v?isk/i, // bukovisk, bukoviski
-  /bucov?isk/i, // bucovisk, bucoviski
-  /bukowsk/i, // bukowski
-  /buco?w?isk/i, // bucowisk
+  /b[uo][ck][oae]?[wv]?[ií]?sk/i, // bukowisk, bucovisk, bukvisk, bukosk, bucavisk…
+  /b[uo][ck][oae]?\s*[wv][ií]?sk/i, // "buco visk", "buca visky"
+  /\bbuk[oae]?w?ski?\b/i, // bukowski, bukoski
+  /\bbuc[oae]?v?isk/i, // bucovisk, bucavisk
+  /book.{0,4}sk/i, // mishear "book of ski"
 ];
 
+function normalize(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function matchesWake(text: string): boolean {
-  return WAKE_PATTERNS.some((re) => re.test(text));
+  const t = normalize(text);
+  return WAKE_PATTERNS.some((re) => re.test(t));
 }
 
 export function useWakeWordListener({

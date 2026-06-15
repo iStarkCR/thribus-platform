@@ -145,7 +145,7 @@ export function FloatingOrb() {
             animation: active ? 'orbBreath 1.7s ease-in-out infinite' : undefined,
           }}
         >
-          <NeuralSphere className="absolute inset-0" intensity={intensity} connectScale={0.38} />
+          <NeuralSphere className="absolute inset-0" intensity={intensity} connectScale={0.62} />
         </div>
         {/* Anel só em hover/ativo (no repouso fica esmaecida como a grande) */}
         <div className={`absolute inset-0 rounded-full transition-all pointer-events-none ${active ? 'ring-2 ring-brand/50' : hovered ? 'ring-1 ring-brand/30' : ''}`} />
