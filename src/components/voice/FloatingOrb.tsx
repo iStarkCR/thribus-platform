@@ -135,14 +135,15 @@ export function FloatingOrb() {
             opacity: active ? 1 : hovered ? 0.85 : 0.5,
           }}
         />
-        {/* Esfera — círculo perfeito, fundo transparente, poucas linhas */}
-        <div className="absolute inset-0 rounded-full overflow-hidden">
-          <div className="absolute -inset-[12%]">
-            <NeuralSphere className="absolute inset-0" intensity={intensity} speedMultiplier={1} interactionMultiplier={1} parallaxMultiplier={0} ambient={false} connectScale={0.5} />
-          </div>
+        {/* Esfera — idêntica à grande: mesmas linhas/params, borda esmaecida */}
+        <div
+          className="absolute inset-0 rounded-full overflow-hidden"
+          style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
+        >
+          <NeuralSphere className="absolute inset-0" intensity={intensity} />
         </div>
-        {/* Borda sutil "saindo" da esfera */}
-        <div className={`absolute inset-0 rounded-full ring-1 transition-colors ${active ? 'ring-brand/60' : hovered ? 'ring-brand/40' : 'ring-brand/20'} pointer-events-none`} />
+        {/* Anel só em hover/ativo (no repouso fica esmaecida como a grande) */}
+        <div className={`absolute inset-0 rounded-full transition-all pointer-events-none ${active ? 'ring-2 ring-brand/50' : hovered ? 'ring-1 ring-brand/30' : ''}`} />
         {active && (
           <div className="absolute inset-0 rounded-full ring-2 ring-brand/40 animate-ping pointer-events-none" />
         )}
