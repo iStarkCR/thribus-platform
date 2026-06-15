@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { isWakeWordSupported } from '@/hooks/useWakeWordListener';
+import { VoiceAssistantConfig } from '@/components/settings/VoiceAssistantConfig';
 import { WorkspaceEditModal } from '@/components/settings/WorkspaceEditModal';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
@@ -190,6 +191,8 @@ export function SettingsPage() {
               <span>Este navegador não suporta reconhecimento de voz (SpeechRecognition). Use Chrome/Edge pra wake word.</span>
             </div>
           )}
+
+          <VoiceAssistantConfig />
         </div>
       </div>
 

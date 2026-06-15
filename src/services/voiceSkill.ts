@@ -18,7 +18,7 @@ export interface VoiceConfig {
 
 export const DEFAULT_VOICE_CONFIG: VoiceConfig = {
   enabled: false,
-  provider: 'browser',
+  provider: 'elevenlabs',
   voiceId: null,
   model: null,
   apiKey: null,
