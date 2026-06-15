@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Send, Bot, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
-  Users, Check, Settings2,
+  Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
+  Users, Check, Settings2, Mic, Volume2, VolumeX,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
+import { useVoice } from '@/hooks/useVoice';
+import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, type ChatMessage } from '@/services/collaboratorChat';
 import {
   listFolders, createFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession,
@@ -57,6 +59,17 @@ export function TalkPage() {
     [agents],
   );
 
+  // Voz (STT/TTS no navegador) + saudação tipo CORTEX.
+  const voice = useVoice();
+  const [ttsOn, setTtsOn] = useState(false);
+  const rawName = ((user?.user_metadata?.name as string | undefined) ?? user?.email?.split('@')[0] ?? 'Charles').split(' ')[0];
+  const firstName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+  }, []);
+  const spokenRef = useRef<string | null>(null);
+
   // Carrega pastas + sessões do agente.
   const loadTree = useCallback(async () => {
     if (!agentId || !userId) return;
@@ -100,6 +113,24 @@ export function TalkPage() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
+
+  // TTS: fala a última resposta do assistente (quando ligado).
+  useEffect(() => {
+    if (!ttsOn || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last.role === 'assistant' && last.status === 'done' && last.id !== spokenRef.current) {
+      spokenRef.current = last.id;
+      voice.speak(last.content);
+    }
+  }, [messages, ttsOn, voice]);
+
+  function micToggle() {
+    if (voice.listening) {
+      voice.stopListening();
+    } else {
+      voice.startListening((text) => setInput((cur) => (cur ? `${cur} ${text}` : text)));
+    }
+  }
 
   const active = sessions.find((s) => s.id === activeId) ?? null;
   const waiting =
@@ -348,39 +379,45 @@ export function TalkPage() {
           </div>
         </div>
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          {!active && messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-creme-faint text-[14px] gap-3">
-              <Bot size={34} className="opacity-40" />
-              <span>Comece uma sessão com <b className="text-creme-mute">{agent.name}</b>.</span>
-              <button onClick={() => newSession(null)} className="mt-1 flex items-center gap-2 px-4 py-2 rounded-xl bg-brand text-white text-[13.5px] font-semibold hover:bg-brand-bright transition-colors">
-                <Plus size={15} /> Nova sessão
-              </button>
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-creme-faint text-[14px] gap-3">
-              <MessageSquare size={32} className="opacity-40" />
-              <span>Mande a primeira mensagem.</span>
+        <div className="flex-1 relative overflow-hidden">
+          {messages.length === 0 ? (
+            /* Boas-vindas estilo CORTEX — esfera animada + saudação */
+            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden">
+              <NeuralSphere className="absolute inset-0 opacity-90" />
+              <div className="relative z-10 text-center px-6">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-bright/70 mb-2">{greeting}</div>
+                <div className="text-[clamp(38px,6vw,60px)] font-bold tracking-tight text-creme leading-none mb-5">{firstName}</div>
+                <div className="text-[13.5px] text-creme-mute">
+                  {active ? `Mande a primeira mensagem para ${agent.name}.` : `Comece uma sessão com ${agent.name}.`}
+                </div>
+                {!active && (
+                  <button onClick={() => newSession(null)} className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand text-white text-[13.5px] font-semibold hover:bg-brand-bright transition-colors">
+                    <Plus size={15} /> Nova sessão
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
-            messages.map((m) => (
-              <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-[14.5px] leading-relaxed whitespace-pre-wrap ${
-                    m.role === 'user' ? 'bg-brand text-white rounded-br-md' : 'bg-surface-2 text-creme border border-default rounded-bl-md'
-                  }`}
-                >
-                  {m.content}
-                  {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
+            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 py-5 space-y-4">
+              {messages.map((m) => (
+                <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-[14.5px] leading-relaxed whitespace-pre-wrap ${
+                      m.role === 'user' ? 'bg-brand text-white rounded-br-md' : 'bg-surface-2 text-creme border border-default rounded-bl-md'
+                    }`}
+                  >
+                    {m.content}
+                    {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
+                  </div>
                 </div>
-              </div>
-            ))
-          )}
-          {waiting && (
-            <div className="flex justify-start">
-              <div className="px-4 py-2.5 rounded-2xl rounded-bl-md bg-surface-2 border border-default text-creme-mute text-[14px] flex items-center gap-2">
-                <Loader2 size={14} className="animate-spin" /> {agent.name} está pensando…
-              </div>
+              ))}
+              {waiting && (
+                <div className="flex justify-start">
+                  <div className="px-4 py-2.5 rounded-2xl rounded-bl-md bg-surface-2 border border-default text-creme-mute text-[14px] flex items-center gap-2">
+                    <Loader2 size={14} className="animate-spin" /> {agent.name} está pensando…
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -397,9 +434,27 @@ export function TalkPage() {
                 }
               }}
               rows={1}
-              placeholder={`Mensagem para ${agent.name}…`}
+              placeholder={voice.listening ? 'Ouvindo… fale agora' : `Mensagem para ${agent.name}…`}
               className="flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[14.5px] text-creme placeholder-creme-faint focus:outline-none max-h-40"
             />
+            {voice.ttsSupported && (
+              <button
+                onClick={() => { const next = !ttsOn; setTtsOn(next); if (!next) voice.cancelSpeak(); }}
+                title={ttsOn ? 'Voz do colaborador: ligada' : 'Voz do colaborador: desligada'}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${ttsOn ? 'bg-brand/15 text-brand-bright' : 'text-creme-faint hover:text-creme hover:bg-surface-hover'}`}
+              >
+                {ttsOn ? <Volume2 size={17} /> : <VolumeX size={17} />}
+              </button>
+            )}
+            {voice.sttSupported && (
+              <button
+                onClick={micToggle}
+                title={voice.listening ? 'Parar' : 'Falar (transcrever)'}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${voice.listening ? 'bg-semantic-red/15 text-semantic-red animate-pulse' : 'text-creme-faint hover:text-creme hover:bg-surface-hover'}`}
+              >
+                <Mic size={17} />
+              </button>
+            )}
             <button
               onClick={handleSend}
               disabled={sending || !input.trim()}

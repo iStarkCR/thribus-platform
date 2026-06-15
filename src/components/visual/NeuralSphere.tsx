@@ -1,0 +1,306 @@
+import { useEffect, useRef } from 'react';
+import * as THREE from 'three';
+
+// Esfera neural animada (portada do CORTEX). Pontos + linhas, auto-rotação,
+// reage ao mouse, respiração orgânica. Lê o verde da marca (--brand-bright).
+
+const OUTER_COUNT = 110;
+const OUTER_RADIUS = 2.4;
+const OUTER_RADIAL_VARIATION = 0.05;
+const OUTER_ANGULAR_JITTER = 0.018;
+const OUTER_POINT_SIZE = 0.085;
+const OUTER_POINT_OPACITY = 1.0;
+const OUTER_LINE_OPACITY = 0.36;
+const OUTER_CONNECT_DISTANCE = 1.55;
+
+const INNER_COUNT = 40;
+const INNER_RADIUS = 0.95;
+const INNER_RADIAL_VARIATION = 0.035;
+const INNER_POINT_SIZE = 0.06;
+const INNER_POINT_OPACITY = 0.92;
+const INNER_LINE_OPACITY = 0.24;
+const INNER_CONNECT_DISTANCE = 0.95;
+
+const AUTO_ROTATE_SPEED_OUTER = 0.0006;
+const AUTO_ROTATE_SPEED_INNER = -0.00112;
+const MOUSE_INFLUENCE = 1.4;
+const REPULSION_STRENGTH = 0.14;
+const DAMPING = 0.8;
+const SPRING_FORCE = 0.1;
+const PARALLAX_LERP = 0.045;
+const MAX_LINE_PAIRS = 6000;
+
+function readPrimaryColor(): THREE.Color {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--brand-bright').trim();
+  const m = v.match(/(\d+)\s+(\d+)\s+(\d+)/);
+  if (m) return new THREE.Color().setRGB(+m[1] / 255, +m[2] / 255, +m[3] / 255);
+  return new THREE.Color('#8cc47a');
+}
+
+interface Shell {
+  positions: THREE.Vector3[];
+  originals: THREE.Vector3[];
+  velocities: THREE.Vector3[];
+}
+
+function buildShell({ count, radius, radialVar, angularJitter = 0 }: { count: number; radius: number; radialVar: number; angularJitter?: number }): Shell {
+  const positions: THREE.Vector3[] = [];
+  const originals: THREE.Vector3[] = [];
+  const velocities: THREE.Vector3[] = [];
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < count; i++) {
+    const yJitter = (Math.random() - 0.5) * angularJitter;
+    const tJitter = (Math.random() - 0.5) * angularJitter;
+    const y = 1 - (i / Math.max(1, count - 1)) * 2 + yJitter;
+    const ringR = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = goldenAngle * i + tJitter;
+    const r = radius + (Math.random() - 0.5) * 2 * radialVar;
+    const px = Math.cos(theta) * ringR * r;
+    const py = y * r;
+    const pz = Math.sin(theta) * ringR * r;
+    positions.push(new THREE.Vector3(px, py, pz));
+    originals.push(new THREE.Vector3(px, py, pz));
+    velocities.push(new THREE.Vector3());
+  }
+  return { positions, originals, velocities };
+}
+
+function makePointsAndLines(shell: Shell, opts: { count: number; pointSize: number; pointOpacity: number; lineOpacity: number }, color: THREE.Color) {
+  const { count, pointSize, pointOpacity, lineOpacity } = opts;
+
+  const pointsGeometry = new THREE.BufferGeometry();
+  const pointsArray = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    pointsArray[i * 3] = shell.positions[i].x;
+    pointsArray[i * 3 + 1] = shell.positions[i].y;
+    pointsArray[i * 3 + 2] = shell.positions[i].z;
+  }
+  pointsGeometry.setAttribute('position', new THREE.BufferAttribute(pointsArray, 3));
+
+  const pointsMaterial = new THREE.PointsMaterial({ color, size: pointSize, transparent: true, opacity: pointOpacity, sizeAttenuation: true, depthWrite: false });
+  const points = new THREE.Points(pointsGeometry, pointsMaterial);
+
+  const linesGeometry = new THREE.BufferGeometry();
+  const linePosArray = new Float32Array(MAX_LINE_PAIRS * 6);
+  linesGeometry.setAttribute('position', new THREE.BufferAttribute(linePosArray, 3));
+  const lineMaterial = new THREE.LineBasicMaterial({ color, transparent: true, opacity: lineOpacity, depthWrite: false });
+  const lines = new THREE.LineSegments(linesGeometry, lineMaterial);
+
+  return { points, lines, pointsGeometry, pointsMaterial, linesGeometry, lineMaterial, linePosArray };
+}
+
+interface NeuralSphereProps {
+  className?: string;
+  speedMultiplier?: number;
+  interactionMultiplier?: number;
+  parallaxMultiplier?: number;
+  ambient?: boolean;
+}
+
+export function NeuralSphere({
+  className = 'absolute inset-0',
+  speedMultiplier = 1,
+  interactionMultiplier = 1,
+  parallaxMultiplier = 1,
+  ambient = true,
+}: NeuralSphereProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = canvas?.parentElement;
+    if (!canvas || !container) return;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    camera.position.z = 6;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const parallaxGroup = new THREE.Group();
+    const outerGroup = new THREE.Group();
+    const innerGroup = new THREE.Group();
+    parallaxGroup.add(outerGroup, innerGroup);
+    scene.add(parallaxGroup);
+
+    const baseColor = readPrimaryColor();
+
+    const outerShell = buildShell({ count: OUTER_COUNT, radius: OUTER_RADIUS, radialVar: OUTER_RADIAL_VARIATION, angularJitter: OUTER_ANGULAR_JITTER });
+    const outer = makePointsAndLines(outerShell, { count: OUTER_COUNT, pointSize: OUTER_POINT_SIZE, pointOpacity: OUTER_POINT_OPACITY, lineOpacity: OUTER_LINE_OPACITY }, baseColor);
+    outerGroup.add(outer.points, outer.lines);
+
+    const innerShell = buildShell({ count: INNER_COUNT, radius: INNER_RADIUS, radialVar: INNER_RADIAL_VARIATION, angularJitter: 0.05 });
+    const innerColor = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.18);
+    const inner = makePointsAndLines(innerShell, { count: INNER_COUNT, pointSize: INNER_POINT_SIZE, pointOpacity: INNER_POINT_OPACITY, lineOpacity: INNER_LINE_OPACITY }, innerColor);
+    innerGroup.add(inner.points, inner.lines);
+
+    const mouse = { x: 0, y: 0, active: false };
+    const targetRot = { x: 0, y: 0 };
+
+    const onMouseMove = (e: MouseEvent) => {
+      const rect = container.getBoundingClientRect();
+      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const ny = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      mouse.x = nx * 4;
+      mouse.y = ny * 2.5;
+      mouse.active = true;
+      targetRot.y = nx * 0.1 * parallaxMultiplier;
+      targetRot.x = -ny * 0.07 * parallaxMultiplier;
+    };
+    const onMouseLeave = () => {
+      mouse.active = false;
+      targetRot.x = 0;
+      targetRot.y = 0;
+    };
+    container.addEventListener('mousemove', onMouseMove);
+    container.addEventListener('mouseleave', onMouseLeave);
+
+    const resize = () => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w === 0 || h === 0) return;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(container);
+
+    const tempVec = new THREE.Vector3();
+    const mouseVec = new THREE.Vector3();
+    let raf = 0;
+    const startTime = performance.now();
+
+    const updateShell = (shell: Shell, geometry: THREE.BufferGeometry, count: number, connectDist: number, linePosArray: Float32Array, geomLines: THREE.BufferGeometry) => {
+      const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+      mouseVec.set(mouse.x, mouse.y, 0);
+      const arr = posAttr.array as Float32Array;
+
+      for (let i = 0; i < count; i++) {
+        const pos = shell.positions[i];
+        const orig = shell.originals[i];
+        const vel = shell.velocities[i];
+
+        tempVec.subVectors(orig, pos).multiplyScalar(SPRING_FORCE);
+        vel.add(tempVec);
+
+        if (mouse.active) {
+          tempVec.subVectors(pos, mouseVec);
+          const dist = tempVec.length();
+          const effInfluence = MOUSE_INFLUENCE * interactionMultiplier;
+          if (dist < effInfluence && dist > 0.001) {
+            const force = (effInfluence - dist) / effInfluence;
+            const power = force * force * REPULSION_STRENGTH * interactionMultiplier;
+            tempVec.normalize().multiplyScalar(power);
+            vel.add(tempVec);
+          }
+        }
+
+        vel.multiplyScalar(DAMPING);
+        pos.add(vel);
+
+        arr[i * 3] = pos.x;
+        arr[i * 3 + 1] = pos.y;
+        arr[i * 3 + 2] = pos.z;
+      }
+      posAttr.needsUpdate = true;
+
+      let writeIdx = 0;
+      const limit = MAX_LINE_PAIRS * 6;
+      const distSq = connectDist * connectDist;
+      for (let i = 0; i < count && writeIdx < limit; i++) {
+        for (let j = i + 1; j < count && writeIdx < limit; j++) {
+          const a = shell.positions[i];
+          const b = shell.positions[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const dz = a.z - b.z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < distSq) {
+            linePosArray[writeIdx++] = a.x;
+            linePosArray[writeIdx++] = a.y;
+            linePosArray[writeIdx++] = a.z;
+            linePosArray[writeIdx++] = b.x;
+            linePosArray[writeIdx++] = b.y;
+            linePosArray[writeIdx++] = b.z;
+          }
+        }
+      }
+      (geomLines.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+      geomLines.setDrawRange(0, writeIdx / 3);
+    };
+
+    const animate = () => {
+      let ambientPulse = 0;
+      if (ambient) {
+        const tA = performance.now() * 0.001;
+        const period = 1.5;
+        const phase = (tA % period) / period;
+        const lub = Math.exp(-Math.pow((phase - 0.1) / 0.045, 2));
+        const dub = Math.exp(-Math.pow((phase - 0.26) / 0.055, 2)) * 0.7;
+        const drift = Math.sin(tA * 0.43) * 0.08;
+        ambientPulse = 0.18 + (lub + dub) * 0.7 + drift;
+      }
+      const I = Math.max(0, Math.min(1, ambientPulse));
+
+      const dynOuterConnect = OUTER_CONNECT_DISTANCE * (1 + I * 0.18);
+      const dynInnerConnect = INNER_CONNECT_DISTANCE * (1 + I * 0.22);
+
+      updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry);
+      updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry);
+
+      const t = (performance.now() - startTime) * 0.00085;
+      const breath = 1 + Math.sin(t * 0.85) * 0.022 + I * 0.05;
+      parallaxGroup.scale.setScalar(breath);
+
+      const innerPulse = 0.86 + Math.sin(t * 1.3) * 0.08 + I * 0.22;
+      inner.pointsMaterial.opacity = Math.min(1, INNER_POINT_OPACITY * innerPulse);
+      inner.lineMaterial.opacity = Math.min(1, INNER_LINE_OPACITY * (innerPulse + I * 0.5));
+      outer.lineMaterial.opacity = Math.min(1, OUTER_LINE_OPACITY * (1 + I * 1.2));
+
+      const speedBoost = 1 + I * 1.6;
+      const wobbleAmp = I * 0.1;
+      const swingAmp = 0.025;
+      const wobbleX = Math.sin(t * 1.7) * wobbleAmp + Math.sin(t * 0.6) * swingAmp;
+      const wobbleY = Math.sin(t * 1.1) * wobbleAmp * 0.6;
+      const wobbleZ = Math.cos(t * 2.3) * wobbleAmp * 0.7 + Math.sin(t * 0.9) * swingAmp * 0.4;
+
+      parallaxGroup.rotation.x += (targetRot.x + wobbleX - parallaxGroup.rotation.x) * PARALLAX_LERP;
+      parallaxGroup.rotation.y += (targetRot.y + wobbleY - parallaxGroup.rotation.y) * PARALLAX_LERP;
+      parallaxGroup.rotation.z += (wobbleZ - parallaxGroup.rotation.z) * 0.18;
+
+      outerGroup.rotation.y += AUTO_ROTATE_SPEED_OUTER * speedMultiplier * speedBoost;
+      innerGroup.rotation.y += AUTO_ROTATE_SPEED_INNER * speedMultiplier * speedBoost;
+      innerGroup.rotation.x += AUTO_ROTATE_SPEED_INNER * 0.4 * speedMultiplier * speedBoost;
+
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(animate);
+    };
+    animate();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      container.removeEventListener('mousemove', onMouseMove);
+      container.removeEventListener('mouseleave', onMouseLeave);
+      ro.disconnect();
+      outer.pointsGeometry.dispose();
+      outer.pointsMaterial.dispose();
+      outer.linesGeometry.dispose();
+      outer.lineMaterial.dispose();
+      inner.pointsGeometry.dispose();
+      inner.pointsMaterial.dispose();
+      inner.linesGeometry.dispose();
+      inner.lineMaterial.dispose();
+      renderer.dispose();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className={className}>
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+    </div>
+  );
+}
