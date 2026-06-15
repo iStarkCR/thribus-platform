@@ -6,7 +6,7 @@ import * as THREE from 'three';
 
 const OUTER_COUNT = 110;
 const OUTER_RADIUS = 2.4;
-const OUTER_RADIAL_VARIATION = 0.05;
+const OUTER_RADIAL_VARIATION = 0; // raio externo fixo → silhueta sempre círculo perfeito
 const OUTER_ANGULAR_JITTER = 0.018;
 const OUTER_POINT_SIZE = 0.1;
 const OUTER_POINT_OPACITY = 1.0;
@@ -30,8 +30,10 @@ const SPRING_FORCE = 0.1;
 const PARALLAX_LERP = 0.045;
 const MAX_LINE_PAIRS = 6000;
 
-// Onda viajante na superfície (deslocamento radial fluido) + drift de cor.
-const WAVE_AMP = 0.085; // bem leve — efeito sutil contido na esfera
+// Onda. Na casca externa é TANGENCIAL (flui pela superfície, raio travado → borda
+// nunca deforma). No miolo interno é radial (não afeta a silhueta).
+const WAVE_AMP = 0.085; // radial — só miolo interno
+const WAVE_AMP_TAN = 0.16; // tangencial — superfície externa flui sem mexer na borda
 const WAVE_FREQ = 1.25;
 const WAVE_SPEED = 1.5;
 const HUE_DRIFT = 0.05; // amplitude do desvio de matiz (verde ↔ teal/azulado)
@@ -182,6 +184,8 @@ export function NeuralSphere({
     const tempVec = new THREE.Vector3();
     const mouseVec = new THREE.Vector3();
     const waveTarget = new THREE.Vector3();
+    const tangent = new THREE.Vector3();
+    const UP = new THREE.Vector3(0, 1, 0);
     // matiz base (pra fazer o drift de cor)
     const baseHSL = { h: 0, s: 0, l: 0 };
     baseColor.getHSL(baseHSL);
@@ -189,7 +193,7 @@ export function NeuralSphere({
     let smoothI = 0;
     const startTime = performance.now();
 
-    const updateShell = (shell: Shell, geometry: THREE.BufferGeometry, count: number, connectDist: number, linePosArray: Float32Array, geomLines: THREE.BufferGeometry, now: number, waveBoost: number) => {
+    const updateShell = (shell: Shell, geometry: THREE.BufferGeometry, count: number, connectDist: number, linePosArray: Float32Array, geomLines: THREE.BufferGeometry, now: number, waveBoost: number, lockRadius: number | null) => {
       const posAttr = geometry.attributes.position as THREE.BufferAttribute;
       mouseVec.set(mouse.x, mouse.y, 0);
       const arr = posAttr.array as Float32Array;
@@ -199,11 +203,20 @@ export function NeuralSphere({
         const orig = shell.originals[i];
         const vel = shell.velocities[i];
 
-        // Onda viajante: alvo da mola = posição original deslocada radialmente
-        // por uma senoide que percorre a esfera (sensação de "respiração líquida").
-        const phase = (orig.x + orig.y * 0.7 + orig.z) * WAVE_FREQ - now * WAVE_SPEED;
-        const radial = 1 + (Math.sin(phase) * WAVE_AMP * waveBoost) / (orig.length() || 1);
-        waveTarget.copy(orig).multiplyScalar(radial);
+        if (lockRadius != null) {
+          // Onda TANGENCIAL: o ponto flui pela superfície da esfera. Combinada com
+          // a trava de raio abaixo, a borda permanece um círculo perfeito.
+          const phase = (orig.y * 1.4 + orig.x * 0.5) * WAVE_FREQ - now * WAVE_SPEED;
+          tangent.crossVectors(orig, UP);
+          if (tangent.lengthSq() < 1e-4) tangent.set(1, 0, 0);
+          tangent.normalize();
+          waveTarget.copy(orig).addScaledVector(tangent, Math.sin(phase) * WAVE_AMP_TAN * waveBoost);
+        } else {
+          // Onda radial — só no miolo interno (não afeta a silhueta).
+          const phase = (orig.x + orig.y * 0.7 + orig.z) * WAVE_FREQ - now * WAVE_SPEED;
+          const radial = 1 + (Math.sin(phase) * WAVE_AMP * waveBoost) / (orig.length() || 1);
+          waveTarget.copy(orig).multiplyScalar(radial);
+        }
 
         tempVec.subVectors(waveTarget, pos).multiplyScalar(SPRING_FORCE);
         vel.add(tempVec);
@@ -222,6 +235,10 @@ export function NeuralSphere({
 
         vel.multiplyScalar(DAMPING);
         pos.add(vel);
+
+        // Trava o raio → casca externa fica sempre no círculo perfeito (onda e
+        // mouse só deslizam os pontos pela superfície, nunca pra fora).
+        if (lockRadius != null) pos.setLength(lockRadius);
 
         arr[i * 3] = pos.x;
         arr[i * 3 + 1] = pos.y;
@@ -266,8 +283,8 @@ export function NeuralSphere({
       const dynOuterConnect = OUTER_CONNECT_DISTANCE * (1 + I * 0.2);
       const dynInnerConnect = INNER_CONNECT_DISTANCE * (1 + I * 0.24);
 
-      updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now, waveBoost);
-      updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now, waveBoost);
+      updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now, waveBoost, OUTER_RADIUS);
+      updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now, waveBoost, null);
 
       // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;

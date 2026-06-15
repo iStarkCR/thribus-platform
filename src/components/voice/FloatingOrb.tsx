@@ -4,7 +4,7 @@ import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useWakeWordListener } from '@/hooks/useWakeWordListener';
 
-const ORB_SIZE = 72;
+const ORB_SIZE = 88;
 const MARGIN = 18;
 const BUKOWISKI_ID = 'bukowiski-thribus';
 const POS_KEY = 'orbPos';
@@ -47,6 +47,7 @@ export function FloatingOrb() {
 
   const [pos, setPos] = useState<Pos>(loadPos);
   const [dragging, setDragging] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const [wakeFlash, setWakeFlash] = useState(false);
   const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number } | null>(null);
 
@@ -102,7 +103,7 @@ export function FloatingOrb() {
 
   if (!orbEnabled) return null;
 
-  const intensity = voiceModeActive ? 0.85 : wakeFlash ? 0.55 : 0.12;
+  const intensity = voiceModeActive ? 0.9 : hovered ? 0.7 : wakeFlash ? 0.6 : 0.32;
   const listening = wakeWordEnabled && !voiceModeActive;
 
   return (
@@ -112,32 +113,34 @@ export function FloatingOrb() {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      className="fixed z-[60] rounded-full select-none touch-none group"
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      className="fixed z-[60] rounded-full select-none touch-none group transition-transform duration-200"
       style={{
         left: pos.x,
         top: pos.y,
         width: ORB_SIZE,
         height: ORB_SIZE,
         cursor: dragging ? 'grabbing' : 'grab',
+        transform: hovered && !dragging ? 'scale(1.1)' : 'scale(1)',
       }}
     >
-      {/* Halo externo bem leve */}
+      {/* Halo externo — cresce/acende no hover */}
       <div
-        className="absolute -inset-2 rounded-full transition-opacity duration-500 pointer-events-none"
+        className="absolute -inset-3 rounded-full transition-opacity duration-300 pointer-events-none"
         style={{
-          background: 'radial-gradient(circle, rgba(var(--brand-bright)/0.22) 0%, transparent 70%)',
-          opacity: voiceModeActive ? 0.9 : 0.4,
+          background: 'radial-gradient(circle, rgba(var(--brand-bright)/0.35) 0%, transparent 68%)',
+          opacity: voiceModeActive ? 1 : hovered ? 0.85 : 0.5,
         }}
       />
-      {/* Esfera circular contida */}
-      <div
-        className="absolute inset-0 rounded-full overflow-hidden border border-brand/30 shadow-lg bg-surface-1/80 backdrop-blur-sm"
-        style={{ maskImage: 'radial-gradient(circle, #000 62%, transparent 88%)', WebkitMaskImage: 'radial-gradient(circle, #000 62%, transparent 88%)' }}
-      >
-        <NeuralSphere className="absolute inset-0" intensity={intensity} speedMultiplier={1.3} interactionMultiplier={0} ambient={false} />
+      {/* Esfera — círculo perfeito nítido, preenchido borda a borda */}
+      <div className="absolute inset-0 rounded-full overflow-hidden border border-brand/40 shadow-xl bg-[#0a0f0b]">
+        <div className="absolute -inset-[12%]">
+          <NeuralSphere className="absolute inset-0" intensity={intensity} speedMultiplier={1.4} interactionMultiplier={1} parallaxMultiplier={0} ambient={false} />
+        </div>
       </div>
       {/* Borda sutil "saindo" da esfera */}
-      <div className={`absolute inset-0 rounded-full ring-1 transition-colors ${voiceModeActive ? 'ring-brand/60' : 'ring-brand/15'} pointer-events-none`} />
+      <div className={`absolute inset-0 rounded-full ring-1 transition-colors ${voiceModeActive ? 'ring-brand/60' : hovered ? 'ring-brand/40' : 'ring-brand/20'} pointer-events-none`} />
       {voiceModeActive && (
         <div className="absolute inset-0 rounded-full ring-2 ring-brand/40 animate-ping pointer-events-none" />
       )}
