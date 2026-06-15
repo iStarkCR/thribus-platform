@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { FileText, Plus, Loader2, AlertCircle, Send, Check, X, Trash } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { cortexEnterprise, type Proposal } from '@/services/cortexEnterprise';
+import { useAppStore } from '@/hooks/useAppStore';
 
 const LS_KEY = 'cortex.playground.apiKey';
 
@@ -61,7 +62,7 @@ export function EnterpriseProposals() {
       await cortexEnterprise.updateProposalStatus(apiKey, p.id, action);
       await refresh();
     } catch (err) {
-      alert((err as Error).message);
+      useAppStore.getState().addToast((err as Error).message, 'red');
     }
   }
 
@@ -174,12 +175,13 @@ export function EnterpriseProposals() {
                       {p.status === 'draft' && (
                         <button
                           onClick={async () => {
-                            if (!confirm(`Apagar proposta "${p.title}"?`)) return;
+                            const ok = await useAppStore.getState().askConfirm({ title: 'Apagar proposta', message: `Apagar a proposta "${p.title}"?`, confirmLabel: 'Apagar' });
+                            if (!ok) return;
                             try {
                               await cortexEnterprise.deleteProposal(apiKey, p.id);
                               await refresh();
                             } catch (err) {
-                              alert((err as Error).message);
+                              useAppStore.getState().addToast((err as Error).message, 'red');
                             }
                           }}
                           className="text-[11.5px] font-bold text-red-300 hover:text-red-200 p-1"

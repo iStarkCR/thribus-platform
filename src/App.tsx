@@ -47,6 +47,7 @@ import { AccessPage } from '@/pages/AccessPage';
 import { TalkPage } from '@/pages/TalkPage';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
+import { ConfirmDialog, PromptDialog } from '@/components/shared/Dialogs';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
 import { useAccess } from '@/hooks/useRole';
@@ -69,6 +70,8 @@ export function App() {
       </Routes>
       <ToastContainer />
       <CommandPalette />
+      <GlobalConfirm />
+      <GlobalPrompt />
     </HashRouter>
   );
 }
@@ -97,6 +100,41 @@ function ProtectedShell() {
         <InnerRoutes />
       </RoleGuard>
     </AppLayout>
+  );
+}
+
+// Confirmação global no padrão do sistema (substitui window.confirm).
+function GlobalConfirm() {
+  const req = useAppStore((s) => s.confirmRequest);
+  const resolveConfirm = useAppStore((s) => s.resolveConfirm);
+  if (!req) return null;
+  return (
+    <ConfirmDialog
+      title={req.title}
+      message={req.message}
+      confirmLabel={req.confirmLabel ?? 'Confirmar'}
+      danger={req.danger ?? true}
+      onConfirm={() => resolveConfirm(true)}
+      onClose={() => resolveConfirm(false)}
+    />
+  );
+}
+
+// Prompt global no padrão do sistema (substitui window.prompt).
+function GlobalPrompt() {
+  const req = useAppStore((s) => s.promptRequest);
+  const resolvePrompt = useAppStore((s) => s.resolvePrompt);
+  if (!req) return null;
+  return (
+    <PromptDialog
+      title={req.title}
+      label={req.label}
+      placeholder={req.placeholder}
+      initial={req.initial}
+      confirmLabel={req.confirmLabel}
+      onConfirm={(v) => resolvePrompt(v)}
+      onClose={() => resolvePrompt(null)}
+    />
   );
 }
 

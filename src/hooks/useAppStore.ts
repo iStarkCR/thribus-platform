@@ -26,6 +26,10 @@ interface AppState {
   loading: boolean;
   currentPage: string;
   toasts: Array<{ id: string; message: string; type: 'green' | 'amber' | 'red' | 'blue' }>;
+  /** Confirmação imperativa no padrão do sistema (substitui window.confirm). */
+  confirmRequest: { title: string; message: string; confirmLabel?: string; danger?: boolean; resolve: (v: boolean) => void } | null;
+  /** Prompt imperativo no padrão do sistema (substitui window.prompt). */
+  promptRequest: { title: string; label?: string; placeholder?: string; initial?: string; confirmLabel?: string; resolve: (v: string | null) => void } | null;
 
   // Actions
   initialize: () => Promise<void>;
@@ -76,6 +80,13 @@ interface AppState {
   // Toast
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
   removeToast: (id: string) => void;
+
+  // Confirmação (modal do sistema)
+  askConfirm: (opts: { title: string; message: string; confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
+  resolveConfirm: (v: boolean) => void;
+  // Prompt (modal do sistema)
+  askPrompt: (opts: { title: string; label?: string; placeholder?: string; initial?: string; confirmLabel?: string }) => Promise<string | null>;
+  resolvePrompt: (v: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -93,6 +104,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   loading: true,
   currentPage: 'dashboard',
   toasts: [],
+  confirmRequest: null,
+  promptRequest: null,
 
   initialize: async () => {
     set({ loading: true });
@@ -398,5 +411,21 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   removeToast: (id) => {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
+
+  askConfirm: (opts) =>
+    new Promise<boolean>((resolve) => set({ confirmRequest: { ...opts, resolve } })),
+
+  resolveConfirm: (v) => {
+    get().confirmRequest?.resolve(v);
+    set({ confirmRequest: null });
+  },
+
+  askPrompt: (opts) =>
+    new Promise<string | null>((resolve) => set({ promptRequest: { ...opts, resolve } })),
+
+  resolvePrompt: (v) => {
+    get().promptRequest?.resolve(v);
+    set({ promptRequest: null });
   },
 }));

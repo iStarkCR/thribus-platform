@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ArrowRight, Command } from 'lucide-react';
+import { Search, ArrowRight } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface CmdItem {
@@ -102,15 +102,8 @@ export function CommandPalette() {
     if (e.key === 'Enter' && filtered[cursor]) { go(filtered[cursor].href); }
   };
 
-  if (!open) return (
-    <button
-      onClick={() => setOpen(true)}
-      className="fixed bottom-4 right-4 z-40 px-3 py-2 rounded-lg bg-surface-2 border border-default text-creme-mute hover:text-creme hover:border-hover text-[12px] font-semibold shadow-lg inline-flex items-center gap-1.5"
-      title="Abrir command palette (⌘K)"
-    >
-      <Command size={12} /> K
-    </button>
-  );
+  // Sem botão flutuante (atrapalhava o composer). Abre só pelo atalho ⌘K.
+  if (!open) return null;
 
   // Agrupa filtrados por group preservando ordem
   const groups: { name: string; items: CmdItem[] }[] = [];

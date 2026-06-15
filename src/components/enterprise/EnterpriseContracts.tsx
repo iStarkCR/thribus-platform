@@ -13,6 +13,7 @@ import {
   Trash,
 } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
+import { useAppStore } from '@/hooks/useAppStore';
 import {
   cortexEnterprise,
   type Contract,
@@ -153,12 +154,13 @@ export function EnterpriseContracts() {
                       {c.status === 'draft' && (
                         <button
                           onClick={async () => {
-                            if (!confirm('Marcar como assinado?')) return;
+                            const ok = await useAppStore.getState().askConfirm({ title: 'Assinar contrato', message: 'Marcar este contrato como assinado?', confirmLabel: 'Assinar', danger: false });
+                            if (!ok) return;
                             try {
                               await cortexEnterprise.signContract(apiKey, c.id);
                               await refresh();
                             } catch (err) {
-                              alert((err as Error).message);
+                              useAppStore.getState().addToast((err as Error).message, 'red');
                             }
                           }}
                           className="text-[12px] font-bold text-emerald-300 hover:text-emerald-200 flex items-center gap-1"
@@ -170,12 +172,13 @@ export function EnterpriseContracts() {
                       {c.status === 'draft' && (
                         <button
                           onClick={async () => {
-                            if (!confirm(`Apagar contrato "${c.title}"?`)) return;
+                            const ok = await useAppStore.getState().askConfirm({ title: 'Apagar contrato', message: `Apagar o contrato "${c.title}"?`, confirmLabel: 'Apagar' });
+                            if (!ok) return;
                             try {
                               await cortexEnterprise.deleteContract(apiKey, c.id);
                               await refresh();
                             } catch (err) {
-                              alert((err as Error).message);
+                              useAppStore.getState().addToast((err as Error).message, 'red');
                             }
                           }}
                           className="text-[12px] font-bold text-red-300 hover:text-red-200 flex items-center gap-1"

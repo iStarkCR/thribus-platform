@@ -75,9 +75,11 @@ export function AgentDetailModal({ agent, onClose }: Props) {
   };
 
   const handleDelete = async () => {
-    const confirmed = confirm(
-      `Deletar o colaborador "${agent.name}"?\n\nEsta ação é PERMANENTE — todas as conversas, mensagens, execuções e escalações vinculadas a este colaborador também serão removidas.`,
-    );
+    const confirmed = await useAppStore.getState().askConfirm({
+      title: 'Deletar colaborador',
+      message: `Deletar o colaborador "${agent.name}"? É PERMANENTE — conversas, mensagens, execuções e escalações vinculadas também serão removidas.`,
+      confirmLabel: 'Deletar',
+    });
     if (!confirmed) return;
     setDeleting(true);
     try {

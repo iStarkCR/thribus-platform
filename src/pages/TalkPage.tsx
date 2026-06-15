@@ -227,7 +227,7 @@ export function TalkPage() {
     } catch (e) {
       setMessages((m) => m.filter((x) => !x.id.startsWith('tmp-')));
       setInput(text);
-      alert('Falha ao enviar: ' + (e as Error).message);
+      useAppStore.getState().addToast('Falha ao enviar: ' + (e as Error).message, 'red');
     } finally {
       setSending(false);
     }

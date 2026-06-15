@@ -102,8 +102,9 @@ export function ToolsPage() {
     setNewFolderName('');
   };
 
-  const handleDeleteFolder = (folderName: string) => {
-    if (!confirm(`Remover pasta "${folderName}"? (Ferramentas dentro dela continuam, só a pasta vazia some.)`)) return;
+  const handleDeleteFolder = async (folderName: string) => {
+    const ok = await useAppStore.getState().askConfirm({ title: 'Remover pasta', message: `Remover a pasta "${folderName}"? As ferramentas dentro dela continuam — só a pasta vazia some.`, confirmLabel: 'Remover' });
+    if (!ok) return;
     setExtraFolders((prev) => prev.filter((f) => f.toLowerCase() !== folderName.toLowerCase()));
   };
 

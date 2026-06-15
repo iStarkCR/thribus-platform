@@ -149,7 +149,8 @@ export function SkillsPage() {
 
   const handleDelete = async () => {
     if (!selectedSkill) return;
-    if (!confirm(`Deletar a skill "${selectedSkill.name}"?\n\nEssa ação não pode ser desfeita. Skills instaladas em agentes precisam ser desinstaladas primeiro.`)) return;
+    const confirmed = await useAppStore.getState().askConfirm({ title: 'Deletar skill', message: `Deletar a skill "${selectedSkill.name}"? Não dá pra desfazer. Skills instaladas em agentes precisam ser desinstaladas primeiro.`, confirmLabel: 'Deletar' });
+    if (!confirmed) return;
     const ok = await deleteSkill(selectedSkill.id);
     if (ok) setSelectedSkillId(null);
   };

@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useAppStore } from '@/hooks/useAppStore';
 import {
   Sparkles,
   GitBranch,
@@ -174,23 +175,24 @@ function TabTemplates({ tenantId }: { tenantId: string }) {
   async function seed() {
     try {
       const r = await cortexStack.seedTemplates();
-      alert(`Seed: ${r.inserted} novos, ${r.updated} atualizados`);
+      useAppStore.getState().addToast(`Seed: ${r.inserted} novos, ${r.updated} atualizados`, 'green');
       const ls = await cortexStack.listTemplates();
       setList(ls.templates);
     } catch (e) {
-      alert((e as Error).message);
+      useAppStore.getState().addToast((e as Error).message, 'red');
     }
   }
 
   async function install(slug: string) {
-    if (!tenantId) return alert('Configure tenant ID acima');
-    const agent_id = prompt('agent_id (ex: bianca, custom1):');
+    const store = useAppStore.getState();
+    if (!tenantId) { store.addToast('Configure o tenant ID acima', 'amber'); return; }
+    const agent_id = await store.askPrompt({ title: 'Instalar template', label: 'agent_id', placeholder: 'ex: bianca, custom1', confirmLabel: 'Instalar' });
     if (!agent_id) return;
     try {
       await cortexStack.installTemplate(slug, { tenant_id: tenantId, agent_id });
-      alert('Template instalado!');
+      store.addToast('Template instalado!', 'green');
     } catch (e) {
-      alert((e as Error).message);
+      store.addToast((e as Error).message, 'red');
     }
   }
 
@@ -283,7 +285,7 @@ function TabWorkflows({ tenantId }: { tenantId: string }) {
       });
       await refresh();
     } catch (e) {
-      alert((e as Error).message);
+      useAppStore.getState().addToast((e as Error).message, 'red');
     }
   }
 
@@ -397,7 +399,7 @@ function TabWebhooks({ tenantId }: { tenantId: string }) {
       setSecret(r.secret);
       setName(''); setUrl('');
       await refresh();
-    } catch (e) { alert((e as Error).message); }
+    } catch (e) { useAppStore.getState().addToast((e as Error).message, 'red'); }
   }
 
   if (!tenantId) return <NeedConfig field="tenant ID" />;
@@ -759,7 +761,7 @@ function TabIntegrations({ tenantId }: { tenantId: string }) {
     try {
       await cortexStack.createIntegration({ tenant_id: tenantId, provider, display_name: provider });
       await refresh();
-    } catch (e) { alert((e as Error).message); }
+    } catch (e) { useAppStore.getState().addToast((e as Error).message, 'red'); }
   }
 
   if (!tenantId) return <NeedConfig field="tenant ID" />;

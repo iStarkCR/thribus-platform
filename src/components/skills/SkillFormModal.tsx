@@ -219,23 +219,18 @@ export function SkillFormModal({ mode, skill, onClose, onSaved }: Props) {
     );
   };
 
-  const applyTemplate = (key: string) => {
+  const applyTemplate = async (key: string) => {
     setSelectedTemplate(key);
     const tpl = PROMPT_TEMPLATES[key];
     if (!tpl) return;
-    if (mode === 'create' || promptFragment.trim() === '') {
-      setPromptFragment(tpl.content);
-      if (tpl.suggestedTools) {
-        setRequiredTools((curr) => Array.from(new Set([...curr, ...tpl.suggestedTools!])));
-      }
-    } else {
+    if (mode !== 'create' && promptFragment.trim() !== '') {
       // Em edit, confirma antes de sobrescrever
-      if (confirm('Substituir o prompt atual pelo template?\n\nO conteúdo atual será perdido.')) {
-        setPromptFragment(tpl.content);
-        if (tpl.suggestedTools) {
-          setRequiredTools((curr) => Array.from(new Set([...curr, ...tpl.suggestedTools!])));
-        }
-      }
+      const ok = await useAppStore.getState().askConfirm({ title: 'Substituir prompt', message: 'Substituir o prompt atual pelo template? O conteúdo atual será perdido.', confirmLabel: 'Substituir', danger: false });
+      if (!ok) return;
+    }
+    setPromptFragment(tpl.content);
+    if (tpl.suggestedTools) {
+      setRequiredTools((curr) => Array.from(new Set([...curr, ...tpl.suggestedTools!])));
     }
   };
 

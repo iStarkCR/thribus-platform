@@ -155,7 +155,8 @@ export function ToolModal({ tool, onClose }: Props) {
 
   const handleDelete = async () => {
     if (!tool) return;
-    if (!confirm(`Remover a ferramenta "${tool.name}"? Esta ação não pode ser desfeita.`)) return;
+    const ok = await useAppStore.getState().askConfirm({ title: 'Remover ferramenta', message: `Remover "${tool.name}"? Esta ação não pode ser desfeita.`, confirmLabel: 'Remover' });
+    if (!ok) return;
     setLoading(true);
     try {
       await deleteTool(tool.id);

@@ -101,7 +101,8 @@ export function WorkspaceModal({ workspace, onClose }: Props) {
 
   const handleDelete = async () => {
     if (!workspace) return;
-    if (!confirm(`Remover "${workspace.name}"? Agents vinculados ficam sem workspace.`)) return;
+    const ok = await useAppStore.getState().askConfirm({ title: 'Remover workspace', message: `Remover "${workspace.name}"? Os colaboradores vinculados ficam sem workspace.`, confirmLabel: 'Remover' });
+    if (!ok) return;
     setLoading(true);
     try {
       await deleteWorkspace(workspace.id);

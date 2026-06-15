@@ -15,7 +15,8 @@ export function WorkspacesPage() {
   const [addingUser, setAddingUser] = useState<Workspace | null>(null);
 
   const handleDelete = async (ws: Workspace) => {
-    if (!confirm(`Remover workspace "${ws.name}"? Agents vinculados ficam sem workspace mas não são apagados.`)) return;
+    const ok = await useAppStore.getState().askConfirm({ title: 'Remover workspace', message: `Remover "${ws.name}"? Os colaboradores vinculados ficam sem workspace, mas não são apagados.`, confirmLabel: 'Remover' });
+    if (!ok) return;
     await deleteWorkspace(ws.id);
   };
 
