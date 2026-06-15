@@ -315,19 +315,19 @@ export function TalkPage() {
     const dot = f.color ?? '#64748b';
     return (
       <div key={f.id}>
-        <div className="group flex items-center gap-1 pr-1 py-1.5 rounded-md hover:bg-surface-hover" style={{ paddingLeft: depth * 12 + 6 }}>
+        <div className="group flex items-center gap-1 pr-1 py-2 rounded-md hover:bg-surface-hover" style={{ paddingLeft: depth * 12 + 6 }}>
           <button onClick={() => toggle(f.id)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
-            {open ? <ChevronDown size={13} className="text-creme-faint shrink-0" /> : <ChevronRight size={13} className="text-creme-faint shrink-0" />}
-            <Folder size={13} className="shrink-0" style={{ color: dot }} />
-            <span className="text-[12.5px] font-semibold text-creme-dim truncate">{f.name}</span>
-            <span className="text-[10.5px] text-creme-faint">{sess.length + subs.length}</span>
+            {open ? <ChevronDown size={15} className="text-creme-faint shrink-0" /> : <ChevronRight size={15} className="text-creme-faint shrink-0" />}
+            <Folder size={15} className="shrink-0" style={{ color: dot }} />
+            <span className="text-[14px] font-semibold text-creme-dim truncate">{f.name}</span>
+            <span className="text-[11px] text-creme-faint">{sess.length + subs.length}</span>
           </button>
           <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0">
-            <button onClick={() => newSession(f.id)} title="Nova sessão" className="text-creme-faint hover:text-brand p-0.5"><Plus size={12} /></button>
-            <button onClick={() => newFolder(f.id)} title="Nova subpasta" className="text-creme-faint hover:text-brand p-0.5"><SubfolderIcon size={11} /></button>
-            <button onClick={() => setColorPickerFor(colorPickerFor === f.id ? null : f.id)} title="Cor" className="text-creme-faint hover:text-creme p-0.5"><Palette size={11} /></button>
-            <button onClick={() => renameFolderAction(f)} title="Renomear" className="text-creme-faint hover:text-creme p-0.5"><Pencil size={11} /></button>
-            <button onClick={() => removeFolder(f)} title="Apagar" className="text-creme-faint hover:text-semantic-red p-0.5"><Trash2 size={11} /></button>
+            <button onClick={() => newSession(f.id)} title="Nova sessão" className="text-creme-faint hover:text-brand p-1"><Plus size={14} /></button>
+            <button onClick={() => newFolder(f.id)} title="Nova subpasta" className="text-creme-faint hover:text-brand p-1"><SubfolderIcon size={13} /></button>
+            <button onClick={() => setColorPickerFor(colorPickerFor === f.id ? null : f.id)} title="Cor" className="text-creme-faint hover:text-creme p-1"><Palette size={13} /></button>
+            <button onClick={() => renameFolderAction(f)} title="Renomear" className="text-creme-faint hover:text-creme p-1"><Pencil size={13} /></button>
+            <button onClick={() => removeFolder(f)} title="Apagar" className="text-creme-faint hover:text-semantic-red p-1"><Trash2 size={13} /></button>
           </div>
         </div>
         {colorPickerFor === f.id && (
@@ -500,8 +500,18 @@ export function TalkPage() {
         <div className="flex-1 relative overflow-hidden">
           {messages.length === 0 ? (
             /* Boas-vindas estilo CORTEX — esfera animada + saudação */
-            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden">
-              <NeuralSphere className="absolute inset-0 opacity-90" intensity={sphereIntensity} />
+            <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+              {/* Esfera circular perfeita — efeitos contidos, borda esmaecida */}
+              <div
+                className="absolute aspect-square w-[min(82vmin,640px)] rounded-full overflow-hidden"
+                style={{ WebkitMaskImage: 'radial-gradient(circle, #000 60%, transparent 82%)', maskImage: 'radial-gradient(circle, #000 60%, transparent 82%)' }}
+              >
+                <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} />
+              </div>
+              {/* Anéis de borda — energia "saindo" da esfera */}
+              <div className="pointer-events-none absolute aspect-square w-[min(86vmin,680px)] rounded-full ring-1 ring-brand/[0.08]" />
+              <div className="pointer-events-none absolute aspect-square w-[min(96vmin,760px)] rounded-full ring-1 ring-brand/[0.04]" />
+
               <div className="relative z-10 text-center px-6">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-bright/70 mb-2">{greeting}</div>
                 <div className="text-[clamp(38px,6vw,60px)] font-bold tracking-tight text-creme leading-none mb-5">{firstName}</div>
@@ -598,14 +608,14 @@ function SessionItem({ session, active, depth = 0, onClick, onRename, onDelete }
       style={{ paddingLeft: depth * 12 + 10 }}
       onClick={onClick}
     >
-      <MessageSquare size={13} className="text-creme-faint shrink-0" />
-      <span className={`flex-1 min-w-0 text-[13.5px] truncate ${active ? 'text-creme font-medium' : 'text-creme-mute'}`}>{session.title}</span>
+      <MessageSquare size={14} className="text-creme-faint shrink-0" />
+      <span className={`flex-1 min-w-0 text-[14px] truncate ${active ? 'text-creme font-medium' : 'text-creme-mute'}`}>{session.title}</span>
       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0">
-        <button onClick={(e) => { e.stopPropagation(); onRename(); }} className="text-creme-faint hover:text-creme p-0.5" title="Renomear conversa">
-          <Pencil size={11} />
+        <button onClick={(e) => { e.stopPropagation(); onRename(); }} className="text-creme-faint hover:text-creme p-1" title="Renomear conversa">
+          <Pencil size={13} />
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-creme-faint hover:text-semantic-red p-0.5" title="Apagar conversa">
-          <Trash2 size={11} />
+        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-creme-faint hover:text-semantic-red p-1" title="Apagar conversa">
+          <Trash2 size={13} />
         </button>
       </div>
     </div>

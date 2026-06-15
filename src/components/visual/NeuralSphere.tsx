@@ -31,10 +31,10 @@ const PARALLAX_LERP = 0.045;
 const MAX_LINE_PAIRS = 6000;
 
 // Onda viajante na superfície (deslocamento radial fluido) + drift de cor.
-const WAVE_AMP = 0.16;
+const WAVE_AMP = 0.085; // bem leve — efeito sutil contido na esfera
 const WAVE_FREQ = 1.25;
-const WAVE_SPEED = 1.6;
-const HUE_DRIFT = 0.06; // amplitude do desvio de matiz (verde ↔ teal/azulado)
+const WAVE_SPEED = 1.5;
+const HUE_DRIFT = 0.05; // amplitude do desvio de matiz (verde ↔ teal/azulado)
 
 function readPrimaryColor(): THREE.Color {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--brand-bright').trim();
