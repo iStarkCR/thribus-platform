@@ -105,6 +105,8 @@ interface NeuralSphereProps {
   ambient?: boolean;
   /** 0-1 — liga a esfera a um sinal (voz): gira/brilha/ondula mais. */
   intensity?: number;
+  /** Escala a distância de conexão → <1 = menos linhas (esfera pequena). */
+  connectScale?: number;
 }
 
 export function NeuralSphere({
@@ -114,6 +116,7 @@ export function NeuralSphere({
   parallaxMultiplier = 1,
   ambient = true,
   intensity = 0,
+  connectScale = 1,
 }: NeuralSphereProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const intensityRef = useRef(intensity);
@@ -280,8 +283,8 @@ export function NeuralSphere({
       const I = smoothI;
       const waveBoost = 1 + I * 1.6;
 
-      const dynOuterConnect = OUTER_CONNECT_DISTANCE * (1 + I * 0.2);
-      const dynInnerConnect = INNER_CONNECT_DISTANCE * (1 + I * 0.24);
+      const dynOuterConnect = OUTER_CONNECT_DISTANCE * connectScale * (1 + I * 0.2);
+      const dynInnerConnect = INNER_CONNECT_DISTANCE * connectScale * (1 + I * 0.24);
 
       updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now, waveBoost, OUTER_RADIUS);
       updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now, waveBoost, null);

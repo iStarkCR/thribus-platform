@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useWakeWordListener } from '@/hooks/useWakeWordListener';
+import { OrbChat } from '@/components/voice/OrbChat';
 
 const ORB_SIZE = 88;
 const MARGIN = 18;
-const BUKOWISKI_ID = 'bukowiski-thribus';
 const POS_KEY = 'orbPos';
 
 type Pos = { x: number; y: number };
@@ -42,13 +41,13 @@ export function FloatingOrb() {
   const orbEnabled = useAppStore((s) => s.orbEnabled);
   const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
   const voiceModeActive = useAppStore((s) => s.voiceModeActive);
-  const requestVoiceMode = useAppStore((s) => s.requestVoiceMode);
-  const navigate = useNavigate();
 
   const [pos, setPos] = useState<Pos>(loadPos);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [wakeFlash, setWakeFlash] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [voiceSignal, setVoiceSignal] = useState(0);
   const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number } | null>(null);
 
   // Mantém o orbe dentro da viewport ao redimensionar.
@@ -58,20 +57,21 @@ export function FloatingOrb() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const goVoice = useCallback(() => {
-    requestVoiceMode();
-    navigate(`/talk?agent=${BUKOWISKI_ID}`);
-  }, [navigate, requestVoiceMode]);
+  // Abre a conversa direta com o Bukowiski no próprio orbe (não navega).
+  const openChat = useCallback((withVoice: boolean) => {
+    setChatOpen(true);
+    if (withVoice) setVoiceSignal((n) => n + 1);
+  }, []);
 
-  // Wake word: pausa enquanto o modo voz roda (mic já em uso pelo TalkPage).
+  // Wake word "Bukowiski" → abre a conversa e já entra no modo voz.
   const onWake = useCallback(() => {
     setWakeFlash(true);
     setTimeout(() => setWakeFlash(false), 2200);
-    goVoice();
-  }, [goVoice]);
+    openChat(true);
+  }, [openChat]);
 
   useWakeWordListener({
-    enabled: orbEnabled && wakeWordEnabled && !voiceModeActive,
+    enabled: orbEnabled && wakeWordEnabled && !chatOpen && !voiceModeActive,
     onWake,
   });
 
@@ -97,63 +97,70 @@ export function FloatingOrb() {
       setPos(final);
       if (typeof localStorage !== 'undefined') localStorage.setItem(POS_KEY, JSON.stringify(final));
     } else {
-      goVoice(); // clique sem arrastar → liga o modo voz direto
+      setChatOpen((o) => !o); // clique sem arrastar → abre/fecha a conversa
     }
   };
 
   if (!orbEnabled) return null;
 
-  const intensity = voiceModeActive ? 0.9 : hovered ? 0.7 : wakeFlash ? 0.6 : 0.32;
-  const listening = wakeWordEnabled && !voiceModeActive;
+  const active = chatOpen;
+  const intensity = active ? 0.9 : hovered ? 0.7 : wakeFlash ? 0.6 : 0.32;
+  const listening = wakeWordEnabled && !chatOpen && !voiceModeActive;
 
   return (
-    <button
-      aria-label="Bukowiski — modo voz"
-      title={voiceModeActive ? 'Modo voz ativo' : 'Falar com o Bukowiski (modo voz)'}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
-      className="fixed z-[60] rounded-full select-none touch-none group transition-transform duration-200"
-      style={{
-        left: pos.x,
-        top: pos.y,
-        width: ORB_SIZE,
-        height: ORB_SIZE,
-        cursor: dragging ? 'grabbing' : 'grab',
-        transform: hovered && !dragging ? 'scale(1.1)' : 'scale(1)',
-      }}
-    >
-      {/* Halo externo — cresce/acende no hover */}
-      <div
-        className="absolute -inset-3 rounded-full transition-opacity duration-300 pointer-events-none"
+    <>
+      <button
+        aria-label="Conversar com o Bukowiski"
+        title="Conversar com o Bukowiski"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerEnter={() => setHovered(true)}
+        onPointerLeave={() => setHovered(false)}
+        className="fixed z-[60] rounded-full select-none touch-none group transition-transform duration-200"
         style={{
-          background: 'radial-gradient(circle, rgba(var(--brand-bright)/0.35) 0%, transparent 68%)',
-          opacity: voiceModeActive ? 1 : hovered ? 0.85 : 0.5,
+          left: pos.x,
+          top: pos.y,
+          width: ORB_SIZE,
+          height: ORB_SIZE,
+          cursor: dragging ? 'grabbing' : 'grab',
+          transform: hovered && !dragging ? 'scale(1.1)' : 'scale(1)',
         }}
-      />
-      {/* Esfera — círculo perfeito nítido, preenchido borda a borda */}
-      <div className="absolute inset-0 rounded-full overflow-hidden border border-brand/40 shadow-xl bg-[#0a0f0b]">
-        <div className="absolute -inset-[12%]">
-          <NeuralSphere className="absolute inset-0" intensity={intensity} speedMultiplier={1.4} interactionMultiplier={1} parallaxMultiplier={0} ambient={false} />
+      >
+        {/* Halo externo — cresce/acende no hover */}
+        <div
+          className="absolute -inset-3 rounded-full transition-opacity duration-300 pointer-events-none"
+          style={{
+            background: 'radial-gradient(circle, rgba(var(--brand-bright)/0.35) 0%, transparent 68%)',
+            opacity: active ? 1 : hovered ? 0.85 : 0.5,
+          }}
+        />
+        {/* Esfera — círculo perfeito nítido, poucas linhas, preenchido borda a borda */}
+        <div className="absolute inset-0 rounded-full overflow-hidden border border-brand/40 shadow-xl bg-[#0a0f0b]">
+          <div className="absolute -inset-[12%]">
+            <NeuralSphere className="absolute inset-0" intensity={intensity} speedMultiplier={1.4} interactionMultiplier={1} parallaxMultiplier={0} ambient={false} connectScale={0.5} />
+          </div>
         </div>
-      </div>
-      {/* Borda sutil "saindo" da esfera */}
-      <div className={`absolute inset-0 rounded-full ring-1 transition-colors ${voiceModeActive ? 'ring-brand/60' : hovered ? 'ring-brand/40' : 'ring-brand/20'} pointer-events-none`} />
-      {voiceModeActive && (
-        <div className="absolute inset-0 rounded-full ring-2 ring-brand/40 animate-ping pointer-events-none" />
+        {/* Borda sutil "saindo" da esfera */}
+        <div className={`absolute inset-0 rounded-full ring-1 transition-colors ${active ? 'ring-brand/60' : hovered ? 'ring-brand/40' : 'ring-brand/20'} pointer-events-none`} />
+        {active && (
+          <div className="absolute inset-0 rounded-full ring-2 ring-brand/40 animate-ping pointer-events-none" />
+        )}
+        {/* Indicador de wake word ativo */}
+        {listening && (
+          <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-semantic-red ring-2 ring-surface-1 animate-pulse pointer-events-none" />
+        )}
+        {/* Feedback ao ouvir "Bukowiski" */}
+        {wakeFlash && (
+          <span className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 rounded-lg bg-brand text-white text-[11px] font-semibold shadow-lg pointer-events-none">
+            Bukowiski 👂
+          </span>
+        )}
+      </button>
+
+      {chatOpen && (
+        <OrbChat orb={{ x: pos.x, y: pos.y, size: ORB_SIZE }} onClose={() => setChatOpen(false)} startVoiceSignal={voiceSignal} />
       )}
-      {/* Indicador de wake word ativo */}
-      {listening && (
-        <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-semantic-red ring-2 ring-surface-1 animate-pulse pointer-events-none" />
-      )}
-      {/* Feedback ao ouvir "Bukowiski" */}
-      {wakeFlash && (
-        <span className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 rounded-lg bg-brand text-white text-[11px] font-semibold shadow-lg pointer-events-none">
-          Bukowiski 👂
-        </span>
-      )}
-    </button>
+    </>
   );
 }
