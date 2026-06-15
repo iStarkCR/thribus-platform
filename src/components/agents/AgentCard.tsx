@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { Shield, Calendar, Briefcase } from 'lucide-react';
+import { Shield, Calendar, Briefcase, Crown } from 'lucide-react';
 import type { Agent } from '@/types';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -50,8 +50,16 @@ export function AgentCard({ agent, showFullInfo, onClick }: AgentCardProps) {
             <Icon size={16} />
           </div>
           <div>
-            <div className={clsx('text-[15.5px] font-bold tracking-tight', off ? 'text-creme-faint' : 'text-creme')}>
+            <div className={clsx('text-[15.5px] font-bold tracking-tight flex items-center gap-1.5', off ? 'text-creme-faint' : 'text-creme')}>
               {agent.name}{showFullInfo ? ` — ${agent.client}` : ''}
+              {agent.isSupervisor && (
+                <>
+                  <Crown size={13} className="text-semantic-amber shrink-0" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-semantic-amber/15 text-semantic-amber px-1.5 py-px rounded-full shrink-0">
+                    Supervisor
+                  </span>
+                </>
+              )}
             </div>
             <div className="text-[13px] text-creme-mute mt-px">
               {showFullInfo ? `Colaborador Digital ${agent.type.charAt(0).toUpperCase() + agent.type.slice(1)} · ${agent.sector}` : `${agent.client} · ${agent.sector}`}

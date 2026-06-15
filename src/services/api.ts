@@ -41,6 +41,8 @@ interface AgentRow {
   tools: string[];
   channel: string | null;
   role: Agent['role'] | null;
+  sector_id: string | null;
+  is_supervisor: boolean | null;
   stats_today: number;
   stats_resolution: number;
   stats_avg_response_time: number;
@@ -66,6 +68,8 @@ function rowToAgent(r: AgentRow & { workspace_id?: string | null }): Agent {
     channel: r.channel ?? undefined,
     workspaceId: r.workspace_id ?? undefined,
     role: r.role ?? undefined,
+    sectorId: r.sector_id ?? undefined,
+    isSupervisor: r.is_supervisor ?? false,
     stats: {
       today: r.stats_today,
       resolution: r.stats_resolution,
@@ -317,12 +321,14 @@ async function computeStatsFromExecutions(
 }
 
 export const agentsApi = {
-  async list(): Promise<Agent[]> {
+  async list(workspaceId?: string | null): Promise<Agent[]> {
     if (!supabase) return SEED_AGENTS;
-    const { data, error } = await supabase
+    let query = supabase
       .from('agents')
       .select('*')
       .order('created_at', { ascending: false });
+    if (workspaceId) query = query.eq('workspace_id', workspaceId);
+    const { data, error } = await query;
     if (error) throw error;
     const agents = (data as AgentRow[]).map(rowToAgent);
     // Sobrescreve stats com dados calculados em runtime

@@ -43,11 +43,14 @@ import { CompliancePage } from '@/pages/CompliancePage';
 import { VaultPage } from '@/pages/VaultPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { ProfilePage } from '@/pages/ProfilePage';
+import { AccessPage } from '@/pages/AccessPage';
+import { TalkPage } from '@/pages/TalkPage';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
-import { Navigate } from 'react-router-dom';
+import { useAccess } from '@/hooks/useRole';
+import { Navigate, useLocation } from 'react-router-dom';
 
 export function App() {
   const initialize = useAppStore((s) => s.initialize);
@@ -90,9 +93,21 @@ function ProtectedShell() {
 
   return (
     <AppLayout>
-      <InnerRoutes />
+      <RoleGuard>
+        <InnerRoutes />
+      </RoleGuard>
     </AppLayout>
   );
+}
+
+// Usuário sem acesso à rota (por URL direta) → volta pro Dashboard.
+function RoleGuard({ children }: { children: React.ReactNode }) {
+  const { allowedPaths, loading } = useAccess();
+  const { pathname } = useLocation();
+  if (!loading && allowedPaths && !allowedPaths.has(pathname)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
 }
 
 function InnerRoutes() {
@@ -139,6 +154,8 @@ function InnerRoutes() {
           <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/vault" element={<VaultPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/access" element={<AccessPage />} />
+          <Route path="/talk" element={<TalkPage />} />
     </Routes>
   );
 }
