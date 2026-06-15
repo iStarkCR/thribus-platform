@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Building2, Plus, Pencil, Trash2, Network } from 'lucide-react';
+import { Building2, Plus, Pencil, Trash2, Network, UserPlus } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { WorkspaceModal } from '@/components/workspaces/WorkspaceModal';
 import { RouterConfigModal } from '@/components/workspaces/RouterConfigModal';
+import { AddUserModal } from '@/components/workspaces/AddUserModal';
 import type { Workspace } from '@/types';
 
 export function WorkspacesPage() {
@@ -11,9 +12,11 @@ export function WorkspacesPage() {
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState<Workspace | null>(null);
   const [routerEditing, setRouterEditing] = useState<Workspace | null>(null);
+  const [addingUser, setAddingUser] = useState<Workspace | null>(null);
 
   const handleDelete = async (ws: Workspace) => {
-    if (!confirm(`Remover workspace "${ws.name}"? Agents vinculados ficam sem workspace mas não são apagados.`)) return;
+    const ok = await useAppStore.getState().askConfirm({ title: 'Remover workspace', message: `Remover "${ws.name}"? Os colaboradores vinculados ficam sem workspace, mas não são apagados.`, confirmLabel: 'Remover' });
+    if (!ok) return;
     await deleteWorkspace(ws.id);
   };
 
@@ -54,6 +57,13 @@ export function WorkspacesPage() {
                   <Building2 size={16} />
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => setAddingUser(w)}
+                    className="text-creme-faint hover:text-brand p-1"
+                    title="Criar usuário pra esta conta"
+                  >
+                    <UserPlus size={13} />
+                  </button>
                   <button
                     onClick={() => setRouterEditing(w)}
                     className={`p-1 ${
@@ -121,6 +131,7 @@ export function WorkspacesPage() {
       {showNew && <WorkspaceModal onClose={() => setShowNew(false)} />}
       {editing && <WorkspaceModal workspace={editing} onClose={() => setEditing(null)} />}
       {routerEditing && <RouterConfigModal workspace={routerEditing} onClose={() => setRouterEditing(null)} />}
+      {addingUser && <AddUserModal workspace={addingUser} onClose={() => setAddingUser(null)} />}
     </>
   );
 }

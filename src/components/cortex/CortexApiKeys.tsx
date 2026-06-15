@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Loader2, AlertCircle, Key, Copy, Check, Ban } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
+import { useAppStore } from '@/hooks/useAppStore';
 import {
   cortexAdmin,
   cortexAdminConfigured,
@@ -144,12 +145,13 @@ export function CortexApiKeys() {
                     {k.status === 'active' && (
                       <button
                         onClick={async () => {
-                          if (!confirm(`Revogar a key ${k.name}?`)) return;
+                          const ok = await useAppStore.getState().askConfirm({ title: 'Revogar API key', message: `Revogar a key "${k.name}"?`, confirmLabel: 'Revogar' });
+                          if (!ok) return;
                           try {
                             await cortexAdmin.revokeApiKey(k.id);
                             await loadKeys();
                           } catch (err) {
-                            alert((err as Error).message);
+                            useAppStore.getState().addToast((err as Error).message, 'red');
                           }
                         }}
                         className="text-red-300 hover:text-red-200 text-[12.5px] font-bold flex items-center gap-1 ml-auto"

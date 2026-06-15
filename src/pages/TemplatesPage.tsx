@@ -89,7 +89,8 @@ export function TemplatesPage() {
   );
 
   const handleDelete = async (template: AgentTemplate) => {
-    if (!confirm(`Deletar template "${template.name}"?\n\nAgentes já criados a partir dele NÃO são afetados.`)) return;
+    const ok = await useAppStore.getState().askConfirm({ title: 'Deletar template', message: `Deletar o template "${template.name}"? Agentes já criados a partir dele NÃO são afetados.`, confirmLabel: 'Deletar' });
+    if (!ok) return;
     await deleteTemplate(template.id);
   };
 

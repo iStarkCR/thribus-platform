@@ -7,6 +7,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { useSession } from '@/hooks/useSession';
+import { useAppStore } from '@/hooks/useAppStore';
 
 type Tab = 'general' | 'security' | 'preferences' | 'sessions';
 
@@ -103,7 +104,7 @@ function GeneralPanel() {
       setTimeout(() => setSaving('idle'), 1500);
     } else {
       setSaving('idle');
-      alert(`Erro: ${error.message}`);
+      useAppStore.getState().addToast(`Erro: ${error.message}`, 'red');
     }
   };
 

@@ -1,12 +1,17 @@
 import { create } from 'zustand';
-import type { Agent, AgentSkill, AgentTemplate, DashboardMetrics, Escalation, Execution, Skill, Tool, Workspace, CreateWorkspacePayload } from '@/types';
+import type { Agent, AgentSkill, AgentTemplate, DashboardMetrics, Escalation, Execution, Sector, Skill, Tool, Workspace, CreateWorkspacePayload } from '@/types';
 import { agentsApi, dashboardApi, escalationsApi, executionsApi, skillsApi, templatesApi, toolsApi, workspacesApi, type CreateToolPayload } from '@/services/api';
+import { listSectors } from '@/services/sectors';
 
 interface AppState {
   // Data
   agents: Agent[];
   tools: Tool[];
   workspaces: Workspace[];
+  /** Conta/workspace ativo — escopa o painel inteiro (estilo Talki). null = todos. */
+  activeWorkspaceId: string | null;
+  /** Setores (organograma) da conta ativa. */
+  sectors: Sector[];
   executions: Execution[];
   escalations: Escalation[];
   metrics: DashboardMetrics | null;
@@ -20,11 +25,33 @@ interface AppState {
   // UI
   loading: boolean;
   currentPage: string;
+  /** Sidebar recolhida (só ícones). Padrão recolhido no chat. */
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (v: boolean) => void;
+  /** Orbe flutuante Bukowiski — acompanha por todos os módulos. Persistido. */
+  orbEnabled: boolean;
+  setOrbEnabled: (v: boolean) => void;
+  /** Wake word "Bukowiski" liga o modo voz por voz. Persistido, off por padrão. */
+  wakeWordEnabled: boolean;
+  setWakeWordEnabled: (v: boolean) => void;
+  /** Sinal transitório: TalkPage deve iniciar o modo voz ao montar (orbe/wake word). */
+  voiceAutostart: boolean;
+  requestVoiceMode: () => void;
+  consumeVoiceAutostart: () => void;
+  /** Modo voz ativo no TalkPage — o orbe pausa seu recognizer pra não disputar o mic. */
+  voiceModeActive: boolean;
+  setVoiceModeActive: (v: boolean) => void;
   toasts: Array<{ id: string; message: string; type: 'green' | 'amber' | 'red' | 'blue' }>;
+  /** Confirmação imperativa no padrão do sistema (substitui window.confirm). */
+  confirmRequest: { title: string; message: string; confirmLabel?: string; danger?: boolean; resolve: (v: boolean) => void } | null;
+  /** Prompt imperativo no padrão do sistema (substitui window.prompt). */
+  promptRequest: { title: string; label?: string; placeholder?: string; initial?: string; confirmLabel?: string; resolve: (v: string | null) => void } | null;
 
   // Actions
   initialize: () => Promise<void>;
   setPage: (page: string) => void;
+  /** Troca a conta ativa e re-escopa os dados do painel. */
+  setActiveWorkspace: (id: string) => Promise<void>;
 
   // Agent actions
   loadAgents: () => Promise<void>;
@@ -69,12 +96,21 @@ interface AppState {
   // Toast
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
   removeToast: (id: string) => void;
+
+  // Confirmação (modal do sistema)
+  askConfirm: (opts: { title: string; message: string; confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
+  resolveConfirm: (v: boolean) => void;
+  // Prompt (modal do sistema)
+  askPrompt: (opts: { title: string; label?: string; placeholder?: string; initial?: string; confirmLabel?: string }) => Promise<string | null>;
+  resolvePrompt: (v: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   agents: [],
   tools: [],
   workspaces: [],
+  activeWorkspaceId: null,
+  sectors: [],
   executions: [],
   escalations: [],
   metrics: null,
@@ -83,23 +119,67 @@ export const useAppStore = create<AppState>((set, get) => ({
   templates: [],
   loading: true,
   currentPage: 'dashboard',
+  sidebarCollapsed: false,
+  setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
+  orbEnabled: typeof localStorage !== 'undefined' && localStorage.getItem('orbEnabled') === '1',
+  setOrbEnabled: (v) => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('orbEnabled', v ? '1' : '0');
+    set({ orbEnabled: v });
+  },
+  wakeWordEnabled: typeof localStorage !== 'undefined' && localStorage.getItem('wakeWordEnabled') === '1',
+  setWakeWordEnabled: (v) => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('wakeWordEnabled', v ? '1' : '0');
+    set({ wakeWordEnabled: v });
+  },
+  voiceAutostart: false,
+  requestVoiceMode: () => set({ voiceAutostart: true }),
+  consumeVoiceAutostart: () => set({ voiceAutostart: false }),
+  voiceModeActive: false,
+  setVoiceModeActive: (v) => set({ voiceModeActive: v }),
   toasts: [],
+  confirmRequest: null,
+  promptRequest: null,
 
   initialize: async () => {
     set({ loading: true });
     try {
-      const [agents, tools, workspaces, executions, escalations, metrics, skills, templates] = await Promise.all([
-        agentsApi.list(),
+      // Carrega workspaces primeiro pra resolver a conta ativa antes de escopar.
+      const workspaces = await workspacesApi.list().catch(() => [] as Workspace[]);
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('activeWorkspaceId') : null;
+      const valid = stored && workspaces.some((w) => w.id === stored) ? stored : null;
+      const preferred = workspaces.find((w) => w.name.trim().toLowerCase() === 'thribus tech');
+      const activeWorkspaceId = valid ?? preferred?.id ?? workspaces[0]?.id ?? null;
+
+      const [agents, tools, executions, escalations, metrics, skills, templates, sectors] = await Promise.all([
+        agentsApi.list(activeWorkspaceId),
         toolsApi.list(),
-        workspacesApi.list().catch(() => [] as Workspace[]),
         executionsApi.list(),
         escalationsApi.listPending(),
         dashboardApi.getMetrics(),
         // skillsApi.list já degrada pra [] se schema não existe — não precisa catch
         skillsApi.list(),
         templatesApi.list().catch(() => [] as AgentTemplate[]),
+        listSectors(activeWorkspaceId).catch(() => [] as Sector[]),
       ]);
-      set({ agents, tools, workspaces, executions, escalations, metrics, skills, templates, loading: false });
+
+      // Escopa execuções/escalações pelos agentes da conta ativa.
+      const agentIds = new Set(agents.map((a) => a.id));
+      const scope = <T extends { agentId: string }>(rows: T[]) =>
+        activeWorkspaceId ? rows.filter((r) => agentIds.has(r.agentId)) : rows;
+
+      set({
+        workspaces,
+        activeWorkspaceId,
+        sectors,
+        agents,
+        tools,
+        executions: scope(executions),
+        escalations: scope(escalations),
+        metrics,
+        skills,
+        templates,
+        loading: false,
+      });
     } catch {
       set({ loading: false });
       get().addToast('Erro ao carregar dados', 'red');
@@ -108,8 +188,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setPage: (page) => set({ currentPage: page }),
 
+  setActiveWorkspace: async (id) => {
+    if (id === get().activeWorkspaceId) return;
+    if (typeof localStorage !== 'undefined') localStorage.setItem('activeWorkspaceId', id);
+    set({ activeWorkspaceId: id });
+    await get().initialize();
+  },
+
   loadAgents: async () => {
-    const agents = await agentsApi.list();
+    const agents = await agentsApi.list(get().activeWorkspaceId);
     set({ agents });
   },
 
@@ -357,5 +444,21 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   removeToast: (id) => {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
+
+  askConfirm: (opts) =>
+    new Promise<boolean>((resolve) => set({ confirmRequest: { ...opts, resolve } })),
+
+  resolveConfirm: (v) => {
+    get().confirmRequest?.resolve(v);
+    set({ confirmRequest: null });
+  },
+
+  askPrompt: (opts) =>
+    new Promise<string | null>((resolve) => set({ promptRequest: { ...opts, resolve } })),
+
+  resolvePrompt: (v) => {
+    get().promptRequest?.resolve(v);
+    set({ promptRequest: null });
   },
 }));

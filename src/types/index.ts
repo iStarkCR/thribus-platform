@@ -42,9 +42,23 @@ export interface Agent {
   channel?: string;       // slug do canal (ex: texnet-duall) — usado pelo worker
   workspaceId?: string;   // multi-tenant — vincula a um workspace com creds
   role?: AgentRole;       // M2: papel do agente (sales/support/finance/...)
+  sectorId?: string;      // FK pra sectors — organograma da empresa
+  isSupervisor?: boolean; // supervisor (ex: Bukowiski COO) — coroa + badge
   stats: AgentStats;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Setor (departamento) de uma empresa/workspace — organograma. */
+export interface Sector {
+  id: string;
+  workspaceId: string;
+  slug: string;
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  sortOrder: number;
 }
 
 // ═══════════════════════════════════════

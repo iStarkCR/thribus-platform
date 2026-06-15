@@ -33,7 +33,7 @@ export const isSupabaseConfigured = !!url && !!anonKey;
 // validamos a string via env e a lib aceita qualquer schema em runtime.
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? (createClient(url, anonKey, {
-      auth: { persistSession: false }, // single-tenant por enquanto, sem login
+      auth: { persistSession: true, autoRefreshToken: true }, // login real — sessão sobrevive reload
       db: { schema: schema as 'public' },
     }) as SupabaseClient)
   : null;

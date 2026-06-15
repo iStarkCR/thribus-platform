@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { Shield, Calendar, Briefcase } from 'lucide-react';
+import { Shield, Calendar, Briefcase, Crown, Settings } from 'lucide-react';
 import type { Agent } from '@/types';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -25,10 +25,13 @@ function getAgentVisualType(agent: Agent): 'support' | 'schedule' | 'sales' {
 interface AgentCardProps {
   agent: Agent;
   showFullInfo?: boolean;
+  /** Clique no card — por padrão abre o chat com o colaborador. */
   onClick: () => void;
+  /** Engrenagem — abre a configuração do colaborador. */
+  onConfig?: () => void;
 }
 
-export function AgentCard({ agent, showFullInfo, onClick }: AgentCardProps) {
+export function AgentCard({ agent, showFullInfo, onClick, onConfig }: AgentCardProps) {
   const toggleAgent = useAppStore((s) => s.toggleAgent);
   const off = agent.status !== 'online';
   const visualType = getAgentVisualType(agent);
@@ -50,8 +53,16 @@ export function AgentCard({ agent, showFullInfo, onClick }: AgentCardProps) {
             <Icon size={16} />
           </div>
           <div>
-            <div className={clsx('text-[15.5px] font-bold tracking-tight', off ? 'text-creme-faint' : 'text-creme')}>
+            <div className={clsx('text-[15.5px] font-bold tracking-tight flex items-center gap-1.5', off ? 'text-creme-faint' : 'text-creme')}>
               {agent.name}{showFullInfo ? ` — ${agent.client}` : ''}
+              {agent.isSupervisor && (
+                <>
+                  <Crown size={13} className="text-semantic-amber shrink-0" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-semantic-amber/15 text-semantic-amber px-1.5 py-px rounded-full shrink-0">
+                    Supervisor
+                  </span>
+                </>
+              )}
             </div>
             <div className="text-[13px] text-creme-mute mt-px">
               {showFullInfo ? `Colaborador Digital ${agent.type.charAt(0).toUpperCase() + agent.type.slice(1)} · ${agent.sector}` : `${agent.client} · ${agent.sector}`}
@@ -73,6 +84,20 @@ export function AgentCard({ agent, showFullInfo, onClick }: AgentCardProps) {
             })} />
             {agent.status === 'online' ? 'Online' : agent.status === 'standby' ? 'Standby' : 'Offline'}
           </div>
+
+          {/* Engrenagem — configuração */}
+          {onConfig && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onConfig();
+              }}
+              className="text-creme-faint hover:text-creme p-1 -m-1 transition-colors"
+              title="Configurar colaborador"
+            >
+              <Settings size={15} />
+            </button>
+          )}
 
           {/* Toggle */}
           <button

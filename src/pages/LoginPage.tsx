@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { BrandLogo } from '@/components/shared/BrandLogo';
+import { useAppStore } from '@/hooks/useAppStore';
 import { MarketingCarousel } from '@/components/shared/MarketingCarousel';
 import { useSession } from '@/hooks/useSession';
 
@@ -45,7 +46,7 @@ export function LoginPage() {
       nav('/');
     } else {
       setError(null);
-      alert('Conta criada! Confira seu email pra confirmar.');
+      useAppStore.getState().addToast('Conta criada! Confira seu email pra confirmar.', 'green');
     }
   };
 

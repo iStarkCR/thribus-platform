@@ -43,11 +43,16 @@ import { CompliancePage } from '@/pages/CompliancePage';
 import { VaultPage } from '@/pages/VaultPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { ProfilePage } from '@/pages/ProfilePage';
+import { AccessPage } from '@/pages/AccessPage';
+import { TalkPage } from '@/pages/TalkPage';
+import { FloatingOrb } from '@/components/voice/FloatingOrb';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
+import { ConfirmDialog, PromptDialog } from '@/components/shared/Dialogs';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
-import { Navigate } from 'react-router-dom';
+import { useAccess } from '@/hooks/useRole';
+import { Navigate, useLocation } from 'react-router-dom';
 
 export function App() {
   const initialize = useAppStore((s) => s.initialize);
@@ -66,6 +71,8 @@ export function App() {
       </Routes>
       <ToastContainer />
       <CommandPalette />
+      <GlobalConfirm />
+      <GlobalPrompt />
     </HashRouter>
   );
 }
@@ -90,9 +97,57 @@ function ProtectedShell() {
 
   return (
     <AppLayout>
-      <InnerRoutes />
+      <RoleGuard>
+        <InnerRoutes />
+      </RoleGuard>
+      <FloatingOrb />
     </AppLayout>
   );
+}
+
+// Confirmação global no padrão do sistema (substitui window.confirm).
+function GlobalConfirm() {
+  const req = useAppStore((s) => s.confirmRequest);
+  const resolveConfirm = useAppStore((s) => s.resolveConfirm);
+  if (!req) return null;
+  return (
+    <ConfirmDialog
+      title={req.title}
+      message={req.message}
+      confirmLabel={req.confirmLabel ?? 'Confirmar'}
+      danger={req.danger ?? true}
+      onConfirm={() => resolveConfirm(true)}
+      onClose={() => resolveConfirm(false)}
+    />
+  );
+}
+
+// Prompt global no padrão do sistema (substitui window.prompt).
+function GlobalPrompt() {
+  const req = useAppStore((s) => s.promptRequest);
+  const resolvePrompt = useAppStore((s) => s.resolvePrompt);
+  if (!req) return null;
+  return (
+    <PromptDialog
+      title={req.title}
+      label={req.label}
+      placeholder={req.placeholder}
+      initial={req.initial}
+      confirmLabel={req.confirmLabel}
+      onConfirm={(v) => resolvePrompt(v)}
+      onClose={() => resolvePrompt(null)}
+    />
+  );
+}
+
+// Usuário sem acesso à rota (por URL direta) → volta pro Dashboard.
+function RoleGuard({ children }: { children: React.ReactNode }) {
+  const { allowedPaths, loading } = useAccess();
+  const { pathname } = useLocation();
+  if (!loading && allowedPaths && !allowedPaths.has(pathname)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
 }
 
 function InnerRoutes() {
@@ -139,6 +194,8 @@ function InnerRoutes() {
           <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/vault" element={<VaultPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/access" element={<AccessPage />} />
+          <Route path="/talk" element={<TalkPage />} />
     </Routes>
   );
 }
