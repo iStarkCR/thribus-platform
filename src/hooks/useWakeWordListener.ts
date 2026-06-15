@@ -20,11 +20,13 @@ export function isWakeWordSupported(): boolean {
 // Variações de STT pra "Bukowiski" (português erra muito nome próprio).
 // Bem permissivo: b + u/o + c/k + (vogal) + (w/v) + (i) + sk → cobre quase todo
 // jeito que o reconhecimento escreve o nome, em uma palavra ou separado.
+// O Chrome frequentemente troca o "B" inicial por "M" (ou "P"): "mucovisk",
+// "muco", "pucovisk". Por isso aceitamos [bmp] no começo.
 const WAKE_PATTERNS = [
-  /b[uo][ck][oae]?[wv]?[ií]?sk/i, // bukowisk, bucovisk, bukvisk, bukosk, bucavisk…
-  /b[uo][ck][oae]?\s*[wv][ií]?sk/i, // "buco visk", "buca visky"
-  /\bbuk[oae]?w?ski?\b/i, // bukowski, bukoski
-  /\bbuc[oae]?v?isk/i, // bucovisk, bucavisk
+  /[bmp][uo][ck][oae]?[wv]?[ií]?sk/i, // bukowisk, mucovisk, bucovisk, bukosk…
+  /[bmp][uo][ck][oae]?\s*[wv][ií]?sk/i, // "buco visk", "muco visk"
+  /[bmp][uo][ck]o?[wv][ií]s\b/i, // bucovis, mucovis (quando o reconhecimento corta o "k")
+  /\b[bmp]uk[oae]?w?ski?\b/i, // bukowski, mukowski
   /book.{0,4}sk/i, // mishear "book of ski"
 ];
 
