@@ -101,6 +101,8 @@ interface NeuralSphereProps {
   interactionMultiplier?: number;
   parallaxMultiplier?: number;
   ambient?: boolean;
+  /** 0-1 — liga a esfera a um sinal (voz): gira/brilha/ondula mais. */
+  intensity?: number;
 }
 
 export function NeuralSphere({
@@ -109,8 +111,11 @@ export function NeuralSphere({
   interactionMultiplier = 1,
   parallaxMultiplier = 1,
   ambient = true,
+  intensity = 0,
 }: NeuralSphereProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const intensityRef = useRef(intensity);
+  useEffect(() => { intensityRef.current = intensity; }, [intensity]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -181,9 +186,10 @@ export function NeuralSphere({
     const baseHSL = { h: 0, s: 0, l: 0 };
     baseColor.getHSL(baseHSL);
     let raf = 0;
+    let smoothI = 0;
     const startTime = performance.now();
 
-    const updateShell = (shell: Shell, geometry: THREE.BufferGeometry, count: number, connectDist: number, linePosArray: Float32Array, geomLines: THREE.BufferGeometry, now: number) => {
+    const updateShell = (shell: Shell, geometry: THREE.BufferGeometry, count: number, connectDist: number, linePosArray: Float32Array, geomLines: THREE.BufferGeometry, now: number, waveBoost: number) => {
       const posAttr = geometry.attributes.position as THREE.BufferAttribute;
       mouseVec.set(mouse.x, mouse.y, 0);
       const arr = posAttr.array as Float32Array;
@@ -196,7 +202,7 @@ export function NeuralSphere({
         // Onda viajante: alvo da mola = posição original deslocada radialmente
         // por uma senoide que percorre a esfera (sensação de "respiração líquida").
         const phase = (orig.x + orig.y * 0.7 + orig.z) * WAVE_FREQ - now * WAVE_SPEED;
-        const radial = 1 + (Math.sin(phase) * WAVE_AMP) / (orig.length() || 1);
+        const radial = 1 + (Math.sin(phase) * WAVE_AMP * waveBoost) / (orig.length() || 1);
         waveTarget.copy(orig).multiplyScalar(radial);
 
         tempVec.subVectors(waveTarget, pos).multiplyScalar(SPRING_FORCE);
@@ -250,13 +256,18 @@ export function NeuralSphere({
 
     const animate = () => {
       const now = performance.now() * 0.001;
-      const I = ambient ? 0.18 + Math.sin(now * 0.5) * 0.06 : 0; // brilho ambiente suave
+      const ambientPulse = ambient ? 0.18 + Math.sin(now * 0.5) * 0.06 : 0;
+      // attack rápido / decay lento — sensação de respiração natural
+      const target = Math.max(ambientPulse, Math.min(1, intensityRef.current));
+      smoothI += (target - smoothI) * (target > smoothI ? 0.3 : 0.08);
+      const I = smoothI;
+      const waveBoost = 1 + I * 1.6;
 
-      const dynOuterConnect = OUTER_CONNECT_DISTANCE * (1 + I * 0.18);
-      const dynInnerConnect = INNER_CONNECT_DISTANCE * (1 + I * 0.22);
+      const dynOuterConnect = OUTER_CONNECT_DISTANCE * (1 + I * 0.2);
+      const dynInnerConnect = INNER_CONNECT_DISTANCE * (1 + I * 0.24);
 
-      updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now);
-      updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now);
+      updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now, waveBoost);
+      updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now, waveBoost);
 
       // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;

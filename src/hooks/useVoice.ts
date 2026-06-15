@@ -61,8 +61,8 @@ export function useVoice() {
   }
 
   const speak = useCallback(
-    (text: string) => {
-      if (!ttsSupported || !text) return;
+    (text: string, onEnd?: () => void) => {
+      if (!ttsSupported || !text) { onEnd?.(); return; }
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'pt-BR';
@@ -71,8 +71,8 @@ export function useVoice() {
       u.rate = 1.02;
       u.pitch = 1;
       u.onstart = () => setSpeaking(true);
-      u.onend = () => setSpeaking(false);
-      u.onerror = () => setSpeaking(false);
+      u.onend = () => { setSpeaking(false); onEnd?.(); };
+      u.onerror = () => { setSpeaking(false); onEnd?.(); };
       window.speechSynthesis.speak(u);
     },
     [ttsSupported],

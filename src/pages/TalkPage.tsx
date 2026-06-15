@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
-  Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon,
+  Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -17,6 +17,8 @@ import {
 const FOLDER_COLORS = ['#6B8F5E', '#3b82f6', '#8b5cf6', '#ef4444', '#f59e0b', '#14b8a6', '#ec4899', '#64748b'];
 import { AgentInfoModal } from '@/components/agents/AgentInfoModal';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
+import { VoiceConfigModal } from '@/components/agents/VoiceConfigModal';
+import { getVoiceConfig, ttsBlob, type VoiceConfig } from '@/services/voiceSkill';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -70,6 +72,25 @@ export function TalkPage() {
   }, []);
   const spokenRef = useRef<string | null>(null);
 
+  // ─── Skill de Voz ───────────────────────────────────────────────────────────
+  const [voiceCfg, setVoiceCfg] = useState<VoiceConfig | null>(null);
+  const [voiceConfigOpen, setVoiceConfigOpen] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [speakingProvider, setSpeakingProvider] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceModeRef = useRef(false);
+  const voiceCfgRef = useRef<VoiceConfig | null>(null);
+  useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
+  useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
+
+  useEffect(() => {
+    if (!agentId) return;
+    getVoiceConfig(agentId).then((c) => setVoiceCfg(c)).catch(() => setVoiceCfg(null));
+  }, [agentId, voiceConfigOpen]);
+
+  // Intensidade pra esfera reagir à voz.
+  const sphereIntensity = voice.listening || voice.speaking || speakingProvider ? 0.85 : 0;
+
   // Carrega pastas + sessões do agente.
   const loadTree = useCallback(async () => {
     if (!agentId || !userId) return;
@@ -114,22 +135,63 @@ export function TalkPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
-  // TTS: fala a última resposta do assistente (quando ligado).
+  // Fala uma resposta: provider configurado (áudio) ou voz nativa do navegador.
+  async function speakReply(text: string, onEnd?: () => void) {
+    const cfg = voiceCfgRef.current;
+    if (cfg?.enabled && cfg.provider !== 'browser' && agentId) {
+      try {
+        const blob = await ttsBlob(agentId, text);
+        if (blob) {
+          const audio = new Audio(URL.createObjectURL(blob));
+          audioRef.current = audio;
+          setSpeakingProvider(true);
+          const done = () => { setSpeakingProvider(false); onEnd?.(); };
+          audio.onended = done;
+          audio.onerror = done;
+          await audio.play();
+          return;
+        }
+      } catch { /* cai pro navegador */ }
+    }
+    voice.speak(text, onEnd);
+  }
+
+  // TTS: fala a última resposta do assistente (quando ligado ou em modo voz).
   useEffect(() => {
-    if (!ttsOn || messages.length === 0) return;
+    if (messages.length === 0) return;
     const last = messages[messages.length - 1];
     if (last.role === 'assistant' && last.status === 'done' && last.id !== spokenRef.current) {
       spokenRef.current = last.id;
-      voice.speak(last.content);
+      if (ttsOn || voiceModeRef.current) {
+        speakReply(last.content, () => { if (voiceModeRef.current) startListenOnce(); });
+      }
     }
-  }, [messages, ttsOn, voice]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, ttsOn]);
 
+  function onVoiceResult(text: string) {
+    if (voiceModeRef.current) send(text);
+    else setInput((cur) => (cur ? `${cur} ${text}` : text));
+  }
+  function startListenOnce() {
+    if (voice.sttSupported) voice.startListening(onVoiceResult);
+  }
   function micToggle() {
-    if (voice.listening) {
-      voice.stopListening();
-    } else {
-      voice.startListening((text) => setInput((cur) => (cur ? `${cur} ${text}` : text)));
-    }
+    if (voice.listening) voice.stopListening();
+    else startListenOnce();
+  }
+  function startVoiceMode() {
+    setVoiceMode(true);
+    voiceModeRef.current = true;
+    startListenOnce();
+  }
+  function stopVoiceMode() {
+    setVoiceMode(false);
+    voiceModeRef.current = false;
+    voice.stopListening();
+    voice.cancelSpeak();
+    audioRef.current?.pause();
+    setSpeakingProvider(false);
   }
 
   const active = sessions.find((s) => s.id === activeId) ?? null;
@@ -203,11 +265,11 @@ export function TalkPage() {
     });
   }
 
-  async function handleSend() {
-    const text = input.trim();
+  async function send(textArg?: string) {
+    const text = (textArg ?? input).trim();
     if (!text || !agent || !userId || sending) return;
     setSending(true);
-    setInput('');
+    if (textArg === undefined) setInput('');
 
     let sessionId = activeId;
     let isFirst = false;
@@ -341,11 +403,11 @@ export function TalkPage() {
           )}
         </div>
 
-        {/* Config & docs do colaborador */}
-        <div className="p-2.5 border-t border-default shrink-0">
+        {/* Config & docs + skill de voz */}
+        <div className="p-2 border-t border-default shrink-0 space-y-0.5">
           <button
             onClick={() => setInfoOpen(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors text-left"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-surface-hover transition-colors text-left"
           >
             <div className="w-8 h-8 rounded-lg bg-surface-2 border border-default flex items-center justify-center text-creme-mute shrink-0">
               <Settings2 size={15} />
@@ -353,6 +415,20 @@ export function TalkPage() {
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-semibold text-creme-dim truncate">Config & docs</div>
               <div className="text-[11px] text-creme-faint truncate">Skills e documentação de {agent.name}</div>
+            </div>
+          </button>
+          <button
+            onClick={() => setVoiceConfigOpen(true)}
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-surface-hover transition-colors text-left"
+          >
+            <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${voiceCfg?.enabled ? 'bg-brand/10 border-brand/40 text-brand-bright' : 'bg-surface-2 border-default text-creme-mute'}`}>
+              <Volume2 size={15} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-semibold text-creme-dim truncate">Skill: Voz</div>
+              <div className="text-[11px] text-creme-faint truncate">
+                {voiceCfg?.enabled ? `Ativa · ${voiceCfg.provider}` : 'Desligada — configurar'}
+              </div>
             </div>
           </button>
         </div>
@@ -376,8 +452,20 @@ export function TalkPage() {
             </div>
           </div>
 
-          {/* Trocar colaborador */}
-          <div className="relative shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Modo voz */}
+            {voice.sttSupported && (
+              <button
+                onClick={() => (voiceMode ? stopVoiceMode() : startVoiceMode())}
+                title="Modo voz — conversa falando"
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[13px] font-semibold transition-colors ${voiceMode ? 'bg-brand/15 border-brand/40 text-brand-bright' : 'bg-surface-2 border-default text-creme-mute hover:text-creme hover:bg-surface-hover'}`}
+              >
+                {voiceMode ? <AudioLines size={15} className="animate-pulse" /> : <Headphones size={15} />} Modo voz
+              </button>
+            )}
+
+            {/* Trocar colaborador */}
+            <div className="relative">
             <button
               onClick={() => setSwitcherOpen((o) => !o)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-2 border border-default text-[13px] font-semibold text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
@@ -405,6 +493,7 @@ export function TalkPage() {
                 </div>
               </>
             )}
+            </div>
           </div>
         </div>
 
@@ -412,7 +501,7 @@ export function TalkPage() {
           {messages.length === 0 ? (
             /* Boas-vindas estilo CORTEX — esfera animada + saudação */
             <div className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden">
-              <NeuralSphere className="absolute inset-0 opacity-90" />
+              <NeuralSphere className="absolute inset-0 opacity-90" intensity={sphereIntensity} />
               <div className="relative z-10 text-center px-6">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-bright/70 mb-2">{greeting}</div>
                 <div className="text-[clamp(38px,6vw,60px)] font-bold tracking-tight text-creme leading-none mb-5">{firstName}</div>
@@ -459,7 +548,7 @@ export function TalkPage() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  handleSend();
+                  send();
                 }
               }}
               rows={1}
@@ -485,7 +574,7 @@ export function TalkPage() {
               </button>
             )}
             <button
-              onClick={handleSend}
+              onClick={() => send()}
               disabled={sending || !input.trim()}
               className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors"
             >
@@ -497,6 +586,7 @@ export function TalkPage() {
 
       {infoOpen && <AgentInfoModal agent={agent} onClose={() => setInfoOpen(false)} onEdit={() => setEditOpen(true)} />}
       {editOpen && <AgentDetailModal agent={agent} onClose={() => setEditOpen(false)} />}
+      {voiceConfigOpen && <VoiceConfigModal agentId={agent.id} agentName={agent.name} onClose={() => setVoiceConfigOpen(false)} />}
     </div>
   );
 }
