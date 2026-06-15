@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
-  Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X,
+  Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -53,6 +53,8 @@ export function TalkPage() {
   const [sending, setSending] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null); // folder id ou 'root'
   const dragItemRef = useRef<{ type: 'session' | 'folder'; id: string } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -377,11 +379,12 @@ export function TalkPage() {
             <span className="text-[12px] text-creme-faint">{sess.length + subs.length}</span>
           </button>
           <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0">
-            <button onClick={() => newSession(f.id)} title="Nova sessão" className="text-creme-faint hover:text-brand p-1"><Plus size={14} /></button>
-            <button onClick={() => newFolder(f.id)} title="Nova subpasta" className="text-creme-faint hover:text-brand p-1"><SubfolderIcon size={13} /></button>
-            <button onClick={() => setColorPickerFor(colorPickerFor === f.id ? null : f.id)} title="Cor" className="text-creme-faint hover:text-creme p-1"><Palette size={13} /></button>
-            <button onClick={() => renameFolderAction(f)} title="Renomear" className="text-creme-faint hover:text-creme p-1"><Pencil size={13} /></button>
-            <button onClick={() => removeFolder(f)} title="Apagar" className="text-creme-faint hover:text-semantic-red p-1"><Trash2 size={13} /></button>
+            <button onClick={() => newFolder(f.id)} title="Criar pasta" className="text-creme-faint hover:text-brand p-1"><SubfolderIcon size={15} /></button>
+            <button
+              onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenuPos({ x: r.right, y: r.bottom }); setMenuFor(menuFor === f.id ? null : f.id); }}
+              title="Opções"
+              className={`p-1 transition-colors ${menuFor === f.id ? 'text-brand' : 'text-creme-faint hover:text-creme'}`}
+            ><Cog size={15} /></button>
           </div>
         </div>
         {colorPickerFor === f.id && (
@@ -642,6 +645,25 @@ export function TalkPage() {
 
       {infoOpen && <AgentInfoModal agent={agent} onClose={() => setInfoOpen(false)} onEdit={() => setEditOpen(true)} />}
       {editOpen && <AgentDetailModal agent={agent} onClose={() => setEditOpen(false)} />}
+
+      {/* Menu (engrenagem) da pasta */}
+      {menuFor && menuPos && (() => {
+        const mf = folders.find((x) => x.id === menuFor);
+        if (!mf) return null;
+        const top = Math.min(menuPos.y + 4, window.innerHeight - 188);
+        return (
+          <>
+            <div className="fixed inset-0 z-[58]" onClick={() => setMenuFor(null)} />
+            <div className="fixed z-[59] w-44 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px]" style={{ left: Math.max(8, menuPos.x - 176), top }}>
+              <button onClick={() => { newSession(mf.id); setMenuFor(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim"><Plus size={14} className="text-creme-faint" /> Nova sessão</button>
+              <button onClick={() => { setColorPickerFor(colorPickerFor === mf.id ? null : mf.id); setMenuFor(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim"><Palette size={14} className="text-creme-faint" /> Mudar cor</button>
+              <button onClick={() => { renameFolderAction(mf); setMenuFor(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim"><Pencil size={14} className="text-creme-faint" /> Renomear</button>
+              <div className="my-1 border-t border-default" />
+              <button onClick={() => { removeFolder(mf); setMenuFor(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-semantic-red"><Trash2 size={14} /> Apagar</button>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Modo voz — tela cheia imersiva (estilo CORTEX) */}
       {voiceMode && (

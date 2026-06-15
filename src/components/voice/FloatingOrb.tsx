@@ -135,12 +135,17 @@ export function FloatingOrb() {
             opacity: active ? 1 : hovered ? 0.85 : 0.5,
           }}
         />
-        {/* Esfera — idêntica à grande: mesmas linhas/params, borda esmaecida */}
+        <style>{`@keyframes orbBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}`}</style>
+        {/* Esfera — bem menos linhas; pulsa quando ativo */}
         <div
           className="absolute inset-0 rounded-full overflow-hidden"
-          style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
+          style={{
+            WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)',
+            maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)',
+            animation: active ? 'orbBreath 1.7s ease-in-out infinite' : undefined,
+          }}
         >
-          <NeuralSphere className="absolute inset-0" intensity={intensity} />
+          <NeuralSphere className="absolute inset-0" intensity={intensity} connectScale={0.38} />
         </div>
         {/* Anel só em hover/ativo (no repouso fica esmaecida como a grande) */}
         <div className={`absolute inset-0 rounded-full transition-all pointer-events-none ${active ? 'ring-2 ring-brand/50' : hovered ? 'ring-1 ring-brand/30' : ''}`} />
