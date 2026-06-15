@@ -197,7 +197,7 @@ export function TalkPage() {
   }
 
   return (
-    <div className="-m-6 h-[calc(100vh-3.5rem)] grid grid-cols-[300px_1fr] overflow-hidden">
+    <div className="-m-6 h-screen grid grid-cols-[300px_1fr] overflow-hidden">
       {/* Sessões + pastas */}
       <div className="border-r border-default flex flex-col bg-surface-1 min-h-0">
         <div className="p-3.5 border-b border-default space-y-2.5">
