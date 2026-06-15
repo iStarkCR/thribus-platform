@@ -143,11 +143,11 @@ async function processMessage(msg) {
     .single();
   if (!agent) throw new Error(`agente ${msg.agent_id} não encontrado`);
 
+  // Histórico da MESMA sessão (contexto da conversa).
   const { data: history } = await sb
     .from('collaborator_messages')
     .select('role,content,created_at')
-    .eq('user_id', msg.user_id)
-    .eq('agent_id', msg.agent_id)
+    .eq('session_id', msg.session_id)
     .in('status', ['done'])
     .order('created_at', { ascending: true })
     .limit(HISTORY);
@@ -156,6 +156,7 @@ async function processMessage(msg) {
   if (!reply) throw new Error('resposta vazia do claude');
 
   await sb.from('collaborator_messages').insert({
+    session_id: msg.session_id,
     agent_id: msg.agent_id,
     user_id: msg.user_id,
     role: 'assistant',
