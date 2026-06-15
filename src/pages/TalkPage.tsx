@@ -10,7 +10,7 @@ import { useVoice } from '@/hooks/useVoice';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, type ChatMessage } from '@/services/collaboratorChat';
 import {
-  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession,
+  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession,
   type ChatFolder, type ChatSession,
 } from '@/services/chatSessions';
 
@@ -51,6 +51,8 @@ export function TalkPage() {
   const [sending, setSending] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null); // folder id ou 'root'
+  const dragItemRef = useRef<{ type: 'session' | 'folder'; id: string } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -206,6 +208,31 @@ export function TalkPage() {
   const rootFolders = folders.filter((f) => !f.parentId);
   const childFolders = (pid: string) => folders.filter((f) => f.parentId === pid);
 
+  // ─── Drag-drop: organizar conversas e pastas ────────────────────────────────
+  function isDescendant(folderId: string, ancestorId: string): boolean {
+    let cur: ChatFolder | undefined = folders.find((f) => f.id === folderId);
+    while (cur) {
+      if (cur.parentId === ancestorId) return true;
+      cur = folders.find((f) => f.id === cur!.parentId);
+    }
+    return false;
+  }
+  async function dropOnTarget(targetFolderId: string | null) {
+    const item = dragItemRef.current;
+    dragItemRef.current = null;
+    setDragOverId(null);
+    if (!item) return;
+    if (item.type === 'session') {
+      await moveSession(item.id, targetFolderId);
+      setSessions((prev) => prev.map((s) => (s.id === item.id ? { ...s, folderId: targetFolderId } : s)));
+    } else if (item.type === 'folder') {
+      if (item.id === targetFolderId) return;
+      if (targetFolderId && isDescendant(targetFolderId, item.id)) return; // não aninhar numa subpasta sua
+      await updateFolder(item.id, { parentId: targetFolderId });
+      setFolders((prev) => prev.map((f) => (f.id === item.id ? { ...f, parentId: targetFolderId } : f)));
+    }
+  }
+
   async function newSession(folderId: string | null = null) {
     if (!agentId || !userId) return;
     const s = await createSession(agentId, userId, { folderId });
@@ -315,7 +342,15 @@ export function TalkPage() {
     const dot = f.color ?? '#64748b';
     return (
       <div key={f.id}>
-        <div className="group flex items-center gap-1 pr-1 py-2 rounded-md hover:bg-surface-hover" style={{ paddingLeft: depth * 12 + 6 }}>
+        <div
+          draggable
+          onDragStart={(e) => { dragItemRef.current = { type: 'folder', id: f.id }; e.dataTransfer.effectAllowed = 'move'; }}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverId(f.id); }}
+          onDragLeave={() => setDragOverId((c) => (c === f.id ? null : c))}
+          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); dropOnTarget(f.id); }}
+          className={`group flex items-center gap-1 pr-1 py-2 rounded-md transition-colors ${dragOverId === f.id ? 'bg-brand/15 ring-1 ring-brand/40' : 'hover:bg-surface-hover'}`}
+          style={{ paddingLeft: depth * 12 + 6 }}
+        >
           <button onClick={() => toggle(f.id)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
             {open ? <ChevronDown size={15} className="text-creme-faint shrink-0" /> : <ChevronRight size={15} className="text-creme-faint shrink-0" />}
             <Folder size={15} className="shrink-0" style={{ color: dot }} />
@@ -342,7 +377,7 @@ export function TalkPage() {
           <div>
             {subs.map((sf) => renderFolder(sf, depth + 1))}
             {sess.map((s) => (
-              <SessionItem key={s.id} session={s} active={s.id === activeId} depth={depth + 1} onClick={() => setActiveId(s.id)} onRename={() => renameSessionAction(s)} onDelete={() => removeSession(s.id)} />
+              <SessionItem key={s.id} session={s} active={s.id === activeId} depth={depth + 1} onClick={() => setActiveId(s.id)} onRename={() => renameSessionAction(s)} onDelete={() => removeSession(s.id)} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
             ))}
             {sess.length === 0 && subs.length === 0 && (
               <div className="text-[11px] text-creme-faint italic py-1" style={{ paddingLeft: (depth + 1) * 12 + 14 }}>vazia</div>
@@ -379,18 +414,23 @@ export function TalkPage() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        <div
+          className={`flex-1 overflow-y-auto p-2 space-y-0.5 transition-colors ${dragOverId === 'root' ? 'bg-brand/[0.06]' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragOverId('root'); }}
+          onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverId((c) => (c === 'root' ? null : c)); }}
+          onDrop={(e) => { e.preventDefault(); dropOnTarget(null); }}
+        >
           {rootFolders.map((f) => renderFolder(f, 0))}
 
           {/* Sessões sem pasta */}
           {ungrouped.length > 0 && (
             <div className="pt-1">
               {folders.length > 0 && (
-                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-creme-faint">Sem pasta</div>
+                <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition-colors ${dragOverId === 'root' ? 'text-brand' : 'text-creme-faint'}`}>Sem pasta</div>
               )}
               <div className="space-y-0.5">
                 {ungrouped.map((s) => (
-                  <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => setActiveId(s.id)} onRename={() => renameSessionAction(s)} onDelete={() => removeSession(s.id)} />
+                  <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => setActiveId(s.id)} onRename={() => renameSessionAction(s)} onDelete={() => removeSession(s.id)} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
                 ))}
               </div>
             </div>
@@ -601,9 +641,11 @@ export function TalkPage() {
   );
 }
 
-function SessionItem({ session, active, depth = 0, onClick, onRename, onDelete }: { session: ChatSession; active: boolean; depth?: number; onClick: () => void; onRename: () => void; onDelete: () => void }) {
+function SessionItem({ session, active, depth = 0, onClick, onRename, onDelete, onDragStartItem }: { session: ChatSession; active: boolean; depth?: number; onClick: () => void; onRename: () => void; onDelete: () => void; onDragStartItem: () => void }) {
   return (
     <div
+      draggable
+      onDragStart={(e) => { onDragStartItem(); e.dataTransfer.effectAllowed = 'move'; }}
       className={`group flex items-center gap-2 pr-2 py-2 rounded-lg cursor-pointer transition-colors ${active ? 'bg-brand/10' : 'hover:bg-surface-hover'}`}
       style={{ paddingLeft: depth * 12 + 10 }}
       onClick={onClick}
