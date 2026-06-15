@@ -142,7 +142,7 @@ function UserMenu() {
           <MenuItem icon={<Lock size={13} />} label="Vault & API Keys" onClick={() => go('/vault')} />
           <div className="border-t border-default" />
           <MenuItem icon={<HelpCircle size={13} />} label="Ajuda & Academy" onClick={() => go('/help')} />
-          <MenuItem icon={<Moon size={13} />} label="Tema (escuro)" subtitle="ativo" onClick={() => { /* noop */ }} />
+          <MenuItem icon={<Moon size={13} />} label="Aparência / Tema" onClick={() => go('/settings')} />
           <div className="border-t border-default" />
           <MenuItem icon={<LogOut size={13} />} label="Sair" danger onClick={logout} />
         </div>

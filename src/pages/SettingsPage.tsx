@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react';
 import {
   Settings, Database, Cable, ShieldCheck, HardDrive,
   CheckCircle2, XCircle, AlertTriangle, ExternalLink, Copy,
-  Server, KeyRound, Bot, Wrench, Pencil,
+  Server, KeyRound, Bot, Wrench, Pencil, Sun, Moon, Palette,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { WorkspaceEditModal } from '@/components/settings/WorkspaceEditModal';
 import { supabase } from '@/lib/supabase';
+import { useTheme } from '@/hooks/useTheme';
 
 /**
  * Configurações — visão operacional do sistema.
@@ -18,6 +19,7 @@ import { supabase } from '@/lib/supabase';
  */
 export function SettingsPage() {
   const { workspaces, agents, tools, addToast } = useAppStore();
+  const { theme, setTheme } = useTheme();
 
   // ─── Env vars (frontend-side via Vite) ─────────────────────────────────────
   const env = useMemo(() => ({
@@ -114,6 +116,33 @@ export function SettingsPage() {
           sub={env.dev ? 'Modo desenvolvimento' : 'Build de produção'}
           accent={env.dev ? 'amber' : 'green'}
         />
+      </div>
+
+      {/* ─── Aparência / Tema ───────────────────────────────────────────── */}
+      <div className="bg-surface-1 border border-default rounded-[10px] p-4 mb-5">
+        <div className="flex items-center gap-2 text-[13.5px] font-bold text-creme mb-0.5">
+          <Palette size={15} className="text-creme-mute" /> Aparência
+        </div>
+        <div className="text-[12.5px] text-creme-faint mb-3">Tema do painel.</div>
+        <div className="flex gap-2.5 max-w-md">
+          {([
+            { id: 'dark', label: 'Escuro', icon: <Moon size={15} /> },
+            { id: 'light', label: 'Claro', icon: <Sun size={15} /> },
+          ] as const).map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setTheme(opt.id)}
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-[13.5px] font-semibold transition-colors ${
+                theme === opt.id
+                  ? 'bg-brand/10 border-brand/40 text-creme'
+                  : 'bg-surface-2 border-default text-creme-mute hover:bg-surface-hover'
+              }`}
+            >
+              {opt.icon} {opt.label}
+              {theme === opt.id && <CheckCircle2 size={14} className="text-brand" />}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

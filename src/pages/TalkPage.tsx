@@ -10,6 +10,7 @@ import {
   listFolders, createFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession,
   type ChatFolder, type ChatSession,
 } from '@/services/chatSessions';
+import { PromptDialog, ConfirmDialog } from '@/components/shared/Dialogs';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -39,6 +40,8 @@ export function TalkPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [folderDialog, setFolderDialog] = useState(false);
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Carrega pastas + sessões do agente.
@@ -103,26 +106,37 @@ export function TalkPage() {
     setMessages([]);
   }
 
-  async function newFolder() {
+  async function createFolderNamed(name: string) {
     if (!agentId || !userId) return;
-    const name = window.prompt('Nome da pasta:')?.trim();
-    if (!name) return;
+    setFolderDialog(false);
     const f = await createFolder(agentId, userId, name);
     setFolders((prev) => [...prev, f]);
   }
 
-  async function removeSession(id: string) {
-    if (!window.confirm('Apagar esta conversa?')) return;
-    await deleteSession(id);
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    if (activeId === id) setActiveId(null);
+  function removeSession(id: string) {
+    setConfirm({
+      title: 'Apagar conversa',
+      message: 'Esta conversa e todas as mensagens dela serão apagadas. Não dá pra desfazer.',
+      onConfirm: async () => {
+        setConfirm(null);
+        await deleteSession(id);
+        setSessions((prev) => prev.filter((s) => s.id !== id));
+        if (activeId === id) setActiveId(null);
+      },
+    });
   }
 
-  async function removeFolder(f: ChatFolder) {
-    if (!window.confirm(`Apagar a pasta "${f.name}"? As conversas dentro voltam pra "Sem pasta".`)) return;
-    await deleteFolder(f.id);
-    setFolders((prev) => prev.filter((x) => x.id !== f.id));
-    setSessions((prev) => prev.map((s) => (s.folderId === f.id ? { ...s, folderId: null } : s)));
+  function removeFolder(f: ChatFolder) {
+    setConfirm({
+      title: 'Apagar pasta',
+      message: `A pasta "${f.name}" será apagada. As conversas dentro dela voltam para "Sem pasta".`,
+      onConfirm: async () => {
+        setConfirm(null);
+        await deleteFolder(f.id);
+        setFolders((prev) => prev.filter((x) => x.id !== f.id));
+        setSessions((prev) => prev.map((s) => (s.folderId === f.id ? { ...s, folderId: null } : s)));
+      },
+    });
   }
 
   function toggle(fid: string) {
@@ -183,21 +197,21 @@ export function TalkPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-3.5rem)] grid grid-cols-[280px_1fr]">
+    <div className="-m-6 h-[calc(100vh-3.5rem)] grid grid-cols-[300px_1fr] overflow-hidden">
       {/* Sessões + pastas */}
-      <div className="border-r border-default flex flex-col bg-surface-1">
-        <div className="p-3 border-b border-default space-y-2">
+      <div className="border-r border-default flex flex-col bg-surface-1 min-h-0">
+        <div className="p-3.5 border-b border-default space-y-2.5">
           <button
             onClick={() => newSession(null)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-brand text-white text-[13px] font-semibold hover:bg-brand-bright transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-brand text-white text-[14px] font-semibold hover:bg-brand-bright transition-colors shadow-sm"
           >
-            <Plus size={15} /> Nova sessão
+            <Plus size={16} /> Nova sessão
           </button>
           <button
-            onClick={newFolder}
-            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-surface-2 border border-default text-creme-mute text-[12px] hover:bg-surface-hover transition-colors"
+            onClick={() => setFolderDialog(true)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-2 border border-default text-creme-mute text-[13px] hover:bg-surface-hover transition-colors"
           >
-            <FolderPlus size={13} /> Nova pasta
+            <FolderPlus size={14} /> Nova pasta
           </button>
         </div>
 
@@ -256,61 +270,61 @@ export function TalkPage() {
       </div>
 
       {/* Thread */}
-      <div className="flex flex-col bg-surface-0 min-w-0">
-        <div className="h-14 px-4 flex items-center gap-2.5 border-b border-default shrink-0">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[12px] font-bold text-white">
+      <div className="flex flex-col bg-surface-0 min-w-0 min-h-0">
+        <div className="h-16 px-6 flex items-center gap-3 border-b border-default shrink-0">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[15px] font-bold text-white shrink-0">
             {agent.name[0]}
           </div>
           <div className="min-w-0">
-            <div className="text-[14px] font-semibold text-creme flex items-center gap-1.5">
+            <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2">
               {agent.name}
-              {agent.isSupervisor && <Crown size={13} className="text-semantic-amber" />}
+              {agent.isSupervisor && <Crown size={15} className="text-semantic-amber" />}
             </div>
-            <div className="text-[11px] text-creme-faint truncate">
+            <div className="text-[12.5px] text-creme-faint truncate">
               {agent.sector} · {agent.status}{active ? ` · ${active.title}` : ''}
             </div>
           </div>
         </div>
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           {!active && messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-creme-faint text-[12.5px] gap-2">
-              <Bot size={28} className="opacity-40" />
-              <span>Comece uma sessão com {agent.name}.</span>
-              <button onClick={() => newSession(null)} className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-white text-[12px] font-semibold">
-                <Plus size={13} /> Nova sessão
+            <div className="h-full flex flex-col items-center justify-center text-creme-faint text-[14px] gap-3">
+              <Bot size={34} className="opacity-40" />
+              <span>Comece uma sessão com <b className="text-creme-mute">{agent.name}</b>.</span>
+              <button onClick={() => newSession(null)} className="mt-1 flex items-center gap-2 px-4 py-2 rounded-xl bg-brand text-white text-[13.5px] font-semibold hover:bg-brand-bright transition-colors">
+                <Plus size={15} /> Nova sessão
               </button>
             </div>
           ) : messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-creme-faint text-[12.5px] gap-2">
-              <MessageSquare size={26} className="opacity-40" />
+            <div className="h-full flex flex-col items-center justify-center text-creme-faint text-[14px] gap-3">
+              <MessageSquare size={32} className="opacity-40" />
               <span>Mande a primeira mensagem.</span>
             </div>
           ) : (
             messages.map((m) => (
               <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-[72%] px-3.5 py-2 rounded-2xl text-[13px] leading-relaxed whitespace-pre-wrap ${
-                    m.role === 'user' ? 'bg-brand text-white rounded-br-sm' : 'bg-surface-2 text-creme border border-default rounded-bl-sm'
+                  className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-[14.5px] leading-relaxed whitespace-pre-wrap ${
+                    m.role === 'user' ? 'bg-brand text-white rounded-br-md' : 'bg-surface-2 text-creme border border-default rounded-bl-md'
                   }`}
                 >
                   {m.content}
-                  {m.status === 'error' && <div className="text-[10.5px] mt-1 text-semantic-red">erro: {m.error}</div>}
+                  {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                 </div>
               </div>
             ))
           )}
           {waiting && (
             <div className="flex justify-start">
-              <div className="px-3.5 py-2 rounded-2xl rounded-bl-sm bg-surface-2 border border-default text-creme-mute text-[12.5px] flex items-center gap-2">
-                <Loader2 size={12} className="animate-spin" /> {agent.name} está pensando…
+              <div className="px-4 py-2.5 rounded-2xl rounded-bl-md bg-surface-2 border border-default text-creme-mute text-[14px] flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin" /> {agent.name} está pensando…
               </div>
             </div>
           )}
         </div>
 
-        <div className="p-3 border-t border-default shrink-0">
-          <div className="flex items-end gap-2">
+        <div className="px-6 py-4 border-t border-default shrink-0">
+          <div className="flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -322,27 +336,46 @@ export function TalkPage() {
               }}
               rows={1}
               placeholder={`Mensagem para ${agent.name}…`}
-              className="flex-1 resize-none px-3 py-2 rounded-xl bg-surface-2 border border-default text-[13px] text-creme placeholder-creme-faint focus:outline-none focus:border-brand max-h-32"
+              className="flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[14.5px] text-creme placeholder-creme-faint focus:outline-none max-h-40"
             />
             <button
               onClick={handleSend}
               disabled={sending || !input.trim()}
               className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors"
             >
-              {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
             </button>
           </div>
         </div>
       </div>
+
+      {folderDialog && (
+        <PromptDialog
+          title="Nova pasta"
+          label="Nome da pasta"
+          placeholder="Ex: Estratégia, Financeiro…"
+          onConfirm={createFolderNamed}
+          onClose={() => setFolderDialog(false)}
+        />
+      )}
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          confirmLabel="Apagar"
+          onConfirm={confirm.onConfirm}
+          onClose={() => setConfirm(null)}
+        />
+      )}
     </div>
   );
 }
 
 function SessionItem({ session, active, onClick, onDelete }: { session: ChatSession; active: boolean; onClick: () => void; onDelete: () => void }) {
   return (
-    <div className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors ${active ? 'bg-brand/10' : 'hover:bg-surface-hover'}`} onClick={onClick}>
-      <MessageSquare size={12} className="text-creme-faint shrink-0" />
-      <span className={`flex-1 min-w-0 text-[12.5px] truncate ${active ? 'text-creme' : 'text-creme-mute'}`}>{session.title}</span>
+    <div className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${active ? 'bg-brand/10' : 'hover:bg-surface-hover'}`} onClick={onClick}>
+      <MessageSquare size={13} className="text-creme-faint shrink-0" />
+      <span className={`flex-1 min-w-0 text-[13.5px] truncate ${active ? 'text-creme font-medium' : 'text-creme-mute'}`}>{session.title}</span>
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
         className="opacity-0 group-hover:opacity-100 text-creme-faint hover:text-semantic-red p-0.5 shrink-0"
