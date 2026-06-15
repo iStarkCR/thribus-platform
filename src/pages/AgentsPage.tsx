@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bot, Plus, Search, Building2 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { AgentCard } from '@/components/agents/AgentCard';
@@ -20,9 +21,13 @@ interface CompanyGroup {
 export function AgentsPage() {
   const agents = useAppStore((s) => s.agents);
   const sectors = useAppStore((s) => s.sectors);
+  const navigate = useNavigate();
   const [selected, setSelected] = useState<Agent | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
+
+  // Clicar no colaborador → abre o chat com ele. Engrenagem → config.
+  const goToChat = (a: Agent) => navigate(`/talk?agent=${a.id}`);
 
   // Filtra por busca
   const filtered = useMemo(() => {
@@ -129,7 +134,7 @@ export function AgentsPage() {
                 <div className="mb-4">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
                     {company.supervisors.map((a) => (
-                      <AgentCard key={a.id} agent={a} showFullInfo onClick={() => setSelected(a)} />
+                      <AgentCard key={a.id} agent={a} showFullInfo onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
                     ))}
                   </div>
                 </div>
@@ -151,7 +156,7 @@ export function AgentsPage() {
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
                       {list.map((a) => (
-                        <AgentCard key={a.id} agent={a} showFullInfo onClick={() => setSelected(a)} />
+                        <AgentCard key={a.id} agent={a} showFullInfo onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
                       ))}
                     </div>
                   </div>

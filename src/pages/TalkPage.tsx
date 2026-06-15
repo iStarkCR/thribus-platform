@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Send, Search, Bot, Crown, Loader2 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -26,6 +27,9 @@ export function TalkPage() {
     return sorted;
   }, [agents]);
 
+  const [searchParams] = useSearchParams();
+  const agentParam = searchParams.get('agent');
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -33,11 +37,15 @@ export function TalkPage() {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Seleção inicial: colaborador da URL (?agent=) > Bukowiski > primeiro.
   useEffect(() => {
-    if (!selectedId && collaborators.length) {
+    if (collaborators.length === 0) return;
+    if (agentParam && collaborators.some((c) => c.id === agentParam)) {
+      setSelectedId(agentParam);
+    } else if (!selectedId) {
       setSelectedId(collaborators.find((c) => c.id === BUKOWISKI_ID)?.id ?? collaborators[0].id);
     }
-  }, [collaborators, selectedId]);
+  }, [collaborators, agentParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refetch = useMemo(
     () => async () => {
