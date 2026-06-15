@@ -132,8 +132,8 @@ export function AgentCard({ agent, showFullInfo, onClick, onConfig }: AgentCardP
       {/* Stats */}
       <div className="grid grid-cols-4 gap-2 pt-3.5 border-t border-default">
         {[
+          { label: 'Demandas', value: agent.stats.total || agent.stats.today || '—' },
           { label: 'Hoje', value: agent.stats.today || '—' },
-          { label: 'Resolução', value: agent.stats.resolution ? `${agent.stats.resolution}%` : '—' },
           { label: 'Resp. Média', value: agent.stats.avgResponseTime ? `${agent.stats.avgResponseTime}s` : '—' },
           { label: 'Escalados', value: agent.stats.escalated || '—' },
         ].map((stat) => (

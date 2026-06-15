@@ -24,6 +24,7 @@ export interface AgentStats {
   resolution: number;      // percentage 0-100
   avgResponseTime: number;  // seconds
   escalated: number;
+  total?: number;          // total de demandas (mensagens do usuário) — all-time
 }
 
 /** Papel do agente — usado pelo roteador multi-agente (M2). */
