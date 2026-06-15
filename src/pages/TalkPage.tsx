@@ -557,9 +557,6 @@ export function TalkPage() {
               >
                 <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} />
               </div>
-              {/* Anéis de borda — energia "saindo" da esfera */}
-              <div className="pointer-events-none absolute aspect-square w-[min(86vmin,680px)] rounded-full ring-1 ring-brand/[0.08]" />
-              <div className="pointer-events-none absolute aspect-square w-[min(96vmin,760px)] rounded-full ring-1 ring-brand/[0.04]" />
 
               <div className="relative z-10 text-center px-6">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-bright/70 mb-2">{greeting}</div>

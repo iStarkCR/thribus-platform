@@ -21,22 +21,23 @@ const INNER_POINT_OPACITY = 0.92;
 const INNER_LINE_OPACITY = 0.36;
 const INNER_CONNECT_DISTANCE = 0.95;
 
-const AUTO_ROTATE_SPEED_OUTER = 0.0006;
-const AUTO_ROTATE_SPEED_INNER = -0.00112;
+const AUTO_ROTATE_SPEED_OUTER = 0.00028; // mais lento, contemplativo
+const AUTO_ROTATE_SPEED_INNER = -0.00052;
 const MOUSE_INFLUENCE = 1.4;
 const REPULSION_STRENGTH = 0.14;
-const DAMPING = 0.8;
-const SPRING_FORCE = 0.1;
+const DAMPING = 0.86; // mais líquido — os pontos seguem com lag suave
+const SPRING_FORCE = 0.06; // mola mais frouxa → movimento fluido tipo Siri
 const PARALLAX_LERP = 0.045;
 const MAX_LINE_PAIRS = 6000;
 
-// Onda. Na casca externa é TANGENCIAL (flui pela superfície, raio travado → borda
-// nunca deforma). No miolo interno é radial (não afeta a silhueta).
-const WAVE_AMP = 0.085; // radial — só miolo interno
-const WAVE_AMP_TAN = 0.16; // tangencial — superfície externa flui sem mexer na borda
-const WAVE_FREQ = 1.25;
-const WAVE_SPEED = 1.5;
-const HUE_DRIFT = 0.05; // amplitude do desvio de matiz (verde ↔ teal/azulado)
+// Onda. Na casca externa é TANGENCIAL em CAMADAS (duas senoides em direções/velocidades
+// diferentes → fluxo orgânico tipo Siri), com o raio travado → a borda nunca deforma.
+// No miolo interno é radial (não afeta a silhueta).
+const WAVE_AMP = 0.075; // radial — só miolo interno
+const WAVE_AMP_TAN = 0.22; // tangencial — superfície externa flui, sem mexer na borda
+const WAVE_FREQ = 1.05;
+const WAVE_SPEED = 0.75; // bem mais lento
+const HUE_DRIFT = 0.06; // desvio de matiz (verde ↔ teal/azulado) — toque Siri
 
 function readPrimaryColor(): THREE.Color {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--brand-bright').trim();
@@ -207,13 +208,16 @@ export function NeuralSphere({
         const vel = shell.velocities[i];
 
         if (lockRadius != null) {
-          // Onda TANGENCIAL: o ponto flui pela superfície da esfera. Combinada com
-          // a trava de raio abaixo, a borda permanece um círculo perfeito.
+          // Onda TANGENCIAL em camadas: duas senoides em direções/velocidades distintas
+          // → fluxo orgânico (tipo Siri). Combinada com a trava de raio abaixo, a borda
+          // permanece um círculo perfeito.
           const phase = (orig.y * 1.4 + orig.x * 0.5) * WAVE_FREQ - now * WAVE_SPEED;
+          const phase2 = (orig.z * 1.1 - orig.y * 0.6) * WAVE_FREQ * 0.6 - now * WAVE_SPEED * 0.45;
+          const amt = (Math.sin(phase) * 0.7 + Math.sin(phase2) * 0.5) * WAVE_AMP_TAN * waveBoost;
           tangent.crossVectors(orig, UP);
           if (tangent.lengthSq() < 1e-4) tangent.set(1, 0, 0);
           tangent.normalize();
-          waveTarget.copy(orig).addScaledVector(tangent, Math.sin(phase) * WAVE_AMP_TAN * waveBoost);
+          waveTarget.copy(orig).addScaledVector(tangent, amt);
         } else {
           // Onda radial — só no miolo interno (não afeta a silhueta).
           const phase = (orig.x + orig.y * 0.7 + orig.z) * WAVE_FREQ - now * WAVE_SPEED;

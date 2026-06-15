@@ -135,10 +135,10 @@ export function FloatingOrb() {
             opacity: active ? 1 : hovered ? 0.85 : 0.5,
           }}
         />
-        {/* Esfera — círculo perfeito nítido, poucas linhas, preenchido borda a borda */}
-        <div className="absolute inset-0 rounded-full overflow-hidden border border-brand/40 shadow-xl bg-[#0a0f0b]">
+        {/* Esfera — círculo perfeito, fundo transparente, poucas linhas */}
+        <div className="absolute inset-0 rounded-full overflow-hidden">
           <div className="absolute -inset-[12%]">
-            <NeuralSphere className="absolute inset-0" intensity={intensity} speedMultiplier={1.4} interactionMultiplier={1} parallaxMultiplier={0} ambient={false} connectScale={0.5} />
+            <NeuralSphere className="absolute inset-0" intensity={intensity} speedMultiplier={1} interactionMultiplier={1} parallaxMultiplier={0} ambient={false} connectScale={0.5} />
           </div>
         </div>
         {/* Borda sutil "saindo" da esfera */}
