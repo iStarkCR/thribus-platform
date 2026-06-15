@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Bot, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
+  Users, Check, Settings2,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -11,6 +12,8 @@ import {
   type ChatFolder, type ChatSession,
 } from '@/services/chatSessions';
 import { PromptDialog, ConfirmDialog } from '@/components/shared/Dialogs';
+import { AgentInfoModal } from '@/components/agents/AgentInfoModal';
+import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -23,6 +26,7 @@ export function TalkPage() {
   const agents = useAppStore((s) => s.agents);
   const { user } = useSession();
   const userId = user?.id ?? null;
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const agentParam = searchParams.get('agent');
 
@@ -42,7 +46,16 @@ export function TalkPage() {
   const [sending, setSending] = useState(false);
   const [folderDialog, setFolderDialog] = useState(false);
   const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Colaboradores pra trocar (Bukowiski no topo).
+  const collaborators = useMemo(
+    () => [...agents].sort((a, b) => (a.id === BUKOWISKI_ID ? -1 : b.id === BUKOWISKI_ID ? 1 : a.name.localeCompare(b.name))),
+    [agents],
+  );
 
   // Carrega pastas + sessões do agente.
   const loadTree = useCallback(async () => {
@@ -267,22 +280,71 @@ export function TalkPage() {
             </div>
           )}
         </div>
+
+        {/* Config & docs do colaborador */}
+        <div className="p-2.5 border-t border-default shrink-0">
+          <button
+            onClick={() => setInfoOpen(true)}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-surface-hover transition-colors text-left"
+          >
+            <div className="w-8 h-8 rounded-lg bg-surface-2 border border-default flex items-center justify-center text-creme-mute shrink-0">
+              <Settings2 size={15} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-semibold text-creme-dim truncate">Config & docs</div>
+              <div className="text-[11px] text-creme-faint truncate">Skills e documentação de {agent.name}</div>
+            </div>
+          </button>
+        </div>
       </div>
 
       {/* Thread */}
       <div className="flex flex-col bg-surface-0 min-w-0 min-h-0">
-        <div className="h-16 px-6 flex items-center gap-3 border-b border-default shrink-0">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[15px] font-bold text-white shrink-0">
-            {agent.name[0]}
+        <div className="h-16 px-6 flex items-center justify-between gap-3 border-b border-default shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[15px] font-bold text-white shrink-0">
+              {agent.name[0]}
+            </div>
+            <div className="min-w-0">
+              <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2">
+                {agent.name}
+                {agent.isSupervisor && <Crown size={15} className="text-semantic-amber" />}
+              </div>
+              <div className="text-[12.5px] text-creme-faint truncate">
+                {agent.sector} · {agent.status}{active ? ` · ${active.title}` : ''}
+              </div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2">
-              {agent.name}
-              {agent.isSupervisor && <Crown size={15} className="text-semantic-amber" />}
-            </div>
-            <div className="text-[12.5px] text-creme-faint truncate">
-              {agent.sector} · {agent.status}{active ? ` · ${active.title}` : ''}
-            </div>
+
+          {/* Trocar colaborador */}
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setSwitcherOpen((o) => !o)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-2 border border-default text-[13px] font-semibold text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
+            >
+              <Users size={15} /> Colaboradores <ChevronDown size={13} className="opacity-60" />
+            </button>
+            {switcherOpen && (
+              <>
+                <div className="fixed inset-0 z-[55]" onClick={() => setSwitcherOpen(false)} />
+                <div className="absolute right-0 mt-1 w-64 max-h-[60vh] overflow-y-auto bg-surface-1 border border-default rounded-xl shadow-2xl z-[56] py-1">
+                  {collaborators.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setSwitcherOpen(false); navigate(`/talk?agent=${c.id}`); }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${c.id === agent.id ? 'bg-brand/10' : 'hover:bg-surface-hover'}`}
+                    >
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[11px] font-bold text-white shrink-0">{c.name[0]}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-creme flex items-center gap-1 truncate">{c.name}{c.isSupervisor && <Crown size={10} className="text-semantic-amber" />}</div>
+                        <div className="text-[10.5px] text-creme-faint truncate">{c.sector}</div>
+                      </div>
+                      {c.id === agent.id && <Check size={13} className="text-brand shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -367,6 +429,8 @@ export function TalkPage() {
           onClose={() => setConfirm(null)}
         />
       )}
+      {infoOpen && <AgentInfoModal agent={agent} onClose={() => setInfoOpen(false)} onEdit={() => setEditOpen(true)} />}
+      {editOpen && <AgentDetailModal agent={agent} onClose={() => setEditOpen(false)} />}
     </div>
   );
 }
