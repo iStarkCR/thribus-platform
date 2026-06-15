@@ -107,7 +107,7 @@ export function FloatingOrb() {
   const listening = wakeWordEnabled && !conv.voiceActive && !chatOpen && !voiceModeActive;
   // Esfera muda de cor pelo estado do modo voz: verde (ouvindo) → âmbar (pensando) → azul (respondendo).
   const hue = conv.voiceActive ? (conv.state === 'thinking' ? -62 : conv.state === 'speaking' ? 95 : 6) : 0;
-  const haloColor = conv.state === 'thinking' ? '250,190,90' : conv.state === 'speaking' ? '110,170,250' : 'var(--brand-bright)';
+  const haloColor = conv.state === 'thinking' ? '250 190 90' : conv.state === 'speaking' ? '110 170 250' : 'var(--brand-bright)';
 
   return (
     <>
@@ -170,6 +170,11 @@ export function FloatingOrb() {
       {chatOpen && (
         <OrbChat orb={{ x: pos.x, y: pos.y, size: ORB_SIZE }} onClose={() => setChatOpen(false)} conv={conv} />
       )}
+
+      {/* Modo voz por fala (wake word) NÃO abre tela cheia — só a orbe pequena
+          reage (cor/pulso por conv.state). "Bukowiski off" encerra. Igual ao
+          FloatingAssistantOrb do CORTEX. O OrbVoiceOverlay foi removido daqui de
+          propósito; a conversa por voz é gerenciada inteira pelo useOrbConversation. */}
     </>
   );
 }

@@ -25,7 +25,8 @@ export function isWakeWordSupported(): boolean {
 const WAKE_PATTERNS = [
   /[bmp][uo][ck][oae]?[wv]?[ií]?sk/i, // bukowisk, mucovisk, bucovisk, bukosk…
   /[bmp][uo][ck][oae]?\s*[wv][ií]?sk/i, // "buco visk", "muco visk"
-  /[bmp][uo][ck]o?[wv][ií]s\b/i, // bucovis, mucovis (quando o reconhecimento corta o "k")
+  /[bmp][uo][ck]o?[wv][ií]s\b/i, // bucovis, mucovis (corta o "k")
+  /[bmp][uo][ck][oae]?[wv][ií]/i, // bukowi, mucovi, bucovi — casa ANTES do "sk"
   /\b[bmp]uk[oae]?w?ski?\b/i, // bukowski, mukowski
   /book.{0,4}sk/i, // mishear "book of ski"
 ];
@@ -61,7 +62,9 @@ export function useWakeWordListener({
     let recog: any = null;
     let stopped = false;
     let restartTimer: ReturnType<typeof setTimeout> | null = null;
+    let freshTimer: ReturnType<typeof setTimeout> | null = null;
     let lastWakeAt = 0;
+    const FRESH_MS = 11000; // reinicia o reconhecimento periodicamente → fica "fresco" e entende melhor
 
     const start = () => {
       if (stopped) return;
@@ -93,12 +96,15 @@ export function useWakeWordListener({
         };
 
         recog.onend = () => {
+          if (freshTimer) { clearTimeout(freshTimer); freshTimer = null; }
           // Navegador encerra o reconhecimento sozinho — reinicia.
           if (stopped) return;
-          restartTimer = setTimeout(start, 250);
+          restartTimer = setTimeout(start, 200);
         };
 
         recog.start();
+        // Recicla periodicamente pra não acumular um transcript gigante (degrada a precisão).
+        freshTimer = setTimeout(() => { try { recog.stop(); } catch { /* noop */ } }, FRESH_MS);
       } catch {
         if (!stopped) restartTimer = setTimeout(start, 600);
       }
@@ -109,6 +115,7 @@ export function useWakeWordListener({
     return () => {
       stopped = true;
       if (restartTimer) clearTimeout(restartTimer);
+      if (freshTimer) clearTimeout(freshTimer);
       try { recog?.stop(); } catch { /* noop */ }
     };
   }, [enabled, lang]);
