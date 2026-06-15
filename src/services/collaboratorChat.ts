@@ -80,11 +80,15 @@ export async function sendMessage(
 }
 
 /** Realtime do thread do usuário. Chama onChange a cada insert/update. */
+let chanSeq = 0;
 export function subscribeChat(userId: string, onChange: () => void): () => void {
   const sb = supabase;
   if (!sb) return () => {};
+  // Nome de canal único por assinante — vários componentes (TalkPage + orbe) podem
+  // assinar o mesmo userId ao mesmo tempo. Reusar o nome quebra: o Supabase recusa
+  // `.on()` num canal já `subscribe()`d.
   const ch = sb
-    .channel(`collab-chat:${userId}`)
+    .channel(`collab-chat:${userId}:${++chanSeq}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'collaborator_messages', filter: `user_id=eq.${userId}` },
