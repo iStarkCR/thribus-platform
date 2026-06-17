@@ -41,7 +41,8 @@ const MODEL = process.env.BRIDGE_MODEL || 'opus'; // alias do CLI (igual o daemo
 // os ignora pra que um cliente nunca execute nada na sua máquina.
 const TEAM_CLIENT = process.env.BRIDGE_TEAM_CLIENT || 'Thribus Tech (Interno)';
 const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 3000);
-const TIMEOUT_MS = Number(process.env.BRIDGE_TIMEOUT_MS || 180_000);
+const TIMEOUT_MS = Number(process.env.BRIDGE_TIMEOUT_MS || 180_000); // chat interativo: 3min
+const DEMAND_TIMEOUT_MS = Number(process.env.BRIDGE_DEMAND_TIMEOUT_MS || 1_500_000); // demandas: 25min (tarefas longas: relatórios, etc.)
 const HISTORY = 20; // últimas N msgs do thread como contexto
 
 if (!URL || !KEY) {
@@ -88,7 +89,7 @@ function buildPrompt(agent, history, content) {
   return `${persona}\n\n${task}`;
 }
 
-function runClaude(prompt) {
+function runClaude(prompt, timeoutMs = TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     // time interno → acesso total; gates ficam por conta da persona do agente
     const args = [
@@ -120,8 +121,8 @@ function runClaude(prompt) {
     let err = '';
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      reject(new Error(`timeout ${TIMEOUT_MS}ms`));
-    }, TIMEOUT_MS);
+      reject(new Error(`timeout ${timeoutMs}ms`));
+    }, timeoutMs);
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (err += d));
     child.on('error', (e) => {
@@ -222,7 +223,7 @@ async function processDemand(d) {
     `\n\nExecute a demanda de ponta a ponta. No final, devolva um resumo curto do que foi feito ` +
     `e, se algo precisa da decisão do Charles (gastar dinheiro, mexer em produção, etc.), diga claramente o que falta.`;
 
-  const result = await runClaude(buildPrompt(agent, [], task));
+  const result = await runClaude(buildPrompt(agent, [], task), DEMAND_TIMEOUT_MS);
   if (!result) throw new Error('resposta vazia do claude');
 
   await sb.from('team_demands').update({ status: 'done', result }).eq('id', d.id);
