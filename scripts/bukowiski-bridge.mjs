@@ -174,8 +174,7 @@ async function loadTeamIds() {
   return new Set((data ?? []).map((a) => a.id));
 }
 
-async function tick() {
-  const teamIds = await loadTeamIds();
+async function tick(teamIds) {
   const { data: pending, error } = await sb
     .from('collaborator_messages')
     .select('*')
@@ -202,14 +201,67 @@ async function tick() {
   }
 }
 
+// ─── Fila de demandas (Kanban "Demandas do time") ───────────────────────────
+// O Charles adiciona demandas no painel; aqui o agente EXECUTA a tarefa.
+async function processDemand(d) {
+  await sb.from('team_demands').update({ status: 'doing' }).eq('id', d.id);
+
+  const { data: agent } = await sb
+    .from('agents')
+    .select('id,name,sector,system_prompt')
+    .eq('id', d.agent_id)
+    .single();
+  if (!agent) throw new Error(`agente ${d.agent_id} não encontrado`);
+
+  const task =
+    `DEMANDA do Charles${d.project ? ` (projeto ${d.project})` : ''}: ${d.title}` +
+    (d.description ? `\n\nContexto/detalhes:\n${d.description}` : '') +
+    `\n\nExecute a demanda de ponta a ponta. No final, devolva um resumo curto do que foi feito ` +
+    `e, se algo precisa da decisão do Charles (gastar dinheiro, mexer em produção, etc.), diga claramente o que falta.`;
+
+  const result = await runClaude(buildPrompt(agent, [], task));
+  if (!result) throw new Error('resposta vazia do claude');
+
+  await sb.from('team_demands').update({ status: 'done', result }).eq('id', d.id);
+  console.log(`[ok] ${agent.name} executou demanda "${d.title.slice(0, 50)}" (${result.length} chars)`);
+}
+
+async function tickDemands(teamIds) {
+  const { data: queue, error } = await sb
+    .from('team_demands')
+    .select('*')
+    .eq('status', 'todo')
+    .order('priority', { ascending: false })
+    .order('created_at', { ascending: true })
+    .limit(1); // 1 por vez pra não travar o chat interativo
+  if (error) {
+    console.error('[demandas poll erro]', error.message);
+    return;
+  }
+  for (const d of queue ?? []) {
+    if (!teamIds.has(d.agent_id)) continue; // só o time interno executa pela ponte
+    try {
+      await processDemand(d);
+    } catch (e) {
+      console.error(`[erro] demanda ${d.id}:`, e.message);
+      await sb
+        .from('team_demands')
+        .update({ status: 'error', error: String(e.message).slice(0, 500) })
+        .eq('id', d.id);
+    }
+  }
+}
+
 console.log(
   `Ponte Bukowiski no ar · model=${MODEL} · poll=${POLL_MS}ms\n` +
     `  atende: time interno (client="${TEAM_CLIENT}") com acesso total\n` +
-    '  agentes de cliente: ignorados (respondidos pela API/worker)',
+    '  chat + fila de demandas (Kanban) · agentes de cliente: ignorados',
 );
 async function loop() {
   for (;;) {
-    await tick();
+    const teamIds = await loadTeamIds();
+    await tick(teamIds);        // chat interativo primeiro
+    await tickDemands(teamIds); // depois 1 demanda da fila
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 }

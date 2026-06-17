@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ShieldCheck, Search, Loader2, Check, Building2, Info } from 'lucide-react';
+import { ShieldCheck, Search, Loader2, Check, Building2, Info, UserPlus } from 'lucide-react';
 import { NAV_ITEMS } from '@/lib/nav';
 import { useAppStore } from '@/hooks/useAppStore';
 import { listWorkspaceModules, setWorkspaceModule, accessConfigured } from '@/services/access';
+import { AddUserModal } from '@/components/workspaces/AddUserModal';
 
 /**
  * Acessos (admin) — por CONTA (workspace). O super-admin liga/desliga quais
@@ -16,6 +17,7 @@ export function AccessPage() {
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [addingUser, setAddingUser] = useState(false);
 
   useEffect(() => {
     if (!selectedId && workspaces.length) setSelectedId(workspaces[0].id);
@@ -123,8 +125,16 @@ export function AccessPage() {
             </div>
           ) : (
             <>
-              <div className="text-[12.5px] text-creme-mute mb-3">
-                Módulos liberados pra <b className="text-creme">{selected.name}</b>:
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="text-[12.5px] text-creme-mute">
+                  Módulos liberados pra <b className="text-creme">{selected.name}</b>:
+                </div>
+                <button
+                  onClick={() => setAddingUser(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-white text-[12.5px] font-semibold hover:bg-brand-bright transition-colors shrink-0"
+                >
+                  <UserPlus size={14} /> Novo usuário
+                </button>
               </div>
               {isEmpty && (
                 <div className="mb-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-semantic-blue/10 text-semantic-blue text-[11.5px]">
@@ -165,6 +175,8 @@ export function AccessPage() {
           )}
         </div>
       </div>
+
+      {addingUser && selected && <AddUserModal workspace={selected} onClose={() => setAddingUser(false)} />}
     </div>
   );
 }

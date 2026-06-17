@@ -315,6 +315,68 @@ async function computeStatsFromExecutions(
       resolution: g.total > 0 ? Math.round((g.resolved / g.total) * 100) : 0,
       avgResponseTime: g.countWithMs > 0 ? Math.round(g.sumMs / g.countWithMs / 1000) : 0,
       escalated: g.escalated,
+      total: g.total,
+    };
+  }
+  return result;
+}
+
+/**
+ * Stats reais do time interno a partir de `collaborator_messages` (o que o bridge
+ * processa na máquina do Charles). Conta as DEMANDAS = mensagens do usuário:
+ *   - total: # de demandas (all-time)   - today: demandas hoje
+ *   - resolution: % com status 'done'   - escalated: # com status 'error'
+ *   - avgResponseTime: média user→resposta (s)
+ */
+async function computeStatsFromMessages(
+  agentIds: string[],
+): Promise<Record<string, Agent['stats']>> {
+  const result: Record<string, Agent['stats']> = {};
+  if (!supabase || agentIds.length === 0) return result;
+
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
+  const startMs = startOfToday.getTime();
+
+  const { data, error } = await supabase
+    .from('collaborator_messages')
+    .select('agent_id, role, status, created_at')
+    .in('agent_id', agentIds)
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.warn('[stats] erro buscando collaborator_messages:', error.message);
+    return result;
+  }
+
+  type Row = { agent_id: string; role: 'user' | 'assistant'; status: string; created_at: string };
+  const g: Record<string, { total: number; today: number; resolved: number; escalated: number; sumMs: number; pairs: number; pendingUserAt: number | null }> = {};
+  const init = (id: string) => (g[id] ??= { total: 0, today: 0, resolved: 0, escalated: 0, sumMs: 0, pairs: 0, pendingUserAt: null });
+
+  for (const r of (data as Row[]) ?? []) {
+    const a = init(r.agent_id);
+    const at = new Date(r.created_at).getTime();
+    if (r.role === 'user') {
+      a.total++;
+      if (at >= startMs) a.today++;
+      if (r.status === 'done') a.resolved++;
+      if (r.status === 'error') a.escalated++;
+      a.pendingUserAt = at; // aguardando a resposta
+    } else if (r.role === 'assistant' && a.pendingUserAt != null) {
+      const dt = at - a.pendingUserAt;
+      if (dt > 0 && dt < 30 * 60_000) { a.sumMs += dt; a.pairs++; } // ignora gaps > 30min
+      a.pendingUserAt = null;
+    }
+  }
+
+  for (const id of agentIds) {
+    const a = g[id];
+    if (!a || a.total === 0) continue; // sem demandas → deixa o fallback (executions)
+    result[id] = {
+      total: a.total,
+      today: a.today,
+      resolution: a.total > 0 ? Math.round((a.resolved / a.total) * 100) : 0,
+      avgResponseTime: a.pairs > 0 ? Math.round(a.sumMs / a.pairs / 1000) : 0,
+      escalated: a.escalated,
     };
   }
   return result;
@@ -331,9 +393,15 @@ export const agentsApi = {
     const { data, error } = await query;
     if (error) throw error;
     const agents = (data as AgentRow[]).map(rowToAgent);
-    // Sobrescreve stats com dados calculados em runtime
-    const stats = await computeStatsFromExecutions(agents.map((a) => a.id));
-    return agents.map((a) => ({ ...a, stats: stats[a.id] ?? a.stats }));
+    // Stats reais em runtime: time interno vem de collaborator_messages (o que o
+    // bridge processa na máquina); clientes vêm de executions (worker). Por agente,
+    // usa a fonte que tem atividade.
+    const ids = agents.map((a) => a.id);
+    const [execStats, msgStats] = await Promise.all([
+      computeStatsFromExecutions(ids),
+      computeStatsFromMessages(ids),
+    ]);
+    return agents.map((a) => ({ ...a, stats: msgStats[a.id] ?? execStats[a.id] ?? a.stats }));
   },
 
   async get(id: string): Promise<Agent> {
