@@ -14,7 +14,7 @@ export const cortexBrainConfigured = Boolean(supabase);
 // `model` é o alias do CLI (claude --model <alias>) — resolve sozinho pro modelo
 // atual. `effortable` = esforço (capacidade) faz efeito (só opus/fable).
 
-export type CortexModel = 'opus' | 'sonnet' | 'haiku' | 'fable';
+export type CortexModel = 'opus' | 'sonnet' | 'haiku' | 'fable' | 'claude-opus-4-7';
 export type CortexEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface CortexBrain {
@@ -40,6 +40,16 @@ export const CORTEX_BRAINS: CortexBrain[] = [
     name: 'Cortex Brain Max',
     real: 'Claude Opus 4.8 · 1M',
     tagline: 'Mais inteligente. Raciocínio profundo: relatórios, decisões, código difícil.',
+    effortable: true,
+    speed: 2,
+    intel: 5,
+    cost: 5,
+  },
+  {
+    model: 'claude-opus-4-7',
+    name: 'Cortex Brain Max 4.7',
+    real: 'Claude Opus 4.7',
+    tagline: 'Geração anterior do Opus, fixa. Estável e forte — use se preferir o comportamento do 4.7.',
     effortable: true,
     speed: 2,
     intel: 5,
