@@ -211,6 +211,7 @@ function parseResultEvent(evt) {
   return {
     isError: !!evt.is_error,
     text: String(evt.result || '').trim(),
+    sessionId: evt.session_id || null,
     usage: {
       costUsd: Number(evt.total_cost_usd) || 0,
       inputTokens: inTok,
@@ -244,6 +245,7 @@ function runClaude(prompt, opts = {}) {
     if (opts.maxBudgetUsd && Number(opts.maxBudgetUsd) > 0) {
       args.push('--max-budget-usd', String(opts.maxBudgetUsd));
     }
+    if (opts.resumeSessionId) args.push('--resume', opts.resumeSessionId); // memória otimizada
     // Remove envs de sessão herdadas (se a ponte for iniciada de dentro de um
     // Claude Code) que apontariam pro proxy errado. PRESERVA o CLAUDE_CODE_OAUTH_TOKEN
     // (token de `claude setup-token`) — é assim que o daemon autentica headless,
@@ -303,7 +305,7 @@ function runClaude(prompt, opts = {}) {
       if (buf.trim()) handleLine(buf); // última linha sem \n final
       if (result) {
         if (result.isError) reject(new Error(result.text || 'claude retornou erro'));
-        else resolve({ text: result.text, usage: result.usage });
+        else resolve({ text: result.text, usage: result.usage, sessionId: result.sessionId });
         return;
       }
       if (code !== 0) reject(new Error(`claude saiu com código ${code}: ${err.slice(0, 400)}`));
@@ -322,14 +324,13 @@ async function processMessage(msg) {
     .single();
   if (!agent) throw new Error(`agente ${msg.agent_id} não encontrado`);
 
-  // Histórico da MESMA sessão (contexto da conversa).
-  const { data: history } = await sb
-    .from('collaborator_messages')
-    .select('role,content,created_at')
-    .eq('session_id', msg.session_id)
-    .in('status', ['done'])
-    .order('created_at', { ascending: true })
-    .limit(HISTORY);
+  // Sessão do claude desta conversa (memória otimizada via --resume).
+  const { data: sess } = await sb
+    .from('chat_sessions')
+    .select('claude_session_id')
+    .eq('id', msg.session_id)
+    .maybeSingle();
+  const resumeId = sess?.claude_session_id || null;
 
   // anexos (imagem/PDF/vídeo) → baixa pro Mac e referencia no prompt
   const files = await downloadAttachments(msg.attachments);
@@ -337,9 +338,31 @@ async function processMessage(msg) {
 
   let evSeq = 0;
   const onEvent = (e) => recordRunEvent({ userId: msg.user_id, scope: 'chat', refId: msg.id, seq: evSeq++, label: e.label, detail: e.detail });
-  const r = await runClaude(buildPrompt(agent, history ?? [], content), {
-    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
-  });
+  const opts = { model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent };
+
+  let r = null;
+  if (resumeId) {
+    // retoma a sessão: manda SÓ a mensagem nova (persona/histórico já estão lá)
+    try {
+      r = await runClaude(content, { ...opts, resumeSessionId: resumeId });
+    } catch (e) {
+      console.error(`[resume falhou, recomeçando sessão] ${e.message}`);
+      r = null;
+    }
+  }
+  if (!r) {
+    // inicia (ou reinicia) a sessão: persona + histórico RECENTE pra semear o contexto
+    const { data: history } = await sb
+      .from('collaborator_messages')
+      .select('role,content,created_at')
+      .eq('session_id', msg.session_id)
+      .in('status', ['done'])
+      .order('created_at', { ascending: false })
+      .limit(HISTORY);
+    const recent = (history ?? []).reverse(); // mais recentes, em ordem cronológica
+    r = await runClaude(buildPrompt(agent, recent, content), opts);
+  }
+
   const reply = r.text;
   if (!reply) throw new Error('resposta vazia do claude');
 
@@ -353,10 +376,19 @@ async function processMessage(msg) {
     channel: msg.channel,
   });
   await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', msg.id);
+
+  // grava a sessão do claude + a janela de contexto (pro painel mostrar X/1M)
+  if (msg.session_id && r.sessionId) {
+    const ctx = r.usage ? (r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.outputTokens) : null;
+    const patch = { claude_session_id: r.sessionId };
+    if (ctx != null) patch.context_tokens = ctx;
+    await sb.from('chat_sessions').update(patch).eq('id', msg.session_id);
+  }
+
   await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, usage: r.usage });
   console.log(
     `[ok] ${agent.name} respondeu (${reply.length} chars` +
-      `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''})`,
+      `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,
   );
 }
 
