@@ -110,6 +110,16 @@ async function recordUsage({ userId, agentId, kind, refId, usage }) {
   }
 }
 
+// Grava um passo ("o que ele está fazendo") pro painel mostrar ao vivo.
+async function recordRunEvent({ userId, scope, refId, seq, label, detail }) {
+  try {
+    await sb.from('run_events').insert({
+      user_id: userId ?? null, scope, ref_id: refId, seq,
+      kind: 'tool', label: label || null, detail: detail || null,
+    });
+  } catch { /* best-effort: nunca atrapalha a execução */ }
+}
+
 const BUKOWISKI_ID = 'bukowiski-thribus';
 // Time interno: acesso total às skills, segue os próprios gates da persona.
 const GUARD =
@@ -151,37 +161,40 @@ function buildPrompt(agent, history, content) {
   return `${persona}\n\n${task}`;
 }
 
-// Extrai texto + uso (custo/tokens) do JSON do `claude --output-format json`.
-function parseClaudeJson(out) {
-  const raw = out.trim();
-  let obj = null;
-  try { obj = JSON.parse(raw); } catch { obj = null; }
-  if (obj && obj.type === 'result') {
-    if (obj.is_error) {
-      throw new Error(String(obj.result || obj.subtype || 'claude retornou erro').slice(0, 400));
-    }
-    const u = obj.usage || {};
-    const inTok = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-    const outTok = u.output_tokens || 0;
-    return {
-      text: String(obj.result || '').trim(),
-      usage: {
-        costUsd: Number(obj.total_cost_usd) || 0,
-        inputTokens: inTok,
-        outputTokens: outTok,
-        cacheReadTokens: u.cache_read_input_tokens || 0,
-        totalTokens: inTok + outTok,
-        durationMs: obj.duration_ms || 0,
-        numTurns: obj.num_turns || 0,
-        model: obj.model || null,
-      },
-    };
-  }
-  return { text: raw, usage: null }; // fallback: trata como texto puro
+// Resumo curto do input de um tool, pra mostrar "o que ele está fazendo".
+function summarizeToolInput(input) {
+  if (!input || typeof input !== 'object') return '';
+  const f =
+    input.command || input.file_path || input.path || input.pattern ||
+    input.url || input.query || input.description || input.prompt ||
+    input.skill || input.title || '';
+  return String(f).replace(/\s+/g, ' ').slice(0, 160);
 }
 
-// Roda o claude com o modelo/esforço/teto vindos da config do painel.
-// Retorna { text, usage }. opts: { timeoutMs, model, effort, maxBudgetUsd }.
+// Converte o evento 'result' (stream-json) em { text, usage, isError }.
+function parseResultEvent(evt) {
+  const u = evt.usage || {};
+  const inTok = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+  const outTok = u.output_tokens || 0;
+  return {
+    isError: !!evt.is_error,
+    text: String(evt.result || '').trim(),
+    usage: {
+      costUsd: Number(evt.total_cost_usd) || 0,
+      inputTokens: inTok,
+      outputTokens: outTok,
+      cacheReadTokens: u.cache_read_input_tokens || 0,
+      totalTokens: inTok + outTok,
+      durationMs: evt.duration_ms || 0,
+      numTurns: evt.num_turns || 0,
+      model: evt.model || null,
+    },
+  };
+}
+
+// Roda o claude em stream-json: emite cada tool call via opts.onEvent (pro painel
+// mostrar "o que ele está fazendo") e devolve { text, usage } do evento 'result'.
+// opts: { timeoutMs, model, effort, maxBudgetUsd, onEvent }.
 function runClaude(prompt, opts = {}) {
   const timeoutMs = opts.timeoutMs || TIMEOUT_MS;
   const model = opts.model || BRAIN.model;
@@ -190,7 +203,8 @@ function runClaude(prompt, opts = {}) {
     const args = [
       '-p', prompt,
       '--append-system-prompt', GUARD,
-      '--output-format', 'json',
+      '--output-format', 'stream-json',
+      '--verbose',
       '--model', model,
       '--permission-mode', 'bypassPermissions',
     ];
@@ -216,26 +230,52 @@ function runClaude(prompt, opts = {}) {
       }
     }
     const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env });
-    let out = '';
+    let buf = '';
     let err = '';
+    let result = null;
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       reject(new Error(`timeout ${timeoutMs}ms`));
     }, timeoutMs);
-    child.stdout.on('data', (d) => (out += d));
-    child.stderr.on('data', (d) => (err += d));
-    child.on('error', (e) => {
-      clearTimeout(timer);
-      reject(e);
+
+    // cada linha do stdout é um evento NDJSON do stream-json
+    const handleLine = (line) => {
+      const s = line.trim();
+      if (!s) return;
+      let evt;
+      try { evt = JSON.parse(s); } catch { return; }
+      if (evt.type === 'assistant' && evt.message && Array.isArray(evt.message.content)) {
+        for (const b of evt.message.content) {
+          if (b && b.type === 'tool_use' && opts.onEvent) {
+            try { opts.onEvent({ kind: 'tool', label: b.name || 'tool', detail: summarizeToolInput(b.input) }); }
+            catch { /* nunca derruba o parse */ }
+          }
+        }
+      } else if (evt.type === 'result') {
+        result = parseResultEvent(evt);
+      }
+    };
+
+    child.stdout.on('data', (d) => {
+      buf += d;
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        handleLine(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+      }
     });
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', (e) => { clearTimeout(timer); reject(e); });
     child.on('close', (code) => {
       clearTimeout(timer);
-      if (code !== 0) {
-        reject(new Error(`claude saiu com código ${code}: ${err.slice(0, 400)}`));
+      if (buf.trim()) handleLine(buf); // última linha sem \n final
+      if (result) {
+        if (result.isError) reject(new Error(result.text || 'claude retornou erro'));
+        else resolve({ text: result.text, usage: result.usage });
         return;
       }
-      try { resolve(parseClaudeJson(out)); }
-      catch (e) { reject(e); }
+      if (code !== 0) reject(new Error(`claude saiu com código ${code}: ${err.slice(0, 400)}`));
+      else reject(new Error('sem evento de resultado do claude'));
     });
   });
 }
@@ -259,8 +299,10 @@ async function processMessage(msg) {
     .order('created_at', { ascending: true })
     .limit(HISTORY);
 
+  let evSeq = 0;
+  const onEvent = (e) => recordRunEvent({ userId: msg.user_id, scope: 'chat', refId: msg.id, seq: evSeq++, label: e.label, detail: e.detail });
   const r = await runClaude(buildPrompt(agent, history ?? [], msg.content), {
-    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd,
+    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
   });
   const reply = r.text;
   if (!reply) throw new Error('resposta vazia do claude');
@@ -353,9 +395,11 @@ async function processDemand(d) {
     `\n\nExecute a demanda de ponta a ponta. No final, devolva um resumo curto do que foi feito ` +
     `e, se algo precisa da decisão do Charles (gastar dinheiro, mexer em produção, etc.), diga claramente o que falta.`;
 
+  let evSeq = 0;
+  const onEvent = (e) => recordRunEvent({ userId: d.user_id, scope: 'demand', refId: d.id, seq: evSeq++, label: e.label, detail: e.detail });
   const r = await runClaude(buildPrompt(agent, [], task), {
     timeoutMs: DEMAND_TIMEOUT_MS,
-    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd,
+    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
   });
   const result = r.text;
   if (!result) throw new Error('resposta vazia do claude');
@@ -430,9 +474,11 @@ async function processDemandReply(m) {
     `\n\nContinue a tarefa a partir dessa resposta. Execute de ponta a ponta e devolva um resumo ` +
     `curto do que foi feito; se precisar de mais alguma decisão do Charles, diga claramente o que falta.`;
 
+  let evSeq = 0;
+  const onEvent = (e) => recordRunEvent({ userId: d.user_id, scope: 'demand', refId: d.id, seq: evSeq++, label: e.label, detail: e.detail });
   const r = await runClaude(buildPrompt(agent, [], thread), {
     timeoutMs: DEMAND_TIMEOUT_MS,
-    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd,
+    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
   });
   const result = r.text;
   if (!result) throw new Error('resposta vazia do claude');
