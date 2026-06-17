@@ -44,6 +44,8 @@ let brainLoadedAt = 0;
 // --effort só vale pra opus/fable (o CLI ignora em sonnet/haiku). Cobre tanto o
 // alias ('opus') quanto IDs fixos ('claude-opus-4-7').
 const effortApplies = (m) => /opus|fable/.test(m);
+// O CLI só conhece 5 níveis; o painel tem 6 (o topo "ultra"/Ultracode) → vira max.
+const cliEffort = (e) => (e === 'ultra' ? 'max' : e);
 // A ponte atende SÓ o time interno da Thribus (esses rodam pelo CLI do Mac, com
 // acesso total). Agentes de cliente são respondidos pela API (worker) — a ponte
 // os ignora pra que um cliente nunca execute nada na sua máquina.
@@ -192,7 +194,7 @@ function runClaude(prompt, opts = {}) {
       '--model', model,
       '--permission-mode', 'bypassPermissions',
     ];
-    if (opts.effort && effortApplies(model)) args.push('--effort', opts.effort);
+    if (opts.effort && effortApplies(model)) args.push('--effort', cliEffort(opts.effort));
     if (opts.maxBudgetUsd && Number(opts.maxBudgetUsd) > 0) {
       args.push('--max-budget-usd', String(opts.maxBudgetUsd));
     }

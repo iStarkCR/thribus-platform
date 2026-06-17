@@ -15,7 +15,7 @@ export const cortexBrainConfigured = Boolean(supabase);
 // atual. `effortable` = esforço (capacidade) faz efeito (só opus/fable).
 
 export type CortexModel = 'opus' | 'sonnet' | 'haiku' | 'fable' | 'claude-opus-4-7';
-export type CortexEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type CortexEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 
 export interface CortexBrain {
   model: CortexModel;
@@ -91,13 +91,15 @@ export function brainOf(model: CortexModel): CortexBrain {
   return CORTEX_BRAINS.find((b) => b.model === model) ?? CORTEX_BRAINS[0];
 }
 
-/** Níveis de capacidade (esforço), do mais rápido ao mais inteligente. */
+/** Níveis de capacidade (esforço), do mais rápido ao mais inteligente. 6 divisões:
+ * as 5 do CLI (low→max) + Ultracode no topo (mapeado pra max na ponte). */
 export const EFFORT_LEVELS: Array<{ value: CortexEffort; label: string; hint: string }> = [
   { value: 'low', label: 'Rápido', hint: 'Resposta direta, menos raciocínio.' },
-  { value: 'medium', label: 'Equilibrado', hint: 'Bom custo/benefício.' },
-  { value: 'high', label: 'Inteligente', hint: 'Padrão recomendado.' },
-  { value: 'xhigh', label: 'Profundo', hint: 'Pensa mais antes de agir.' },
-  { value: 'max', label: 'Máximo', hint: 'Raciocínio máximo. Mais lento e caro.' },
+  { value: 'medium', label: 'Médio', hint: 'Equilíbrio bom.' },
+  { value: 'high', label: 'Alto', hint: 'Padrão recomendado.' },
+  { value: 'xhigh', label: 'Muito alto', hint: 'Pensa bastante antes de agir.' },
+  { value: 'max', label: 'Máximo', hint: 'Raciocínio máximo.' },
+  { value: 'ultra', label: 'Ultracode', hint: 'Esforço total — mais lento e caro, pro mais difícil.' },
 ];
 
 export function effortIndex(e: CortexEffort): number {
