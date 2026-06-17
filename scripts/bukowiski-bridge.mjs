@@ -98,10 +98,13 @@ function runClaude(prompt) {
       '--model', MODEL,
       '--permission-mode', 'bypassPermissions',
     ];
-    // Usa o login real do ~/.claude: remove envs de sessão herdadas (ex: se a
-    // ponte for iniciada de dentro de um Claude Code) que apontariam pro proxy errado.
+    // Remove envs de sessão herdadas (se a ponte for iniciada de dentro de um
+    // Claude Code) que apontariam pro proxy errado. PRESERVA o CLAUDE_CODE_OAUTH_TOKEN
+    // (token de `claude setup-token`) — é assim que o daemon autentica headless,
+    // já que o login do Keychain não é acessível em segundo plano.
     const env = { ...process.env };
     for (const k of Object.keys(env)) {
+      if (k === 'CLAUDE_CODE_OAUTH_TOKEN') continue; // mantém o token do daemon
       if (
         k === 'ANTHROPIC_BASE_URL' ||
         k === 'ANTHROPIC_API_KEY' ||
