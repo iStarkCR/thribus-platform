@@ -10,6 +10,7 @@
  */
 
 import { type ReactNode } from 'react';
+import { CodeViewer } from '@/components/shared/CodeViewer';
 
 // URL aceita parênteses balanceados (ex.: .../Foo_(bar)) sem cortar no 1º ')'.
 const URLCORE = 'https?:\\/\\/(?:[^\\s()]+|\\([^\\s()]*\\))+';
@@ -77,13 +78,14 @@ export function Markdown({ text, className }: { text: string; className?: string
 
     // ── bloco de código (só se houver fechamento; senão trata literal) ────
     if (isFence(line)) {
+      const lang = line.replace(/^\s*```/, '').trim();
       let j = i + 1;
       while (j < lines.length && !isFence(lines[j])) j++;
       if (j < lines.length) {
         blocks.push(
-          <pre key={key++} className="my-2 overflow-x-auto rounded-lg bg-surface-3 border border-default p-3 text-[12px] font-mono text-creme-dim leading-relaxed">
-            <code>{lines.slice(i + 1, j).join('\n')}</code>
-          </pre>,
+          <div key={key++} className="my-2">
+            <CodeViewer content={lines.slice(i + 1, j).join('\n')} language={lang || undefined} maxHeight="22rem" />
+          </div>,
         );
         i = j + 1;
         continue;
