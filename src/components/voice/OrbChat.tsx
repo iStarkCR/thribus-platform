@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Send, Mic, Loader2, AudioLines } from 'lucide-react';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
+import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import type { OrbConversation } from '@/hooks/useOrbConversation';
 
 const PANEL_W = 360;
@@ -75,6 +76,9 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
 
       {/* Entrada */}
       <div className="px-2.5 py-2.5 border-t border-default shrink-0">
+        <div className="mb-1.5 px-0.5">
+          <CortexBrainBar />
+        </div>
         <div className="flex items-end gap-1.5 bg-surface-2 border border-default rounded-xl px-2 py-1.5">
           <textarea
             value={input}

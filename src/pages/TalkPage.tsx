@@ -8,6 +8,7 @@ import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
+import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, type ChatMessage } from '@/services/collaboratorChat';
 import {
   listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession,
@@ -603,6 +604,9 @@ export function TalkPage() {
         </div>
 
         <div className="px-6 py-4 border-t border-default shrink-0">
+          <div className="flex items-center justify-between mb-2 px-1">
+            <CortexBrainBar />
+          </div>
           <div className="flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
             <textarea
               value={input}
