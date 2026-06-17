@@ -41,8 +41,9 @@ const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const DEFAULT_MODEL = process.env.BRIDGE_MODEL || 'opus'; // alias do CLI — resolve sozinho pro modelo atual
 let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0 };
 let brainLoadedAt = 0;
-// --effort só vale pra opus/fable (o CLI ignora em sonnet/haiku).
-const effortApplies = (m) => m === 'opus' || m === 'fable';
+// --effort só vale pra opus/fable (o CLI ignora em sonnet/haiku). Cobre tanto o
+// alias ('opus') quanto IDs fixos ('claude-opus-4-7').
+const effortApplies = (m) => /opus|fable/.test(m);
 // A ponte atende SÓ o time interno da Thribus (esses rodam pelo CLI do Mac, com
 // acesso total). Agentes de cliente são respondidos pela API (worker) — a ponte
 // os ignora pra que um cliente nunca execute nada na sua máquina.
