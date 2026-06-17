@@ -35,7 +35,7 @@ import { join } from 'node:path';
 
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const MODEL = process.env.BRIDGE_MODEL || 'claude-opus-4-7';
+const MODEL = process.env.BRIDGE_MODEL || 'opus'; // alias do CLI (igual o daemon do WhatsApp) — resolve sozinho pro Opus atual
 // A ponte atende SÓ o time interno da Thribus (esses rodam pelo CLI do Mac, com
 // acesso total). Agentes de cliente são respondidos pela API (worker) — a ponte
 // os ignora pra que um cliente nunca execute nada na sua máquina.
