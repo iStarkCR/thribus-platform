@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip,
+  ListChecks, Lightbulb, Clock,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -13,6 +14,7 @@ import { Markdown } from '@/components/shared/Markdown';
 import { ThinkingActivity } from '@/components/shared/ThinkingActivity';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
+import { createDemand } from '@/services/demands';
 import {
   listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession,
   type ChatFolder, type ChatSession,
@@ -58,6 +60,9 @@ export function TalkPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [delegateOpen, setDelegateOpen] = useState(false);
+  const [planMode, setPlanMode] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
@@ -340,10 +345,28 @@ export function TalkPage() {
     }
   }
 
+  // Vira o texto digitado numa DEMANDA (fila async), opcionalmente delegada a outro agente.
+  async function toDemand(targetAgentId: string) {
+    const text = input.trim();
+    if (!text || !userId) return;
+    const name = collaborators.find((c) => c.id === targetAgentId)?.name ?? 'colaborador';
+    setPlusOpen(false); setDelegateOpen(false);
+    try {
+      await createDemand(userId, { title: text.slice(0, 100), description: text.length > 100 ? text : undefined, agentId: targetAgentId });
+      setInput('');
+      useAppStore.getState().addToast(`Jogado nas Demandas — ${name} vai executar`, 'green');
+    } catch (e) {
+      useAppStore.getState().addToast('Falha ao criar demanda: ' + (e as Error).message, 'red');
+    }
+  }
+
   async function send(textArg?: string) {
-    const text = (textArg ?? input).trim();
+    const raw = (textArg ?? input).trim();
+    const text = planMode && raw
+      ? `${raw}\n\n[MODO PLANO: liste os passos que você faria pra isso e PARE — não execute ainda, espere meu OK.]`
+      : raw;
     const atts = attachments;
-    if ((!text && atts.length === 0) || !agent || !userId || sending || uploading > 0) return;
+    if ((!raw && atts.length === 0) || !agent || !userId || sending || uploading > 0) return;
     setSending(true);
     if (textArg === undefined) { setInput(''); setAttachments([]); }
 
@@ -608,7 +631,7 @@ export function TalkPage() {
               {messages.map((m) =>
                 m.role === 'user' ? (
                   <div key={m.id} className="flex justify-end">
-                    <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[14.5px] leading-relaxed">
+                    <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[15px] leading-[1.7]">
                       {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
                       {m.content && <span className="whitespace-pre-wrap">{m.content}</span>}
                       {m.status === 'error' && <div className="text-[11px] mt-1 text-white/80">erro: {m.error}</div>}
@@ -621,7 +644,7 @@ export function TalkPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-[11px] font-semibold text-creme-mute mb-1">{agent.name}</div>
-                      <div className="px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme text-[14.5px] leading-relaxed">
+                      <div className="px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme text-[15px] leading-[1.7]">
                         <Markdown text={m.content} />
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
@@ -635,8 +658,15 @@ export function TalkPage() {
         </div>
 
         <div className="px-6 py-4 border-t border-default shrink-0">
-          <div className="flex items-center justify-between mb-2 px-1">
-            <CortexBrainBar />
+          <div className="flex items-center justify-between mb-2 px-1 gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <CortexBrainBar />
+              {planMode && (
+                <button onClick={() => setPlanMode(false)} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand/15 text-brand-bright text-[11px] shrink-0" title="Desligar modo plano">
+                  <Lightbulb size={11} /> Modo plano <X size={11} />
+                </button>
+              )}
+            </div>
             {active && active.contextTokens > 0 && <ContextMeter tokens={active.contextTokens} />}
           </div>
 
@@ -665,13 +695,39 @@ export function TalkPage() {
             onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
           />
           <div className="flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              title="Anexar imagem, PDF ou vídeo (ou cole com Ctrl+V)"
-              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"
-            >
-              <Paperclip size={17} />
-            </button>
+            <div className="relative shrink-0">
+              <button
+                onClick={() => { setPlusOpen((o) => !o); setDelegateOpen(false); }}
+                title="Mais ações"
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${plusOpen ? 'bg-brand/15 text-brand-bright' : 'text-creme-faint hover:text-creme hover:bg-surface-hover'}`}
+              >
+                <Plus size={18} />
+              </button>
+              {plusOpen && (
+                <>
+                  <div className="fixed inset-0 z-[60]" onClick={() => { setPlusOpen(false); setDelegateOpen(false); }} />
+                  <div className="absolute bottom-full mb-2 left-0 z-[61] w-64 rounded-xl border border-default bg-surface-1 shadow-2xl p-1.5">
+                    <MenuRow icon={<Paperclip size={15} />} label="Anexar arquivo" hint="img · PDF · vídeo" onClick={() => { setPlusOpen(false); fileInputRef.current?.click(); }} />
+                    <MenuRow icon={<ListChecks size={15} />} label="Virar demanda" hint="2º plano" disabled={!input.trim()} onClick={() => agent && toDemand(agent.id)} />
+                    <div>
+                      <MenuRow icon={<Users size={15} />} label="Delegar pra…" chevron disabled={!input.trim()} onClick={() => setDelegateOpen((o) => !o)} />
+                      {delegateOpen && (
+                        <div className="mt-1 mb-1 max-h-48 overflow-y-auto rounded-lg border border-default bg-surface-2 p-1">
+                          {collaborators.map((c) => (
+                            <button key={c.id} onClick={() => toDemand(c.id)} className="w-full text-left px-2.5 py-1.5 rounded-md text-[12.5px] text-creme-mute hover:bg-surface-hover hover:text-creme flex items-center gap-2">
+                              {c.id === 'bukowiski-thribus' && <Crown size={12} className="text-brand-bright shrink-0" />}
+                              <span className="truncate">{c.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <MenuRow icon={<Lightbulb size={15} />} label="Modo plano" hint={planMode ? 'ligado' : 'planeja antes'} active={planMode} onClick={() => { setPlanMode((p) => !p); setPlusOpen(false); }} />
+                    <MenuRow icon={<Clock size={15} />} label="Agendar rotina" hint="em breve" disabled onClick={() => {}} />
+                  </div>
+                </>
+              )}
+            </div>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -810,6 +866,24 @@ function SessionItem({ session, active, depth = 0, onClick, onRename, onDelete, 
         </button>
       </div>
     </div>
+  );
+}
+
+// Linha do menu "+" do chat.
+function MenuRow({ icon, label, hint, onClick, disabled, active, chevron }: {
+  icon: React.ReactNode; label: string; hint?: string; onClick: () => void; disabled?: boolean; active?: boolean; chevron?: boolean;
+}) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-brand/10 text-brand-bright' : 'text-creme-mute hover:bg-surface-hover hover:text-creme'}`}
+    >
+      <span className={`shrink-0 ${active ? 'text-brand-bright' : 'text-creme-faint'}`}>{icon}</span>
+      <span className="flex-1 text-left font-medium">{label}</span>
+      {hint && <span className="text-[10.5px] text-creme-faint shrink-0">{hint}</span>}
+      {chevron && <ChevronRight size={13} className="text-creme-faint shrink-0" />}
+    </button>
   );
 }
 
