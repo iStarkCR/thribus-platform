@@ -155,7 +155,13 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
       </button>
 
       {open && (
-        <div className="absolute left-2.5 right-2.5 bottom-[60px] bg-surface-1 border border-default rounded-lg shadow-2xl overflow-hidden z-50">
+        <div
+          className={clsx(
+            'absolute bg-surface-1 border border-default rounded-lg shadow-2xl overflow-hidden z-50',
+            // recolhido: flyout pra direita com largura fixa (não espreme nos 64px)
+            collapsed ? 'left-full ml-2 bottom-2.5 w-60' : 'left-2.5 right-2.5 bottom-[60px]',
+          )}
+        >
           <div className="px-3 py-2.5 border-b border-default">
             <div className="text-[12.5px] font-semibold text-creme truncate">{displayName}</div>
             <div className="text-[10.5px] font-mono text-creme-faint truncate">{displayEmail}</div>
