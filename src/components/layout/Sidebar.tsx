@@ -73,7 +73,7 @@ export function Sidebar() {
                   onClick={() => navigate(item.path)}
                   title={collapsed ? item.label : undefined}
                   className={clsx(
-                    'w-full flex items-center py-2 rounded-lg text-[15px] font-medium transition-all duration-150 relative',
+                    'w-full flex items-center py-2 rounded-lg text-[15px] font-medium transition-all duration-150 relative min-w-0',
                     collapsed ? 'justify-center px-0' : 'gap-2.5 px-2.5',
                     isActive
                       ? 'bg-brand/10 text-brand-bright'
@@ -84,9 +84,9 @@ export function Sidebar() {
                     <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2.5px] h-4 bg-brand rounded-r" />
                   )}
                   <Icon size={16} className={clsx('shrink-0', isActive ? 'opacity-100' : 'opacity-50')} />
-                  {!collapsed && item.label}
+                  {!collapsed && <span className="truncate min-w-0 text-left">{item.label}</span>}
                   {!collapsed && item.badge && (
-                    <span className="ml-auto text-[12px] font-semibold font-mono bg-brand/10 text-brand px-1.5 py-px rounded-full">
+                    <span className="ml-auto shrink-0 text-[12px] font-semibold font-mono bg-brand/10 text-brand px-1.5 py-px rounded-full">
                       {agents.filter((a) => a.status === 'online').length}
                     </span>
                   )}

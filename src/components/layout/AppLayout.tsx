@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -12,9 +12,16 @@ export function AppLayout({ children }: AppLayoutProps) {
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
 
-  // Padrão: sidebar recolhida no chat, expandida nas outras telas.
+  // Recolhe ao ENTRAR no chat e expande ao SAIR — só na transição, sem brigar
+  // com o toggle manual. Na 1ª carga respeita a preferência salva (localStorage).
+  const wasChat = useRef<boolean | null>(null);
   useEffect(() => {
-    setSidebarCollapsed(pathname.startsWith('/talk'));
+    const isChat = pathname.startsWith('/talk');
+    if (wasChat.current === null) { wasChat.current = isChat; return; }
+    if (isChat !== wasChat.current) {
+      setSidebarCollapsed(isChat);
+      wasChat.current = isChat;
+    }
   }, [pathname, setSidebarCollapsed]);
 
   return (

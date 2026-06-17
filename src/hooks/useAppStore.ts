@@ -119,8 +119,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   templates: [],
   loading: true,
   currentPage: 'dashboard',
-  sidebarCollapsed: false,
-  setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
+  sidebarCollapsed: typeof localStorage !== 'undefined' && localStorage.getItem('sidebarCollapsed') === '1',
+  setSidebarCollapsed: (v) => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('sidebarCollapsed', v ? '1' : '0');
+    set({ sidebarCollapsed: v });
+  },
   orbEnabled: typeof localStorage !== 'undefined' && localStorage.getItem('orbEnabled') === '1',
   setOrbEnabled: (v) => {
     if (typeof localStorage !== 'undefined') localStorage.setItem('orbEnabled', v ? '1' : '0');
