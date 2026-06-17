@@ -132,7 +132,7 @@ export function useOrbConversation() {
     const text = textArg.trim();
     const sid = sessionRef.current;
     if (!text || !sid || !userId) return;
-    setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid, agentId: BUKOWISKI_ID, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, createdAt: '' }]);
+    setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid, agentId: BUKOWISKI_ID, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: [], createdAt: '' }]);
     try {
       await sendMessage(sid, BUKOWISKI_ID, userId, text);
       await touchSession(sid);

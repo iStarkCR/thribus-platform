@@ -11,6 +11,13 @@ export type ChatRole = 'user' | 'assistant';
 export type ChatStatus = 'pending' | 'processing' | 'done' | 'error';
 export type ChatChannel = 'thribus' | 'telegram' | 'talki';
 
+export interface Attachment {
+  path: string;   // caminho no bucket chat-attachments
+  name: string;
+  mime: string;
+  size: number;
+}
+
 export interface ChatMessage {
   id: string;
   sessionId: string | null;
@@ -21,7 +28,32 @@ export interface ChatMessage {
   status: ChatStatus;
   channel: ChatChannel;
   error: string | null;
+  attachments: Attachment[];
   createdAt: string;
+}
+
+const ATTACH_BUCKET = 'chat-attachments';
+
+/** Sobe um arquivo pro bucket e devolve o metadado pra anexar na mensagem. */
+export async function uploadAttachment(userId: string, sessionId: string | null, file: File): Promise<Attachment> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const safe = file.name.replace(/[^\w.\-]+/g, '_').slice(-80);
+  const rand = Math.random().toString(36).slice(2, 10);
+  const path = `${userId}/${sessionId ?? 'avulso'}/${Date.now()}-${rand}-${safe}`;
+  const { error } = await supabase.storage.from(ATTACH_BUCKET).upload(path, file, {
+    contentType: file.type || 'application/octet-stream',
+    upsert: false,
+  });
+  if (error) throw error;
+  return { path, name: file.name, mime: file.type || 'application/octet-stream', size: file.size };
+}
+
+/** URL assinada (temporária) pra exibir/baixar o anexo no chat. */
+export async function attachmentUrl(path: string): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.storage.from(ATTACH_BUCKET).createSignedUrl(path, 3600);
+  if (error) return null;
+  return data?.signedUrl ?? null;
 }
 
 export const chatConfigured = Boolean(supabase);
@@ -36,6 +68,7 @@ interface Row {
   status: ChatStatus;
   channel: ChatChannel;
   error: string | null;
+  attachments: Attachment[] | null;
   created_at: string;
 }
 
@@ -49,6 +82,7 @@ const toMsg = (r: Row): ChatMessage => ({
   status: r.status,
   channel: r.channel,
   error: r.error,
+  attachments: Array.isArray(r.attachments) ? r.attachments : [],
   createdAt: r.created_at,
 });
 
@@ -68,11 +102,16 @@ export async function sendMessage(
   agentId: string,
   userId: string,
   content: string,
+  attachments?: Attachment[],
 ): Promise<ChatMessage> {
   if (!supabase) throw new Error('Supabase não configurado');
   const { data, error } = await supabase
     .from('collaborator_messages')
-    .insert({ session_id: sessionId, agent_id: agentId, user_id: userId, role: 'user', content, status: 'pending', channel: 'thribus' })
+    .insert({
+      session_id: sessionId, agent_id: agentId, user_id: userId, role: 'user',
+      content, status: 'pending', channel: 'thribus',
+      attachments: attachments && attachments.length ? attachments : null,
+    })
     .select('*')
     .single();
   if (error) throw error;
