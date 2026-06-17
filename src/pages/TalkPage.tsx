@@ -9,6 +9,7 @@ import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
+import { Markdown } from '@/components/shared/Markdown';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, type ChatMessage } from '@/services/collaboratorChat';
 import {
   listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession,
@@ -587,7 +588,7 @@ export function TalkPage() {
                       m.role === 'user' ? 'bg-brand text-white rounded-br-md' : 'bg-surface-2 text-creme border border-default rounded-bl-md'
                     }`}
                   >
-                    {m.content}
+                    {m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}
                     {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                   </div>
                 </div>
