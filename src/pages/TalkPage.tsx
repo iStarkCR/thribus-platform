@@ -10,6 +10,7 @@ import { useVoice } from '@/hooks/useVoice';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { Markdown } from '@/components/shared/Markdown';
+import { ThinkingActivity } from '@/components/shared/ThinkingActivity';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, type ChatMessage } from '@/services/collaboratorChat';
 import {
   listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession,
@@ -227,6 +228,8 @@ export function TalkPage() {
     messages[messages.length - 1].role === 'user' &&
     ['pending', 'processing'].includes(messages[messages.length - 1].status);
   waitingRef.current = waiting;
+  // mensagem do usuário em processamento → chave dos passos "por trás"
+  const lastUserMsgId = waiting ? messages[messages.length - 1].id : null;
 
   // Agrupa sessões por pasta + hierarquia de pastas.
   const ungrouped = sessions.filter((s) => !s.folderId);
@@ -604,16 +607,7 @@ export function TalkPage() {
                   </div>
                 ),
               )}
-              {waiting && (
-                <div className="flex gap-2.5">
-                  <div className="w-7 h-7 rounded-full bg-brand/15 text-brand-bright flex items-center justify-center text-[12px] font-bold shrink-0">
-                    {agent.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme-mute text-[14px] flex items-center gap-2">
-                    <Loader2 size={14} className="animate-spin" /> {agent.name} está pensando…
-                  </div>
-                </div>
-              )}
+              {waiting && <ThinkingActivity agentName={agent.name} refId={lastUserMsgId} />}
             </div>
           )}
         </div>
