@@ -24,6 +24,7 @@ import {
   cortexBrainConfigured,
   type CortexBrainConfig, type CortexModel, type CortexEffort, type UsageSummary,
 } from '@/services/cortexBrain';
+import { EffortSlider } from '@/components/cortex/EffortSlider';
 
 const money = (n: number) => `US$ ${n.toFixed(n < 1 ? 4 : 2)}`;
 const compact = (n: number) =>
@@ -177,20 +178,8 @@ export function CortexBrainPage() {
 
           {brain.effortable ? (
             <>
-              <input
-                type="range"
-                min={0}
-                max={EFFORT_LEVELS.length - 1}
-                step={1}
-                value={effortIndex(cfg.effort)}
-                onChange={(e) => setEffort(EFFORT_LEVELS[Number(e.target.value)].value)}
-                className="mt-3 w-full accent-brand cursor-pointer"
-              />
-              <div className="mt-1 flex justify-between text-[10.5px] text-creme-faint">
-                <span>Mais rápido</span>
-                <span>Mais inteligente</span>
-              </div>
-              <p className="mt-2 text-[11.5px] text-creme-mute">
+              <EffortSlider value={cfg.effort} onChange={setEffort} className="mt-3" />
+              <p className="mt-3 text-[11.5px] text-creme-mute">
                 {EFFORT_LEVELS[effortIndex(cfg.effort)].hint}
               </p>
             </>

@@ -10,8 +10,9 @@ import { clsx } from 'clsx';
 import {
   CORTEX_BRAINS, EFFORT_LEVELS, DEFAULT_CORTEX_CONFIG, brainOf, effortIndex,
   getCortexConfig, saveCortexConfig, cortexBrainConfigured,
-  type CortexBrainConfig, type CortexEffort, type CortexModel,
+  type CortexBrainConfig, type CortexModel,
 } from '@/services/cortexBrain';
+import { EffortSlider } from '@/components/cortex/EffortSlider';
 
 export function CortexBrainBar({ className }: { className?: string }) {
   const [cfg, setCfg] = useState<CortexBrainConfig>(DEFAULT_CORTEX_CONFIG);
@@ -73,25 +74,13 @@ export function CortexBrainBar({ className }: { className?: string }) {
             </div>
 
             {brain.effortable ? (
-              <div className="mt-2 pt-2 border-t border-default px-2">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-creme-faint">
-                    <Zap size={11} /> Capacidade
-                  </span>
-                  <span className="text-[10.5px] text-creme-mute">{effortLabel}</span>
+              <div className="mt-2 pt-2.5 border-t border-default px-2 pb-1">
+                <div className="flex items-center gap-1.5 mb-2.5">
+                  <Zap size={12} className="text-brand-bright" />
+                  <span className="text-[12px] text-creme-mute">Esforço</span>
+                  <span className="text-[12px] font-bold text-creme">{effortLabel}</span>
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={EFFORT_LEVELS.length - 1}
-                  step={1}
-                  value={effortIndex(cfg.effort)}
-                  onChange={(e) => update({ effort: EFFORT_LEVELS[Number(e.target.value)].value as CortexEffort })}
-                  className="w-full accent-brand cursor-pointer"
-                />
-                <div className="flex justify-between text-[9px] text-creme-faint mt-0.5">
-                  <span>rápido</span><span>inteligente</span>
-                </div>
+                <EffortSlider value={cfg.effort} onChange={(e) => update({ effort: e })} />
               </div>
             ) : (
               <div className="mt-2 pt-2 border-t border-default px-2 text-[10.5px] text-creme-faint">
