@@ -29,7 +29,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -118,6 +118,38 @@ async function recordRunEvent({ userId, scope, refId, seq, label, detail }) {
       kind: 'tool', label: label || null, detail: detail || null,
     });
   } catch { /* best-effort: nunca atrapalha a execução */ }
+}
+
+// Anexos do chat: baixa do bucket pro Mac e devolve os caminhos locais pro agente.
+const ATTACH_DIR = join(homedir(), '.thribus/bridge/attachments');
+async function downloadAttachments(attachments) {
+  if (!Array.isArray(attachments) || !attachments.length) return [];
+  try { mkdirSync(ATTACH_DIR, { recursive: true }); } catch { /* ok */ }
+  const out = [];
+  for (const a of attachments) {
+    try {
+      const { data, error } = await sb.storage.from('chat-attachments').download(a.path);
+      if (error || !data) { console.error('[anexo] falha:', a.path, error?.message); continue; }
+      const buf = Buffer.from(await data.arrayBuffer());
+      const safe = String(a.name || 'arquivo').replace(/[^\w.\-]+/g, '_').slice(-80);
+      const local = join(ATTACH_DIR, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`);
+      writeFileSync(local, buf);
+      out.push({ local, mime: a.mime || '', name: a.name || safe });
+    } catch (e) { console.error('[anexo] erro:', e.message); }
+  }
+  return out;
+}
+function attachNote(files) {
+  if (!files.length) return '';
+  const lines = files.map((f) => {
+    const kind = /^image\//.test(f.mime) ? 'imagem'
+      : /^video\//.test(f.mime) ? 'vídeo'
+      : f.mime.includes('pdf') ? 'PDF' : 'arquivo';
+    return `- ${f.local}  (${kind}: ${f.name})`;
+  }).join('\n');
+  return `\n\n[O Charles ANEXOU ${files.length} arquivo(s) nesta mensagem (caminhos locais no Mac). ` +
+    `LEIA-OS pra responder — não chute: use a tool Read pra imagens, PDFs e textos; pra vídeo, use a skill ` +
+    `de análise de vídeo (ou Higgsfield). Arquivos:\n${lines}\n]`;
 }
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
@@ -299,9 +331,13 @@ async function processMessage(msg) {
     .order('created_at', { ascending: true })
     .limit(HISTORY);
 
+  // anexos (imagem/PDF/vídeo) → baixa pro Mac e referencia no prompt
+  const files = await downloadAttachments(msg.attachments);
+  const content = msg.content + attachNote(files);
+
   let evSeq = 0;
   const onEvent = (e) => recordRunEvent({ userId: msg.user_id, scope: 'chat', refId: msg.id, seq: evSeq++, label: e.label, detail: e.detail });
-  const r = await runClaude(buildPrompt(agent, history ?? [], msg.content), {
+  const r = await runClaude(buildPrompt(agent, history ?? [], content), {
     model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
   });
   const reply = r.text;

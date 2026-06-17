@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
-  Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog,
+  Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -11,7 +11,8 @@ import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { Markdown } from '@/components/shared/Markdown';
 import { ThinkingActivity } from '@/components/shared/ThinkingActivity';
-import { listMessages, sendMessage, subscribeChat, chatConfigured, type ChatMessage } from '@/services/collaboratorChat';
+import { listMessages, sendMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
+import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import {
   listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession,
   type ChatFolder, type ChatSession,
@@ -54,6 +55,9 @@ export function TalkPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
@@ -321,11 +325,27 @@ export function TalkPage() {
     });
   }
 
+  async function addFiles(files: File[]) {
+    if (!userId || !files.length) return;
+    for (const file of files) {
+      setUploading((n) => n + 1);
+      try {
+        const att = await uploadAttachment(userId, activeId, file);
+        setAttachments((prev) => [...prev, att]);
+      } catch (e) {
+        useAppStore.getState().addToast('Falha no anexo: ' + (e as Error).message, 'red');
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  }
+
   async function send(textArg?: string) {
     const text = (textArg ?? input).trim();
-    if (!text || !agent || !userId || sending) return;
+    const atts = attachments;
+    if ((!text && atts.length === 0) || !agent || !userId || sending || uploading > 0) return;
     setSending(true);
-    if (textArg === undefined) setInput('');
+    if (textArg === undefined) { setInput(''); setAttachments([]); }
 
     let sessionId = activeId;
     let isFirst = false;
@@ -341,15 +361,15 @@ export function TalkPage() {
 
     setMessages((m) => [
       ...m,
-      { id: `tmp-${m.length}`, sessionId, agentId: agent.id, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, createdAt: '' },
+      { id: `tmp-${m.length}`, sessionId, agentId: agent.id, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: atts, createdAt: '' },
     ]);
 
     try {
-      await sendMessage(sessionId, agent.id, userId, text);
+      await sendMessage(sessionId, agent.id, userId, text, atts);
       await touchSession(sessionId);
       // auto-título na primeira mensagem
       if (isFirst) {
-        const title = text.slice(0, 40);
+        const title = (text || atts[0]?.name || 'Anexo').slice(0, 40);
         await renameSession(sessionId, title);
         setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title } : s)));
       }
@@ -357,6 +377,7 @@ export function TalkPage() {
     } catch (e) {
       setMessages((m) => m.filter((x) => !x.id.startsWith('tmp-')));
       setInput(text);
+      setAttachments(atts);
       useAppStore.getState().addToast('Falha ao enviar: ' + (e as Error).message, 'red');
     } finally {
       setSending(false);
@@ -587,8 +608,9 @@ export function TalkPage() {
               {messages.map((m) =>
                 m.role === 'user' ? (
                   <div key={m.id} className="flex justify-end">
-                    <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[14.5px] leading-relaxed whitespace-pre-wrap">
-                      {m.content}
+                    <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[14.5px] leading-relaxed">
+                      {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
+                      {m.content && <span className="whitespace-pre-wrap">{m.content}</span>}
                       {m.status === 'error' && <div className="text-[11px] mt-1 text-white/80">erro: {m.error}</div>}
                     </div>
                   </div>
@@ -616,10 +638,43 @@ export function TalkPage() {
           <div className="flex items-center justify-between mb-2 px-1">
             <CortexBrainBar />
           </div>
+
+          {(attachments.length > 0 || uploading > 0) && (
+            <div className="flex flex-wrap gap-2 mb-2 px-1">
+              {attachments.map((a, i) => (
+                <div key={a.path} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
+                  <span>{/^image\//.test(a.mime) ? '🖼️' : /^video\//.test(a.mime) ? '🎬' : '📄'}</span>
+                  <span className="truncate">{a.name}</span>
+                  <button onClick={() => setAttachments((prev) => prev.filter((_, k) => k !== i))} className="text-creme-faint hover:text-semantic-red shrink-0"><X size={13} /></button>
+                </div>
+              ))}
+              {uploading > 0 && (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-faint">
+                  <Loader2 size={12} className="animate-spin" /> enviando {uploading}…
+                </div>
+              )}
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
+          />
           <div className="flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              title="Anexar imagem, PDF ou vídeo (ou cole com Ctrl+V)"
+              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"
+            >
+              <Paperclip size={17} />
+            </button>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onPaste={(e) => { const fs = Array.from(e.clipboardData?.files ?? []); if (fs.length) { e.preventDefault(); addFiles(fs); } }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -650,7 +705,7 @@ export function TalkPage() {
             )}
             <button
               onClick={() => send()}
-              disabled={sending || !input.trim()}
+              disabled={sending || uploading > 0 || (!input.trim() && attachments.length === 0)}
               className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors"
             >
               {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
