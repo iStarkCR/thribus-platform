@@ -47,6 +47,7 @@ import { ProfilePage } from '@/pages/ProfilePage';
 import { AccessPage } from '@/pages/AccessPage';
 import { TalkPage } from '@/pages/TalkPage';
 import { DemandsPage } from '@/pages/DemandsPage';
+import { RoutinesPage } from '@/pages/RoutinesPage';
 import { FloatingOrb } from '@/components/voice/FloatingOrb';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
@@ -200,6 +201,7 @@ function InnerRoutes() {
           <Route path="/access" element={<AccessPage />} />
           <Route path="/talk" element={<TalkPage />} />
           <Route path="/demands" element={<DemandsPage />} />
+          <Route path="/routines" element={<RoutinesPage />} />
     </Routes>
   );
 }

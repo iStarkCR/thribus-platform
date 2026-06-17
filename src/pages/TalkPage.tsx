@@ -15,6 +15,7 @@ import { ThinkingActivity } from '@/components/shared/ThinkingActivity';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import { createDemand } from '@/services/demands';
+import { RoutineModal } from '@/components/routines/RoutineModal';
 import {
   listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession,
   type ChatFolder, type ChatSession,
@@ -63,6 +64,7 @@ export function TalkPage() {
   const [plusOpen, setPlusOpen] = useState(false);
   const [delegateOpen, setDelegateOpen] = useState(false);
   const [planMode, setPlanMode] = useState(false);
+  const [routineOpen, setRoutineOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
@@ -723,7 +725,7 @@ export function TalkPage() {
                       )}
                     </div>
                     <MenuRow icon={<Lightbulb size={15} />} label="Modo plano" hint={planMode ? 'ligado' : 'planeja antes'} active={planMode} onClick={() => { setPlanMode((p) => !p); setPlusOpen(false); }} />
-                    <MenuRow icon={<Clock size={15} />} label="Agendar rotina" hint="em breve" disabled onClick={() => {}} />
+                    <MenuRow icon={<Clock size={15} />} label="Agendar rotina" hint="repetir" onClick={() => { setPlusOpen(false); setRoutineOpen(true); }} />
                   </div>
                 </>
               )}
@@ -773,6 +775,15 @@ export function TalkPage() {
 
       {infoOpen && <AgentInfoModal agent={agent} onClose={() => setInfoOpen(false)} onEdit={() => setEditOpen(true)} />}
       {editOpen && <AgentDetailModal agent={agent} onClose={() => setEditOpen(false)} />}
+      {routineOpen && userId && (
+        <RoutineModal
+          userId={userId}
+          agents={collaborators}
+          initialTitle={input.trim() || undefined}
+          onClose={() => setRoutineOpen(false)}
+          onCreated={() => { setRoutineOpen(false); setInput(''); useAppStore.getState().addToast('Rotina agendada', 'green'); }}
+        />
+      )}
 
       {/* Menu (engrenagem) da pasta */}
       {menuFor && menuPos && (() => {

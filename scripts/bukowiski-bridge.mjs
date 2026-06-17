@@ -590,6 +590,50 @@ async function tickDemandReplies(teamIds) {
   }
 }
 
+// ─── Rotinas (demandas recorrentes) ─────────────────────────────────────────
+function computeNextRun(kind, runTime, weekday) {
+  const [h, m] = String(runTime || '09:00').split(':').map(Number);
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(h || 0, m || 0, 0, 0);
+  if (kind === 'weekly') {
+    const wd = (((Number(weekday) || 0) % 7) + 7) % 7;
+    let add = (wd - next.getDay() + 7) % 7;
+    if (add === 0 && next <= now) add = 7;
+    next.setDate(next.getDate() + add);
+  } else if (next <= now) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next.toISOString();
+}
+
+async function tickRoutines(teamIds) {
+  const nowIso = new Date().toISOString();
+  const { data: due, error } = await sb
+    .from('team_routines')
+    .select('*')
+    .eq('active', true)
+    .lte('next_run_at', nowIso)
+    .order('next_run_at', { ascending: true })
+    .limit(5);
+  if (error) { console.error('[rotinas poll erro]', error.message); return; }
+  for (const rt of due ?? []) {
+    if (!teamIds.has(rt.agent_id)) continue;
+    try {
+      await sb.from('team_demands').insert({
+        user_id: rt.user_id, agent_id: rt.agent_id,
+        title: rt.title, description: rt.description, project: rt.project,
+        status: 'todo', priority: 3,
+      });
+      const next = computeNextRun(rt.schedule_kind, rt.run_time, rt.weekday);
+      await sb.from('team_routines').update({ last_run_at: nowIso, next_run_at: next }).eq('id', rt.id);
+      console.log(`[rotina] criou demanda "${String(rt.title).slice(0, 40)}" · próximo ${next}`);
+    } catch (e) {
+      console.error(`[rotina erro] ${rt.id}:`, e.message);
+    }
+  }
+}
+
 console.log(
   `Ponte Bukowiski no ar · model=${BRAIN.model} (config do painel) · poll=${POLL_MS}ms\n` +
     `  atende: time interno (client="${TEAM_CLIENT}") com acesso total\n` +
@@ -602,6 +646,7 @@ async function loop() {
     await loadBrainConfig();        // modelo/esforço/teto vindos do painel (cache 15s)
     await tick(teamIds);            // chat interativo primeiro
     await tickDemandReplies(teamIds); // respostas no thread (conversa ativa) têm prioridade
+    await tickRoutines(teamIds);    // rotinas vencidas viram demanda
     await tickDemands(teamIds);     // depois 1 demanda nova da fila
     await new Promise((r) => setTimeout(r, POLL_MS));
   }

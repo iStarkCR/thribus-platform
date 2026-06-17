@@ -11,7 +11,7 @@ import {
   Brain, Briefcase, Boxes, BookOpen, Plug, Network, Shield, FlaskConical, UserCircle2,
   Inbox, Blocks, Phone, Store, FileBarChart, TestTube2, ShieldCheck, Lightbulb, Handshake,
   Activity, Code2, BookMarked, Smartphone, CreditCard, Rocket, Bell, Webhook, Beaker,
-  Radio, Gauge, FileCheck, Lock, UserCog, MessagesSquare, ListChecks,
+  Radio, Gauge, FileCheck, Lock, UserCog, MessagesSquare, ListChecks, Clock,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -56,6 +56,7 @@ export const NAV_ITEMS: NavGroup[] = [
     group: 'Operação',
     items: [
       { path: '/demands', label: 'Demandas do time', icon: ListChecks },
+      { path: '/routines', label: 'Rotinas', icon: Clock },
       { path: '/inbox', label: 'Inbox Unificada', icon: Inbox, client: true },
       { path: '/customers', label: 'Customer 360', icon: UserCircle2, client: true },
       { path: '/voice', label: 'Canal de Voz', icon: Phone, client: true },
