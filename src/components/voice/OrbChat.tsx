@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Send, Mic, Loader2, AudioLines } from 'lucide-react';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
+import { Markdown } from '@/components/shared/Markdown';
 import type { OrbConversation } from '@/hooks/useOrbConversation';
 
 const PANEL_W = 360;
@@ -65,7 +66,7 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
         ) : (
           messages.map((m) => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[82%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand text-white rounded-br-sm' : 'bg-surface-2 text-creme border border-default rounded-bl-sm'}`}>{m.content}</div>
+              <div className={`max-w-[82%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand text-white rounded-br-sm' : 'bg-surface-2 text-creme border border-default rounded-bl-sm'}`}>{m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}</div>
             </div>
           ))
         )}

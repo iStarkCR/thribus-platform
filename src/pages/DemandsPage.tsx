@@ -7,6 +7,7 @@ import {
   listDemandMessages, sendDemandReply, subscribeDemandMessages,
   demandsConfigured, type Demand, type DemandStatus, type DemandMessage,
 } from '@/services/demands';
+import { Markdown } from '@/components/shared/Markdown';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -275,17 +276,17 @@ function DetailModal({
             <Bubble who="Charles" side="user"><span className="whitespace-pre-wrap">{demand.description}</span></Bubble>
           )}
           {demand.result && (
-            <Bubble who={name} side="agent"><span className="whitespace-pre-wrap">{demand.result}</span></Bubble>
+            <Bubble who={name} side="agent"><Markdown text={demand.result} /></Bubble>
           )}
           {messages.map((m) =>
             m.status === 'error' ? (
               <Bubble key={m.id} who={name} side="agent">
                 <span className="text-semantic-red flex items-start gap-1.5"><AlertTriangle size={12} className="mt-0.5 shrink-0" /> {m.error || 'Falhou ao responder'}</span>
               </Bubble>
+            ) : m.role === 'user' ? (
+              <Bubble key={m.id} who="Charles" side="user"><span className="whitespace-pre-wrap">{m.content}</span></Bubble>
             ) : (
-              <Bubble key={m.id} who={m.role === 'user' ? 'Charles' : name} side={m.role === 'user' ? 'user' : 'agent'}>
-                <span className="whitespace-pre-wrap">{m.content}</span>
-              </Bubble>
+              <Bubble key={m.id} who={name} side="agent"><Markdown text={m.content} /></Bubble>
             ),
           )}
           {(working || hasPending) && (
