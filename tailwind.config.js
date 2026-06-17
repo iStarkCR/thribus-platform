@@ -52,8 +52,13 @@ export default {
         'pulse-dot': 'pulse-dot 2s infinite',
         'modal-in': 'modal-in 0.2s ease',
         'toast-in': 'toast-in 0.25s ease',
+        'effort-flow': 'effort-flow 2.4s linear infinite',
       },
       keyframes: {
+        'effort-flow': {
+          '0%': { backgroundPosition: '0% 50%' },
+          '100%': { backgroundPosition: '200% 50%' },
+        },
         'pulse-dot': {
           '0%': { boxShadow: '0 0 0 0 rgba(74,222,128,0.45)' },
           '70%': { boxShadow: '0 0 0 5px rgba(74,222,128,0)' },

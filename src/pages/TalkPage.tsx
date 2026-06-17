@@ -581,21 +581,35 @@ export function TalkPage() {
             </div>
           ) : (
             <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 py-5 space-y-4">
-              {messages.map((m) => (
-                <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-[14.5px] leading-relaxed whitespace-pre-wrap ${
-                      m.role === 'user' ? 'bg-brand text-white rounded-br-md' : 'bg-surface-2 text-creme border border-default rounded-bl-md'
-                    }`}
-                  >
-                    {m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}
-                    {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
+              {messages.map((m) =>
+                m.role === 'user' ? (
+                  <div key={m.id} className="flex justify-end">
+                    <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[14.5px] leading-relaxed whitespace-pre-wrap">
+                      {m.content}
+                      {m.status === 'error' && <div className="text-[11px] mt-1 text-white/80">erro: {m.error}</div>}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <div key={m.id} className="flex gap-2.5 max-w-[90%]">
+                    <div className="w-7 h-7 rounded-full bg-brand/15 text-brand-bright flex items-center justify-center text-[12px] font-bold shrink-0 mt-0.5">
+                      {agent.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] font-semibold text-creme-mute mb-1">{agent.name}</div>
+                      <div className="px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme text-[14.5px] leading-relaxed">
+                        <Markdown text={m.content} />
+                        {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
+                      </div>
+                    </div>
+                  </div>
+                ),
+              )}
               {waiting && (
-                <div className="flex justify-start">
-                  <div className="px-4 py-2.5 rounded-2xl rounded-bl-md bg-surface-2 border border-default text-creme-mute text-[14px] flex items-center gap-2">
+                <div className="flex gap-2.5">
+                  <div className="w-7 h-7 rounded-full bg-brand/15 text-brand-bright flex items-center justify-center text-[12px] font-bold shrink-0">
+                    {agent.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme-mute text-[14px] flex items-center gap-2">
                     <Loader2 size={14} className="animate-spin" /> {agent.name} está pensando…
                   </div>
                 </div>
