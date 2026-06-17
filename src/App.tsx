@@ -11,6 +11,7 @@ import { TemplatesPage } from '@/pages/TemplatesPage';
 import { MetricsPage } from '@/pages/MetricsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { CortexPage } from '@/pages/CortexPage';
+import { CortexBrainPage } from '@/pages/CortexBrainPage';
 import { CortexEnterprisePage } from '@/pages/CortexEnterprisePage';
 import { CortexStackPage } from '@/pages/CortexStackPage';
 import { KnowledgePage } from '@/pages/KnowledgePage';
@@ -163,6 +164,7 @@ function InnerRoutes() {
           <Route path="/logs" element={<LogsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/clients" element={<WorkspacesPage />} />
+          <Route path="/cortex-brain" element={<CortexBrainPage />} />
           <Route path="/cortex" element={<CortexPage />} />
           <Route path="/enterprise" element={<CortexEnterprisePage />} />
           <Route path="/stack" element={<CortexStackPage />} />

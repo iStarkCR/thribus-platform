@@ -35,7 +35,14 @@ import { join } from 'node:path';
 
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const MODEL = process.env.BRIDGE_MODEL || 'opus'; // alias do CLI (igual o daemon do WhatsApp) — resolve sozinho pro Opus atual
+// Config "Cortex Brain" (vinda do painel /cortex-brain): modelo + esforço + teto
+// por execução. O default vem do env (fallback); o painel sobrescreve via a
+// tabela cortex_brain_config (scope='global'). Recarregada a cada ~15s no loop.
+const DEFAULT_MODEL = process.env.BRIDGE_MODEL || 'opus'; // alias do CLI — resolve sozinho pro modelo atual
+let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0 };
+let brainLoadedAt = 0;
+// --effort só vale pra opus/fable (o CLI ignora em sonnet/haiku).
+const effortApplies = (m) => m === 'opus' || m === 'fable';
 // A ponte atende SÓ o time interno da Thribus (esses rodam pelo CLI do Mac, com
 // acesso total). Agentes de cliente são respondidos pela API (worker) — a ponte
 // os ignora pra que um cliente nunca execute nada na sua máquina.
@@ -51,6 +58,54 @@ if (!URL || !KEY) {
 }
 
 const sb = createClient(URL, KEY, { auth: { persistSession: false } });
+
+// Lê a config do painel (modelo + esforço + teto). Cacheia 15s pra não consultar
+// o banco a cada poll. Em erro, mantém o último valor conhecido.
+async function loadBrainConfig() {
+  if (Date.now() - brainLoadedAt < 15_000) return BRAIN;
+  try {
+    const { data } = await sb
+      .from('cortex_brain_config')
+      .select('model,effort,max_budget_usd')
+      .eq('scope', 'global')
+      .maybeSingle();
+    if (data) {
+      BRAIN = {
+        model: data.model || DEFAULT_MODEL,
+        effort: data.effort || 'high',
+        maxBudgetUsd: Number(data.max_budget_usd) || 0,
+      };
+    }
+    brainLoadedAt = Date.now();
+  } catch (e) {
+    console.error('[brain config]', e.message);
+  }
+  return BRAIN;
+}
+
+// Grava o custo/tokens reais de uma execução (best-effort; nunca derruba o loop).
+async function recordUsage({ userId, agentId, kind, refId, usage }) {
+  if (!usage) return;
+  try {
+    await sb.from('cortex_usage').insert({
+      user_id: userId ?? null,
+      agent_id: agentId ?? null,
+      kind,
+      ref_id: refId ?? null,
+      model: usage.model || BRAIN.model,
+      effort: effortApplies(BRAIN.model) ? BRAIN.effort : null,
+      cost_usd: usage.costUsd,
+      total_tokens: usage.totalTokens,
+      input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens,
+      cache_read_tokens: usage.cacheReadTokens,
+      duration_ms: usage.durationMs,
+      num_turns: usage.numTurns,
+    });
+  } catch (e) {
+    console.error('[usage] falha ao gravar:', e.message);
+  }
+}
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 // Time interno: acesso total às skills, segue os próprios gates da persona.
@@ -89,16 +144,53 @@ function buildPrompt(agent, history, content) {
   return `${persona}\n\n${task}`;
 }
 
-function runClaude(prompt, timeoutMs = TIMEOUT_MS) {
+// Extrai texto + uso (custo/tokens) do JSON do `claude --output-format json`.
+function parseClaudeJson(out) {
+  const raw = out.trim();
+  let obj = null;
+  try { obj = JSON.parse(raw); } catch { obj = null; }
+  if (obj && obj.type === 'result') {
+    if (obj.is_error) {
+      throw new Error(String(obj.result || obj.subtype || 'claude retornou erro').slice(0, 400));
+    }
+    const u = obj.usage || {};
+    const inTok = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    const outTok = u.output_tokens || 0;
+    return {
+      text: String(obj.result || '').trim(),
+      usage: {
+        costUsd: Number(obj.total_cost_usd) || 0,
+        inputTokens: inTok,
+        outputTokens: outTok,
+        cacheReadTokens: u.cache_read_input_tokens || 0,
+        totalTokens: inTok + outTok,
+        durationMs: obj.duration_ms || 0,
+        numTurns: obj.num_turns || 0,
+        model: obj.model || null,
+      },
+    };
+  }
+  return { text: raw, usage: null }; // fallback: trata como texto puro
+}
+
+// Roda o claude com o modelo/esforço/teto vindos da config do painel.
+// Retorna { text, usage }. opts: { timeoutMs, model, effort, maxBudgetUsd }.
+function runClaude(prompt, opts = {}) {
+  const timeoutMs = opts.timeoutMs || TIMEOUT_MS;
+  const model = opts.model || BRAIN.model;
   return new Promise((resolve, reject) => {
     // time interno → acesso total; gates ficam por conta da persona do agente
     const args = [
       '-p', prompt,
       '--append-system-prompt', GUARD,
-      '--output-format', 'text',
-      '--model', MODEL,
+      '--output-format', 'json',
+      '--model', model,
       '--permission-mode', 'bypassPermissions',
     ];
+    if (opts.effort && effortApplies(model)) args.push('--effort', opts.effort);
+    if (opts.maxBudgetUsd && Number(opts.maxBudgetUsd) > 0) {
+      args.push('--max-budget-usd', String(opts.maxBudgetUsd));
+    }
     // Remove envs de sessão herdadas (se a ponte for iniciada de dentro de um
     // Claude Code) que apontariam pro proxy errado. PRESERVA o CLAUDE_CODE_OAUTH_TOKEN
     // (token de `claude setup-token`) — é assim que o daemon autentica headless,
@@ -131,8 +223,12 @@ function runClaude(prompt, timeoutMs = TIMEOUT_MS) {
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve(out.trim());
-      else reject(new Error(`claude saiu com código ${code}: ${err.slice(0, 400)}`));
+      if (code !== 0) {
+        reject(new Error(`claude saiu com código ${code}: ${err.slice(0, 400)}`));
+        return;
+      }
+      try { resolve(parseClaudeJson(out)); }
+      catch (e) { reject(e); }
     });
   });
 }
@@ -156,7 +252,10 @@ async function processMessage(msg) {
     .order('created_at', { ascending: true })
     .limit(HISTORY);
 
-  const reply = await runClaude(buildPrompt(agent, history ?? [], msg.content));
+  const r = await runClaude(buildPrompt(agent, history ?? [], msg.content), {
+    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd,
+  });
+  const reply = r.text;
   if (!reply) throw new Error('resposta vazia do claude');
 
   await sb.from('collaborator_messages').insert({
@@ -169,7 +268,11 @@ async function processMessage(msg) {
     channel: msg.channel,
   });
   await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', msg.id);
-  console.log(`[ok] ${agent.name} respondeu (${reply.length} chars)`);
+  await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, usage: r.usage });
+  console.log(
+    `[ok] ${agent.name} respondeu (${reply.length} chars` +
+      `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''})`,
+  );
 }
 
 async function loadTeamIds() {
@@ -223,11 +326,20 @@ async function processDemand(d) {
     `\n\nExecute a demanda de ponta a ponta. No final, devolva um resumo curto do que foi feito ` +
     `e, se algo precisa da decisão do Charles (gastar dinheiro, mexer em produção, etc.), diga claramente o que falta.`;
 
-  const result = await runClaude(buildPrompt(agent, [], task), DEMAND_TIMEOUT_MS);
+  const r = await runClaude(buildPrompt(agent, [], task), {
+    timeoutMs: DEMAND_TIMEOUT_MS,
+    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd,
+  });
+  const result = r.text;
   if (!result) throw new Error('resposta vazia do claude');
 
-  await sb.from('team_demands').update({ status: 'done', result }).eq('id', d.id);
-  console.log(`[ok] ${agent.name} executou demanda "${d.title.slice(0, 50)}" (${result.length} chars)`);
+  // limpa o erro antigo se a demanda foi reenfileirada depois de falhar
+  await sb.from('team_demands').update({ status: 'done', result, error: null }).eq('id', d.id);
+  await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage: r.usage });
+  console.log(
+    `[ok] ${agent.name} executou demanda "${d.title.slice(0, 50)}" (${result.length} chars` +
+      `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''})`,
+  );
 }
 
 async function tickDemands(teamIds) {
@@ -257,13 +369,15 @@ async function tickDemands(teamIds) {
 }
 
 console.log(
-  `Ponte Bukowiski no ar · model=${MODEL} · poll=${POLL_MS}ms\n` +
+  `Ponte Bukowiski no ar · model=${BRAIN.model} (config do painel) · poll=${POLL_MS}ms\n` +
     `  atende: time interno (client="${TEAM_CLIENT}") com acesso total\n` +
-    '  chat + fila de demandas (Kanban) · agentes de cliente: ignorados',
+    '  chat + fila de demandas (Kanban) · uso real gravado em cortex_usage\n' +
+    '  agentes de cliente: ignorados',
 );
 async function loop() {
   for (;;) {
     const teamIds = await loadTeamIds();
+    await loadBrainConfig();    // modelo/esforço/teto vindos do painel (cache 15s)
     await tick(teamIds);        // chat interativo primeiro
     await tickDemands(teamIds); // depois 1 demanda da fila
     await new Promise((r) => setTimeout(r, POLL_MS));
