@@ -19,6 +19,7 @@ export interface ChatSession {
   folderId: string | null;
   title: string;
   updatedAt: string;
+  contextTokens: number;
 }
 
 const FOLDER_COLS = 'id,name,sort_order,parent_id,color';
@@ -74,7 +75,7 @@ export async function listSessions(agentId: string, userId: string): Promise<Cha
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('chat_sessions')
-    .select('id,agent_id,folder_id,title,updated_at')
+    .select('id,agent_id,folder_id,title,updated_at,context_tokens')
     .eq('agent_id', agentId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
@@ -85,6 +86,7 @@ export async function listSessions(agentId: string, userId: string): Promise<Cha
     folderId: r.folder_id,
     title: r.title,
     updatedAt: r.updated_at,
+    contextTokens: r.context_tokens ?? 0,
   }));
 }
 
@@ -102,10 +104,10 @@ export async function createSession(
       folder_id: opts.folderId ?? null,
       title: opts.title ?? 'Nova conversa',
     })
-    .select('id,agent_id,folder_id,title,updated_at')
+    .select('id,agent_id,folder_id,title,updated_at,context_tokens')
     .single();
   if (error) throw error;
-  return { id: data.id, agentId: data.agent_id, folderId: data.folder_id, title: data.title, updatedAt: data.updated_at };
+  return { id: data.id, agentId: data.agent_id, folderId: data.folder_id, title: data.title, updatedAt: data.updated_at, contextTokens: data.context_tokens ?? 0 };
 }
 
 export async function renameSession(id: string, title: string): Promise<void> {

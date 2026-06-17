@@ -637,6 +637,7 @@ export function TalkPage() {
         <div className="px-6 py-4 border-t border-default shrink-0">
           <div className="flex items-center justify-between mb-2 px-1">
             <CortexBrainBar />
+            {active && active.contextTokens > 0 && <ContextMeter tokens={active.contextTokens} />}
           </div>
 
           {(attachments.length > 0 || uploading > 0) && (
@@ -808,6 +809,22 @@ function SessionItem({ session, active, depth = 0, onClick, onRename, onDelete, 
           <Trash2 size={13} />
         </button>
       </div>
+    </div>
+  );
+}
+
+// Janela de contexto da conversa (igual o Claude: "X / 1M"). Opus 4.8 = 1M tokens.
+function ContextMeter({ tokens }: { tokens: number }) {
+  const MAX = 1_000_000;
+  const pct = Math.min(100, (tokens / MAX) * 100);
+  const fmt = (n: number) => (n >= 1_000_000 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+  return (
+    <div className="flex items-center gap-2 text-[11px] text-creme-faint shrink-0" title="Janela de contexto desta conversa (tokens usados na sessão)">
+      <span>contexto</span>
+      <div className="w-16 h-1.5 rounded-full bg-surface-3 overflow-hidden">
+        <div className={`h-full rounded-full ${pct >= 85 ? 'bg-amber-400' : 'bg-brand'}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="font-mono text-creme-mute">{fmt(tokens)}/1M · {pct.toFixed(0)}%</span>
     </div>
   );
 }
