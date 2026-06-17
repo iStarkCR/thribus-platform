@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ListChecks, Plus, X, Loader2, Trash2, Check, Folder, AlertTriangle, Send, CornerDownRight } from 'lucide-react';
+import { ListChecks, Plus, X, Loader2, Trash2, Check, Folder, AlertTriangle, Send } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
 import { useAppStore } from '@/hooks/useAppStore';
 import {
-  listDemands, createDemand, updateDemand, deleteDemand, subscribeDemands, replyDemand,
-  demandsConfigured, type Demand, type DemandStatus,
+  listDemands, createDemand, updateDemand, deleteDemand, subscribeDemands,
+  listDemandMessages, sendDemandReply, subscribeDemandMessages,
+  demandsConfigured, type Demand, type DemandStatus, type DemandMessage,
 } from '@/services/demands';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
@@ -141,11 +142,10 @@ export function DemandsPage() {
 
       {detail && (
         <DetailModal
-          demand={detail}
+          demand={demands.find((d) => d.id === detail.id) ?? detail}
           userId={userId}
           agentName={agentName}
           onClose={() => setDetail(null)}
-          onReplied={(d) => { setDemands((prev) => [d, ...prev]); setDetail(null); }}
         />
       )}
     </div>
@@ -212,84 +212,123 @@ function AddDemandModal({ userId, agents, onClose, onCreated }: { userId: string
 }
 
 function DetailModal({
-  demand, userId, agentName, onClose, onReplied,
+  demand, userId, agentName, onClose,
 }: {
   demand: Demand;
   userId: string | null;
   agentName: (id: string) => string;
   onClose: () => void;
-  onReplied: (d: Demand) => void;
 }) {
   const addToast = useAppStore((s) => s.addToast);
+  const [messages, setMessages] = useState<DemandMessage[]>([]);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const threadEnd = useRef<HTMLDivElement | null>(null);
+  const name = agentName(demand.agentId);
 
-  // Responder faz sentido quando a demanda já rodou (Feito/Aguardando/Erro):
-  // o Bukowiski pediu uma decisão ou você quer redirecionar.
-  const canReply = userId && (demand.status === 'done' || demand.status === 'waiting' || demand.status === 'error');
+  const refetch = useCallback(() => { listDemandMessages(demand.id).then(setMessages).catch(() => {}); }, [demand.id]);
+
+  useEffect(() => {
+    refetch();
+    return subscribeDemandMessages(demand.id, refetch);
+  }, [demand.id, refetch]);
+
+  // rola pro fim quando chega resposta nova
+  useEffect(() => { threadEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length, demand.status]);
+
+  const working = demand.status === 'doing';
+  const hasPending = messages.some((m) => m.role === 'user' && m.status === 'pending');
 
   async function send() {
-    if (!userId || !reply.trim()) return;
+    if (!userId || !reply.trim() || sending) return;
+    const text = reply.trim();
     setSending(true);
     try {
-      const child = await replyDemand(userId, demand, reply.trim());
-      addToast('Resposta enviada — o Bukowiski vai continuar', 'green');
-      onReplied(child);
+      await sendDemandReply(demand.id, userId, text);
+      setReply('');
+      refetch();
     } catch (e) {
       addToast((e as Error).message || 'Falha ao enviar resposta', 'red');
+    } finally {
       setSending(false);
     }
   }
 
-  const name = agentName(demand.agentId);
-
   return (
     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-[70] p-4" onClick={onClose}>
       <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-default">
-          <div className="text-[15px] font-bold text-creme">{demand.title}</div>
-          <button onClick={onClose} className="text-creme-faint hover:text-creme"><X size={17} /></button>
-        </div>
-        <div className="p-5 space-y-3 overflow-y-auto text-[13px]">
-          <div className="flex flex-wrap gap-2 text-[11px]">
-            <span className="px-2 py-0.5 rounded-full bg-surface-3 text-creme-dim">{name}</span>
-            {demand.project && <span className="px-2 py-0.5 rounded-full bg-surface-3 text-creme-dim flex items-center gap-1"><Folder size={10} /> {demand.project}</span>}
-            <span className="px-2 py-0.5 rounded-full bg-surface-3 text-creme-dim">{demand.status}</span>
-            {demand.parentId && <span className="px-2 py-0.5 rounded-full bg-surface-3 text-creme-dim flex items-center gap-1"><CornerDownRight size={10} /> continuação</span>}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-default shrink-0">
+          <div className="min-w-0">
+            <div className="text-[15px] font-bold text-creme truncate">{demand.title}</div>
+            <div className="flex flex-wrap gap-1.5 mt-1 text-[10.5px]">
+              <span className="px-1.5 py-0.5 rounded-full bg-surface-3 text-creme-dim">{name}</span>
+              {demand.project && <span className="px-1.5 py-0.5 rounded-full bg-surface-3 text-creme-dim flex items-center gap-1"><Folder size={9} /> {demand.project}</span>}
+              <span className={`px-1.5 py-0.5 rounded-full bg-surface-3 ${working ? 'text-semantic-blue' : 'text-creme-dim'}`}>{working ? 'executando…' : demand.status}</span>
+            </div>
           </div>
-          {demand.description && <div><div className="text-[11px] font-bold uppercase tracking-wider text-creme-mute mb-1">{demand.parentId ? 'Sua resposta' : 'Demanda'}</div><div className="text-creme-dim whitespace-pre-wrap">{demand.description}</div></div>}
-          {demand.result && <div><div className="text-[11px] font-bold uppercase tracking-wider text-semantic-green mb-1">Resultado do {name}</div><div className="text-creme-dim whitespace-pre-wrap">{demand.result}</div></div>}
-          {demand.error && <div><div className="text-[11px] font-bold uppercase tracking-wider text-semantic-red mb-1">Erro</div><div className="text-semantic-red whitespace-pre-wrap">{demand.error}</div></div>}
+          <button onClick={onClose} className="text-creme-faint hover:text-creme shrink-0"><X size={17} /></button>
+        </div>
 
-          {/* Responder ao colaborador → vira uma demanda-filho que ele executa */}
-          {canReply && (
-            <div className="pt-1">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-brand-bright mb-1.5 flex items-center gap-1.5">
-                <Send size={11} /> Responder ao {name}
-              </div>
-              <p className="text-[11.5px] text-creme-faint mb-2 leading-snug">
-                Decida ou redirecione (ex: <i>"pode publicar no Hub e acionar Bernays e Argos"</i>). Vira uma nova
-                demanda na fila, com o contexto desta — ele continua de onde parou.
-              </p>
-              <textarea
-                className="input min-h-[72px] resize-y w-full"
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                placeholder="Sua decisão / próximo passo…"
-                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send(); }}
-              />
-              <div className="flex justify-end mt-2">
-                <button
-                  onClick={send}
-                  disabled={sending || !reply.trim()}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold bg-brand text-white hover:bg-brand-bright disabled:opacity-40 transition-colors"
-                >
-                  {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Enviar pro {name}
-                </button>
-              </div>
+        {/* Thread: tarefa → resultado → conversa */}
+        <div className="px-5 py-4 space-y-3 overflow-y-auto text-[13px] flex-1">
+          {demand.description && (
+            <Bubble who="Charles" side="user"><span className="whitespace-pre-wrap">{demand.description}</span></Bubble>
+          )}
+          {demand.result && (
+            <Bubble who={name} side="agent"><span className="whitespace-pre-wrap">{demand.result}</span></Bubble>
+          )}
+          {messages.map((m) =>
+            m.status === 'error' ? (
+              <Bubble key={m.id} who={name} side="agent">
+                <span className="text-semantic-red flex items-start gap-1.5"><AlertTriangle size={12} className="mt-0.5 shrink-0" /> {m.error || 'Falhou ao responder'}</span>
+              </Bubble>
+            ) : (
+              <Bubble key={m.id} who={m.role === 'user' ? 'Charles' : name} side={m.role === 'user' ? 'user' : 'agent'}>
+                <span className="whitespace-pre-wrap">{m.content}</span>
+              </Bubble>
+            ),
+          )}
+          {(working || hasPending) && (
+            <div className="flex items-center gap-2 text-[12px] text-semantic-blue pl-1">
+              <Loader2 size={13} className="animate-spin" /> {name} está trabalhando nisso…
             </div>
           )}
+          <div ref={threadEnd} />
         </div>
+
+        {/* Responder dentro da MESMA demanda */}
+        {userId && (
+          <div className="px-5 py-3.5 border-t border-default shrink-0">
+            <div className="flex items-end gap-2">
+              <textarea
+                className="input min-h-[42px] max-h-[120px] resize-y w-full"
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                placeholder={`Responder ao ${name}… (ex: "pode publicar no Hub e acionar Bernays e Argos")`}
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send(); }}
+              />
+              <button
+                onClick={send}
+                disabled={sending || !reply.trim()}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold bg-brand text-white hover:bg-brand-bright disabled:opacity-40 transition-colors shrink-0"
+              >
+                {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              </button>
+            </div>
+            <p className="text-[10.5px] text-creme-faint mt-1.5">A resposta continua nesta demanda — ele segue de onde parou, sem criar card novo. ⌘/Ctrl+Enter pra enviar.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Bubble({ who, side, children }: { who: string; side: 'user' | 'agent'; children: React.ReactNode }) {
+  return (
+    <div className={side === 'user' ? 'flex flex-col items-end' : 'flex flex-col items-start'}>
+      <div className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${side === 'user' ? 'text-creme-mute' : 'text-brand-bright'}`}>{who}</div>
+      <div className={`max-w-[88%] rounded-xl px-3 py-2 text-[12.5px] leading-relaxed ${side === 'user' ? 'bg-brand/10 text-creme-dim' : 'bg-surface-2 text-creme-dim'}`}>
+        {children}
       </div>
     </div>
   );

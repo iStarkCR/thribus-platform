@@ -388,18 +388,100 @@ async function tickDemands(teamIds) {
   }
 }
 
+// ─── Respostas no thread da demanda (conversa dentro do MESMO card) ─────────
+// O Charles responde dentro da demanda (demand_messages 'pending'); aqui o
+// agente continua a tarefa com o fio inteiro de contexto, sem criar card novo.
+async function processDemandReply(m) {
+  const { data: d } = await sb.from('team_demands').select('*').eq('id', m.demand_id).single();
+  if (!d) throw new Error(`demanda ${m.demand_id} não encontrada`);
+
+  const { data: agent } = await sb
+    .from('agents')
+    .select('id,name,sector,system_prompt')
+    .eq('id', d.agent_id)
+    .single();
+  if (!agent) throw new Error(`agente ${d.agent_id} não encontrado`);
+
+  await sb.from('team_demands').update({ status: 'doing' }).eq('id', d.id);
+
+  // fio: turnos anteriores já concluídos (a 'pending' atual fica de fora)
+  const { data: prior } = await sb
+    .from('demand_messages')
+    .select('role,content,created_at')
+    .eq('demand_id', d.id)
+    .eq('status', 'done')
+    .order('created_at', { ascending: true });
+
+  let thread = `DEMANDA (conversa em andamento com o Charles)${d.project ? ` · projeto ${d.project}` : ''}: ${d.title}`;
+  if (d.description) thread += `\n\nTarefa original:\n${d.description}`;
+  if (d.result) thread += `\n\nVocê já entregou/respondeu antes:\n${d.result}`;
+  for (const msg of prior ?? []) {
+    thread += `\n\n${msg.role === 'user' ? 'Charles' : 'Você'}: ${msg.content}`;
+  }
+  thread += `\n\nCharles agora responde:\n${m.content}`;
+  thread +=
+    `\n\nContinue a tarefa a partir dessa resposta. Execute de ponta a ponta e devolva um resumo ` +
+    `curto do que foi feito; se precisar de mais alguma decisão do Charles, diga claramente o que falta.`;
+
+  const r = await runClaude(buildPrompt(agent, [], thread), {
+    timeoutMs: DEMAND_TIMEOUT_MS,
+    model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd,
+  });
+  const result = r.text;
+  if (!result) throw new Error('resposta vazia do claude');
+
+  await sb.from('demand_messages').insert({
+    demand_id: d.id, user_id: d.user_id, role: 'assistant',
+    content: result, status: 'done', cost_usd: r.usage?.costUsd ?? 0,
+  });
+  await sb.from('demand_messages').update({ status: 'done' }).eq('id', m.id);
+  await sb.from('team_demands').update({ status: 'done', error: null }).eq('id', d.id);
+  await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage: r.usage });
+  console.log(
+    `[ok] ${agent.name} respondeu no thread "${d.title.slice(0, 40)}" (${result.length} chars` +
+      `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''})`,
+  );
+}
+
+async function tickDemandReplies(teamIds) {
+  const { data: pend, error } = await sb
+    .from('demand_messages')
+    .select('id,demand_id,content')
+    .eq('status', 'pending')
+    .eq('role', 'user')
+    .order('created_at', { ascending: true })
+    .limit(1);
+  if (error) {
+    console.error('[thread poll erro]', error.message);
+    return;
+  }
+  for (const m of pend ?? []) {
+    // só processa se a demanda é de um agente do time interno
+    const { data: d } = await sb.from('team_demands').select('agent_id').eq('id', m.demand_id).single();
+    if (!d || !teamIds.has(d.agent_id)) continue;
+    try {
+      await processDemandReply(m);
+    } catch (e) {
+      console.error(`[erro] thread ${m.id}:`, e.message);
+      await sb.from('demand_messages').update({ status: 'error', error: String(e.message).slice(0, 500) }).eq('id', m.id);
+      await sb.from('team_demands').update({ status: 'done' }).eq('id', m.demand_id); // não deixa travada em 'doing'
+    }
+  }
+}
+
 console.log(
   `Ponte Bukowiski no ar · model=${BRAIN.model} (config do painel) · poll=${POLL_MS}ms\n` +
     `  atende: time interno (client="${TEAM_CLIENT}") com acesso total\n` +
-    '  chat + fila de demandas (Kanban) · uso real gravado em cortex_usage\n' +
+    '  chat + demandas (Kanban) + respostas no thread · uso em cortex_usage\n' +
     '  agentes de cliente: ignorados',
 );
 async function loop() {
   for (;;) {
     const teamIds = await loadTeamIds();
-    await loadBrainConfig();    // modelo/esforço/teto vindos do painel (cache 15s)
-    await tick(teamIds);        // chat interativo primeiro
-    await tickDemands(teamIds); // depois 1 demanda da fila
+    await loadBrainConfig();        // modelo/esforço/teto vindos do painel (cache 15s)
+    await tick(teamIds);            // chat interativo primeiro
+    await tickDemandReplies(teamIds); // respostas no thread (conversa ativa) têm prioridade
+    await tickDemands(teamIds);     // depois 1 demanda nova da fila
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 }

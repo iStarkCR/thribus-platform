@@ -71,20 +71,61 @@ export async function createDemand(
   return toDemand(data as Row);
 }
 
+// ─── Conversa dentro da demanda (thread) ────────────────────────────────────
+export interface DemandMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: 'pending' | 'done' | 'error';
+  error: string | null;
+  createdAt: string;
+}
+
+interface MsgRow {
+  id: string; role: 'user' | 'assistant'; content: string;
+  status: 'pending' | 'done' | 'error'; error: string | null; created_at: string;
+}
+
+export async function listDemandMessages(demandId: string): Promise<DemandMessage[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('demand_messages')
+    .select('id,role,content,status,error,created_at')
+    .eq('demand_id', demandId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data as MsgRow[]).map((r) => ({
+    id: r.id, role: r.role, content: r.content, status: r.status, error: r.error, createdAt: r.created_at,
+  }));
+}
+
 /**
- * Responde ao Bukowiski numa demanda concluída ("OK, pode publicar"): cria uma
- * demanda-filho que entra na fila e é executada COM o contexto da anterior
- * (a ponte busca o resultado do pai via parent_id). É o aceite virando tarefa.
+ * Responde ao colaborador DENTRO da mesma demanda: grava uma mensagem do Charles
+ * ('pending') e marca a demanda como 'doing'. A ponte lê o thread, executa e
+ * devolve a resposta como nova mensagem — sem criar card novo.
  */
-export async function replyDemand(userId: string, parent: Demand, text: string): Promise<Demand> {
-  return createDemand(userId, {
-    title: `Re: ${parent.title}`.slice(0, 140),
-    description: text,
-    project: parent.project ?? undefined,
-    agentId: parent.agentId,
-    priority: Math.max(5, parent.priority),
-    parentId: parent.id,
-  });
+export async function sendDemandReply(demandId: string, userId: string, text: string): Promise<DemandMessage> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { data, error } = await supabase
+    .from('demand_messages')
+    .insert({ demand_id: demandId, user_id: userId, role: 'user', content: text, status: 'pending' })
+    .select('id,role,content,status,error,created_at')
+    .single();
+  if (error) throw error;
+  await supabase.from('team_demands').update({ status: 'doing' }).eq('id', demandId);
+  const r = data as MsgRow;
+  return { id: r.id, role: r.role, content: r.content, status: r.status, error: r.error, createdAt: r.created_at };
+}
+
+let msgSeq = 0;
+export function subscribeDemandMessages(demandId: string, onChange: () => void): () => void {
+  const sb = supabase;
+  if (!sb) return () => {};
+  const ch = sb
+    .channel(`demand-msgs:${demandId}:${++msgSeq}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'demand_messages', filter: `demand_id=eq.${demandId}` }, () => onChange())
+    .subscribe();
+  return () => { sb.removeChannel(ch); };
 }
 
 export async function updateDemand(
