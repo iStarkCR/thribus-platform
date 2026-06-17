@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ListChecks, Plus, X, Loader2, Trash2, Check, Folder, AlertTriangle } from 'lucide-react';
+import { ListChecks, Plus, X, Loader2, Trash2, Check, Folder, AlertTriangle, Send, CornerDownRight } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
 import { useAppStore } from '@/hooks/useAppStore';
 import {
-  listDemands, createDemand, updateDemand, deleteDemand, subscribeDemands,
+  listDemands, createDemand, updateDemand, deleteDemand, subscribeDemands, replyDemand,
   demandsConfigured, type Demand, type DemandStatus,
 } from '@/services/demands';
 
@@ -139,7 +139,15 @@ export function DemandsPage() {
         />
       )}
 
-      {detail && <DetailModal demand={detail} agentName={agentName} onClose={() => setDetail(null)} />}
+      {detail && (
+        <DetailModal
+          demand={detail}
+          userId={userId}
+          agentName={agentName}
+          onClose={() => setDetail(null)}
+          onReplied={(d) => { setDemands((prev) => [d, ...prev]); setDetail(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -203,7 +211,38 @@ function AddDemandModal({ userId, agents, onClose, onCreated }: { userId: string
   );
 }
 
-function DetailModal({ demand, agentName, onClose }: { demand: Demand; agentName: (id: string) => string; onClose: () => void }) {
+function DetailModal({
+  demand, userId, agentName, onClose, onReplied,
+}: {
+  demand: Demand;
+  userId: string | null;
+  agentName: (id: string) => string;
+  onClose: () => void;
+  onReplied: (d: Demand) => void;
+}) {
+  const addToast = useAppStore((s) => s.addToast);
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
+
+  // Responder faz sentido quando a demanda já rodou (Feito/Aguardando/Erro):
+  // o Bukowiski pediu uma decisão ou você quer redirecionar.
+  const canReply = userId && (demand.status === 'done' || demand.status === 'waiting' || demand.status === 'error');
+
+  async function send() {
+    if (!userId || !reply.trim()) return;
+    setSending(true);
+    try {
+      const child = await replyDemand(userId, demand, reply.trim());
+      addToast('Resposta enviada — o Bukowiski vai continuar', 'green');
+      onReplied(child);
+    } catch (e) {
+      addToast((e as Error).message || 'Falha ao enviar resposta', 'red');
+      setSending(false);
+    }
+  }
+
+  const name = agentName(demand.agentId);
+
   return (
     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-[70] p-4" onClick={onClose}>
       <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -213,13 +252,43 @@ function DetailModal({ demand, agentName, onClose }: { demand: Demand; agentName
         </div>
         <div className="p-5 space-y-3 overflow-y-auto text-[13px]">
           <div className="flex flex-wrap gap-2 text-[11px]">
-            <span className="px-2 py-0.5 rounded-full bg-surface-3 text-creme-dim">{agentName(demand.agentId)}</span>
+            <span className="px-2 py-0.5 rounded-full bg-surface-3 text-creme-dim">{name}</span>
             {demand.project && <span className="px-2 py-0.5 rounded-full bg-surface-3 text-creme-dim flex items-center gap-1"><Folder size={10} /> {demand.project}</span>}
             <span className="px-2 py-0.5 rounded-full bg-surface-3 text-creme-dim">{demand.status}</span>
+            {demand.parentId && <span className="px-2 py-0.5 rounded-full bg-surface-3 text-creme-dim flex items-center gap-1"><CornerDownRight size={10} /> continuação</span>}
           </div>
-          {demand.description && <div><div className="text-[11px] font-bold uppercase tracking-wider text-creme-mute mb-1">Demanda</div><div className="text-creme-dim whitespace-pre-wrap">{demand.description}</div></div>}
-          {demand.result && <div><div className="text-[11px] font-bold uppercase tracking-wider text-semantic-green mb-1">Resultado do Bukowiski</div><div className="text-creme-dim whitespace-pre-wrap">{demand.result}</div></div>}
+          {demand.description && <div><div className="text-[11px] font-bold uppercase tracking-wider text-creme-mute mb-1">{demand.parentId ? 'Sua resposta' : 'Demanda'}</div><div className="text-creme-dim whitespace-pre-wrap">{demand.description}</div></div>}
+          {demand.result && <div><div className="text-[11px] font-bold uppercase tracking-wider text-semantic-green mb-1">Resultado do {name}</div><div className="text-creme-dim whitespace-pre-wrap">{demand.result}</div></div>}
           {demand.error && <div><div className="text-[11px] font-bold uppercase tracking-wider text-semantic-red mb-1">Erro</div><div className="text-semantic-red whitespace-pre-wrap">{demand.error}</div></div>}
+
+          {/* Responder ao colaborador → vira uma demanda-filho que ele executa */}
+          {canReply && (
+            <div className="pt-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-brand-bright mb-1.5 flex items-center gap-1.5">
+                <Send size={11} /> Responder ao {name}
+              </div>
+              <p className="text-[11.5px] text-creme-faint mb-2 leading-snug">
+                Decida ou redirecione (ex: <i>"pode publicar no Hub e acionar Bernays e Argos"</i>). Vira uma nova
+                demanda na fila, com o contexto desta — ele continua de onde parou.
+              </p>
+              <textarea
+                className="input min-h-[72px] resize-y w-full"
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                placeholder="Sua decisão / próximo passo…"
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send(); }}
+              />
+              <div className="flex justify-end mt-2">
+                <button
+                  onClick={send}
+                  disabled={sending || !reply.trim()}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold bg-brand text-white hover:bg-brand-bright disabled:opacity-40 transition-colors"
+                >
+                  {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Enviar pro {name}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

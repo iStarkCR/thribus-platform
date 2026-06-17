@@ -17,6 +17,7 @@ export interface Demand {
   priority: number;
   result: string | null;
   error: string | null;
+  parentId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -27,14 +28,14 @@ interface Row {
   id: string; user_id: string; agent_id: string; title: string;
   description: string | null; project: string | null; status: DemandStatus;
   priority: number; result: string | null; error: string | null;
-  created_at: string; updated_at: string;
+  parent_id: string | null; created_at: string; updated_at: string;
 }
 
 const toDemand = (r: Row): Demand => ({
   id: r.id, userId: r.user_id, agentId: r.agent_id, title: r.title,
   description: r.description, project: r.project, status: r.status,
   priority: r.priority, result: r.result, error: r.error,
-  createdAt: r.created_at, updatedAt: r.updated_at,
+  parentId: r.parent_id, createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
 export async function listDemands(_userId: string): Promise<Demand[]> {
@@ -50,7 +51,7 @@ export async function listDemands(_userId: string): Promise<Demand[]> {
 
 export async function createDemand(
   userId: string,
-  input: { title: string; description?: string; project?: string; agentId?: string; priority?: number },
+  input: { title: string; description?: string; project?: string; agentId?: string; priority?: number; parentId?: string },
 ): Promise<Demand> {
   if (!supabase) throw new Error('Supabase não configurado');
   const { data, error } = await supabase
@@ -62,11 +63,28 @@ export async function createDemand(
       description: input.description ?? null,
       project: input.project ?? null,
       priority: input.priority ?? 0,
+      parent_id: input.parentId ?? null,
     })
     .select('*')
     .single();
   if (error) throw error;
   return toDemand(data as Row);
+}
+
+/**
+ * Responde ao Bukowiski numa demanda concluída ("OK, pode publicar"): cria uma
+ * demanda-filho que entra na fila e é executada COM o contexto da anterior
+ * (a ponte busca o resultado do pai via parent_id). É o aceite virando tarefa.
+ */
+export async function replyDemand(userId: string, parent: Demand, text: string): Promise<Demand> {
+  return createDemand(userId, {
+    title: `Re: ${parent.title}`.slice(0, 140),
+    description: text,
+    project: parent.project ?? undefined,
+    agentId: parent.agentId,
+    priority: Math.max(5, parent.priority),
+    parentId: parent.id,
+  });
 }
 
 export async function updateDemand(
