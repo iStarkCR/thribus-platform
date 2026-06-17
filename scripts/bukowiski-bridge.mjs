@@ -114,7 +114,11 @@ const GUARD =
   'Você responde via chat assíncrono do painel Thribus. Você TEM acesso total às suas skills e pode ' +
   'executar ações. Siga os gates da sua própria persona (confirme com o Charles antes de gastar dinheiro, ' +
   'mexer em produção/deploy, alterar DNS, deletar dados ou enviar a externos). Ao final, devolva ao Charles ' +
-  'o texto da resposta: o que foi feito e o que precisa da decisão dele.';
+  'o texto da resposta: o que foi feito e o que precisa da decisão dele.\n\n' +
+  'FORMATAÇÃO: responda em markdown. SEMPRE que devolver dados, números, métricas, listas de itens ou ' +
+  'comparações, use TABELAS markdown (| Coluna | Coluna |\\n| --- | --- |\\n| valor | valor |). Use listas ' +
+  'pra passos, **negrito** pra destaques e ## títulos pra seções. O painel renderiza tabelas e markdown ' +
+  'de forma visual — então prefira tabela a despejar números no meio do texto.';
 
 let bukowiskiCmd = null;
 function bukowiskiPersona() {
