@@ -320,9 +320,29 @@ async function processDemand(d) {
     .single();
   if (!agent) throw new Error(`agente ${d.agent_id} não encontrado`);
 
+  // Demanda-filho (resposta do Charles a uma demanda anterior): puxa o contexto
+  // do pai (título + o que o agente entregou/perguntou) pra continuar coerente.
+  let parentCtx = '';
+  if (d.parent_id) {
+    const { data: parent } = await sb
+      .from('team_demands')
+      .select('title,result')
+      .eq('id', d.parent_id)
+      .maybeSingle();
+    if (parent) {
+      parentCtx =
+        `\n\nCONTEXTO — esta é a resposta/decisão do Charles a uma demanda anterior sua.\n` +
+        `Demanda anterior: ${parent.title}\n` +
+        (parent.result ? `O que você entregou/perguntou antes:\n${parent.result}\n` : '') +
+        `Agora o Charles respondeu abaixo. Execute o que ele decidiu, usando esse contexto.`;
+    }
+  }
+
+  const detailLabel = d.parent_id ? 'Resposta/decisão do Charles' : 'Contexto/detalhes';
   const task =
     `DEMANDA do Charles${d.project ? ` (projeto ${d.project})` : ''}: ${d.title}` +
-    (d.description ? `\n\nContexto/detalhes:\n${d.description}` : '') +
+    parentCtx +
+    (d.description ? `\n\n${detailLabel}:\n${d.description}` : '') +
     `\n\nExecute a demanda de ponta a ponta. No final, devolva um resumo curto do que foi feito ` +
     `e, se algo precisa da decisão do Charles (gastar dinheiro, mexer em produção, etc.), diga claramente o que falta.`;
 
