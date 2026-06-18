@@ -273,19 +273,19 @@ export function CortexBrainPage() {
         </p>
       </section>
 
-      {/* ── Skills (em breve) ────────────────────────────────────────────── */}
-      <section className="rounded-xl border border-dashed border-default bg-surface-1/50 p-5">
+      {/* ── Skills ───────────────────────────────────────────────────────── */}
+      <a href="#/cortex-skills" className="block rounded-xl border border-default bg-surface-1 p-5 hover:border-hover transition-colors">
         <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-creme-faint" />
-          <h2 className="text-[15px] font-bold text-creme-mute">Skills</h2>
-          <span className="ml-1 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-creme-faint uppercase tracking-wide">Em breve</span>
+          <Sparkles size={16} className="text-brand-bright" />
+          <h2 className="text-[15px] font-bold text-creme">Skills do Claude</h2>
+          <span className="ml-auto text-[12px] text-brand-bright">abrir →</span>
         </div>
-        <p className="mt-2 text-[12.5px] text-creme-faint leading-snug max-w-2xl">
-          Cadastrar skills direto pelo sistema e alimentar o Claude automaticamente — sem mexer em arquivo.
-          Vai virar a próxima etapa do espelho: você escreve a skill aqui, a ponte instala em{' '}
-          <span className="font-mono">~/.claude/skills</span> e o time já passa a usar.
+        <p className="mt-2 text-[12.5px] text-creme-mute leading-snug max-w-2xl">
+          Cadastre skills pelo painel e ligue "alimentar o Claude": a ponte instala em{' '}
+          <span className="font-mono">~/.claude/skills</span> e o Bukowiski passa a usar. Suas skills reais já
+          aparecem lá (espelho).
         </p>
-      </section>
+      </a>
     </div>
   );
 }

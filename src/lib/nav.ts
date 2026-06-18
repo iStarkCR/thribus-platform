@@ -96,6 +96,7 @@ export const NAV_ITEMS: NavGroup[] = [
     group: 'Cortex Brain',
     items: [
       { path: '/cortex-brain', label: 'Controle (modelo · uso)', icon: Gauge },
+      { path: '/cortex-skills', label: 'Skills do Claude', icon: Sparkles },
       { path: '/cortex', label: 'Cortex Admin', icon: Brain },
       { path: '/enterprise', label: 'Enterprise', icon: Briefcase },
       { path: '/stack', label: 'Stack (M1-M3)', icon: Boxes },
