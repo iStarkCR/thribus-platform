@@ -110,14 +110,25 @@ async function recordUsage({ userId, agentId, kind, refId, usage }) {
   }
 }
 
-// Grava um passo ("o que ele está fazendo") pro painel mostrar ao vivo.
-async function recordRunEvent({ userId, scope, refId, seq, label, detail }) {
+// Grava um passo ("o que ele está fazendo") pro painel mostrar ao vivo + o
+// input completo (pra abrir e ver o processo).
+async function recordRunEvent({ userId, scope, refId, seq, label, detail, input, toolUseId }) {
   try {
     await sb.from('run_events').insert({
       user_id: userId ?? null, scope, ref_id: refId, seq,
       kind: 'tool', label: label || null, detail: detail || null,
+      input: input || null, tool_use_id: toolUseId || null,
     });
   } catch { /* best-effort: nunca atrapalha a execução */ }
+}
+
+// Anexa o resultado (saída) de um tool ao passo correspondente (pelo tool_use_id).
+async function recordRunEventResult(refId, toolUseId, result) {
+  if (!toolUseId || !result) return;
+  try {
+    await sb.from('run_events').update({ result: String(result).slice(0, 4000) })
+      .eq('ref_id', refId).eq('tool_use_id', toolUseId);
+  } catch { /* best-effort */ }
 }
 
 // Anexos do chat: baixa do bucket pro Mac e devolve os caminhos locais pro agente.
@@ -203,6 +214,23 @@ function summarizeToolInput(input) {
   return String(f).replace(/\s+/g, ' ').slice(0, 160);
 }
 
+// Input COMPLETO (pra abrir o passo e ver o processo).
+function fullInput(input) {
+  if (input == null) return '';
+  if (typeof input !== 'object') return String(input);
+  if (typeof input.command === 'string') return input.command; // Bash legível
+  try { return JSON.stringify(input, null, 2).slice(0, 4000); } catch { return ''; }
+}
+
+// Saída de um tool_result (string ou blocos de texto).
+function extractResult(content) {
+  if (typeof content === 'string') return content.slice(0, 4000);
+  if (Array.isArray(content)) {
+    return content.map((b) => (typeof b === 'string' ? b : b?.text || '')).join('\n').slice(0, 4000);
+  }
+  return '';
+}
+
 // Converte o evento 'result' (stream-json) em { text, usage, isError }.
 function parseResultEvent(evt) {
   const u = evt.usage || {};
@@ -281,7 +309,14 @@ function runClaude(prompt, opts = {}) {
       if (evt.type === 'assistant' && evt.message && Array.isArray(evt.message.content)) {
         for (const b of evt.message.content) {
           if (b && b.type === 'tool_use' && opts.onEvent) {
-            try { opts.onEvent({ kind: 'tool', label: b.name || 'tool', detail: summarizeToolInput(b.input) }); }
+            try { opts.onEvent({ kind: 'tool', toolUseId: b.id, label: b.name || 'tool', detail: summarizeToolInput(b.input), input: fullInput(b.input) }); }
+            catch { /* nunca derruba o parse */ }
+          }
+        }
+      } else if (evt.type === 'user' && evt.message && Array.isArray(evt.message.content)) {
+        for (const b of evt.message.content) {
+          if (b && b.type === 'tool_result' && opts.onEvent) {
+            try { opts.onEvent({ kind: 'tool_result', toolUseId: b.tool_use_id, result: extractResult(b.content) }); }
             catch { /* nunca derruba o parse */ }
           }
         }
@@ -337,7 +372,10 @@ async function processMessage(msg) {
   const content = msg.content + attachNote(files);
 
   let evSeq = 0;
-  const onEvent = (e) => recordRunEvent({ userId: msg.user_id, scope: 'chat', refId: msg.id, seq: evSeq++, label: e.label, detail: e.detail });
+  const onEvent = (e) => {
+    if (e.kind === 'tool_result') { recordRunEventResult(msg.id, e.toolUseId, e.result); return; }
+    recordRunEvent({ userId: msg.user_id, scope: 'chat', refId: msg.id, seq: evSeq++, label: e.label, detail: e.detail, input: e.input, toolUseId: e.toolUseId });
+  };
   const opts = { model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent };
 
   let r = null;
@@ -464,7 +502,10 @@ async function processDemand(d) {
     `e, se algo precisa da decisão do Charles (gastar dinheiro, mexer em produção, etc.), diga claramente o que falta.`;
 
   let evSeq = 0;
-  const onEvent = (e) => recordRunEvent({ userId: d.user_id, scope: 'demand', refId: d.id, seq: evSeq++, label: e.label, detail: e.detail });
+  const onEvent = (e) => {
+    if (e.kind === 'tool_result') { recordRunEventResult(d.id, e.toolUseId, e.result); return; }
+    recordRunEvent({ userId: d.user_id, scope: 'demand', refId: d.id, seq: evSeq++, label: e.label, detail: e.detail, input: e.input, toolUseId: e.toolUseId });
+  };
   const r = await runClaude(buildPrompt(agent, [], task), {
     timeoutMs: DEMAND_TIMEOUT_MS,
     model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
@@ -543,7 +584,10 @@ async function processDemandReply(m) {
     `curto do que foi feito; se precisar de mais alguma decisão do Charles, diga claramente o que falta.`;
 
   let evSeq = 0;
-  const onEvent = (e) => recordRunEvent({ userId: d.user_id, scope: 'demand', refId: d.id, seq: evSeq++, label: e.label, detail: e.detail });
+  const onEvent = (e) => {
+    if (e.kind === 'tool_result') { recordRunEventResult(d.id, e.toolUseId, e.result); return; }
+    recordRunEvent({ userId: d.user_id, scope: 'demand', refId: d.id, seq: evSeq++, label: e.label, detail: e.detail, input: e.input, toolUseId: e.toolUseId });
+  };
   const r = await runClaude(buildPrompt(agent, [], thread), {
     timeoutMs: DEMAND_TIMEOUT_MS,
     model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,

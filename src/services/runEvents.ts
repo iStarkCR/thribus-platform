@@ -10,21 +10,23 @@ export interface RunEvent {
   kind: string;
   label: string | null;
   detail: string | null;
+  input: string | null;
+  result: string | null;
   createdAt: string;
 }
 
-interface Row { id: string; kind: string; label: string | null; detail: string | null; created_at: string; }
+interface Row { id: string; kind: string; label: string | null; detail: string | null; input: string | null; result: string | null; created_at: string; }
 
 export async function listRunEvents(refId: string): Promise<RunEvent[]> {
   if (!supabase || !refId) return [];
   const { data, error } = await supabase
     .from('run_events')
-    .select('id,kind,label,detail,created_at')
+    .select('id,kind,label,detail,input,result,created_at')
     .eq('ref_id', refId)
     .order('seq', { ascending: true })
     .order('created_at', { ascending: true });
   if (error) throw error;
-  return (data as Row[]).map((r) => ({ id: r.id, kind: r.kind, label: r.label, detail: r.detail, createdAt: r.created_at }));
+  return (data as Row[]).map((r) => ({ id: r.id, kind: r.kind, label: r.label, detail: r.detail, input: r.input, result: r.result, createdAt: r.created_at }));
 }
 
 let seqN = 0;
