@@ -11,6 +11,7 @@ import { useVoice } from '@/hooks/useVoice';
 import { isStopPhrase } from '@/hooks/useOrbConversation';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
+import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { Markdown } from '@/components/shared/Markdown';
 import { ThinkingActivity, MessageSteps } from '@/components/shared/ThinkingActivity';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
@@ -677,6 +678,7 @@ export function TalkPage() {
           <div className="flex items-center justify-between mb-2 px-1 gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <CortexBrainBar />
+              <CortexUsageBadge />
               {planMode && (
                 <button onClick={() => setPlanMode(false)} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand/15 text-brand-bright text-[11px] shrink-0" title="Desligar modo plano">
                   <Lightbulb size={11} /> Modo plano <X size={11} />
