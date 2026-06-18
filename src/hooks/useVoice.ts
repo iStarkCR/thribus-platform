@@ -52,7 +52,13 @@ export function useVoice() {
       recog.onerror = () => setListening(false);
       recogRef.current = recog;
       setListening(true);
-      recog.start();
+      // start() pode lançar se o mic ainda está sendo liberado por outro
+      // reconhecedor (ex: wake word) — tenta de novo uma vez antes de desistir.
+      try {
+        recog.start();
+      } catch {
+        setTimeout(() => { try { recog.start(); } catch { setListening(false); } }, 250);
+      }
     },
     [],
   );

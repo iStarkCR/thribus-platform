@@ -8,6 +8,7 @@ import {
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
+import { isStopPhrase } from '@/hooks/useOrbConversation';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { Markdown } from '@/components/shared/Markdown';
@@ -38,6 +39,7 @@ export function TalkPage() {
   const voiceAutostart = useAppStore((s) => s.voiceAutostart);
   const consumeVoiceAutostart = useAppStore((s) => s.consumeVoiceAutostart);
   const setVoiceModeActive = useAppStore((s) => s.setVoiceModeActive);
+  const setSttBusy = useAppStore((s) => s.setSttBusy);
   const { user } = useSession();
   const userId = user?.id ?? null;
   const navigate = useNavigate();
@@ -98,9 +100,16 @@ export function TalkPage() {
   const [speakingProvider, setSpeakingProvider] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceModeRef = useRef(false);
+  const wasListeningRef = useRef(false);
   const waitingRef = useRef(false); // já há mensagem do usuário aguardando resposta
   const voiceCfgRef = useRef<VoiceConfig | null>(null);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
+  // Quando a transcrição (push-to-talk) termina e não está no modo voz, libera o
+  // wake word (sttBusy=false). Só dispara na transição ouvindo→parou, não no início.
+  useEffect(() => {
+    if (voice.listening) wasListeningRef.current = true;
+    else if (wasListeningRef.current && !voiceMode) { wasListeningRef.current = false; setSttBusy(false); }
+  }, [voice.listening, voiceMode, setSttBusy]);
   useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
 
   // Auto-start do modo voz quando vindo do orbe flutuante / wake word.
@@ -203,18 +212,21 @@ export function TalkPage() {
 
   function onVoiceResult(text: string) {
     if (voiceModeRef.current) {
-      // "Bukowiski chega" (ou só "Bukowiski") durante o modo voz = desligar.
-      const stripped = text.trim().toLowerCase().replace(/[.,!?]/g, '');
-      if (/^(ei |oi |olá )?buk?o?[wv]isk\w*( chega)?$/.test(stripped) || /\bbuk?o?[wv]isk\w*\s+chega\b/.test(stripped)) { stopVoiceMode(); return; }
+      // "off", "para", "chega", "tchau", "Bukowiski chega"… = desligar o modo voz.
+      if (isStopPhrase(text)) { stopVoiceMode(); return; }
       if (waitingRef.current) return; // turn-based: espera a resposta
       send(text);
     } else setInput((cur) => (cur ? `${cur} ${text}` : text));
   }
   function startListenOnce() {
-    if (voice.sttSupported) voice.startListening(onVoiceResult);
+    if (!voice.sttSupported) return;
+    // Marca o mic ocupado ANTES, pra o wake word soltar o microfone; aí inicia
+    // (pequeno atraso = o reconhecedor do orbe libera o mic e não há conflito).
+    setSttBusy(true);
+    setTimeout(() => voice.startListening(onVoiceResult), 160);
   }
   function micToggle() {
-    if (voice.listening) voice.stopListening();
+    if (voice.listening) { voice.stopListening(); setSttBusy(false); }
     else startListenOnce();
   }
   function startVoiceMode() {
@@ -227,6 +239,7 @@ export function TalkPage() {
     setVoiceMode(false);
     voiceModeRef.current = false;
     setVoiceModeActive(false);
+    setSttBusy(false);
     voice.stopListening();
     voice.cancelSpeak();
     audioRef.current?.pause();

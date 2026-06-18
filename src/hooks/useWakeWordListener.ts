@@ -99,7 +99,7 @@ export function useWakeWordListener({
           if (freshTimer) { clearTimeout(freshTimer); freshTimer = null; }
           // Navegador encerra o reconhecimento sozinho — reinicia.
           if (stopped) return;
-          restartTimer = setTimeout(start, 200);
+          restartTimer = setTimeout(start, 120);
         };
 
         recog.start();
