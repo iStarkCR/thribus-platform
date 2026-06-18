@@ -42,6 +42,7 @@ export function FloatingOrb() {
   const orbEnabled = useAppStore((s) => s.orbEnabled);
   const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
   const voiceModeActive = useAppStore((s) => s.voiceModeActive);
+  const sttBusy = useAppStore((s) => s.sttBusy);
 
   const conv = useOrbConversation();
 
@@ -70,7 +71,7 @@ export function FloatingOrb() {
   }, []);
 
   useWakeWordListener({
-    enabled: orbEnabled && wakeWordEnabled && !conv.voiceActive && !chatOpen && !voiceModeActive,
+    enabled: orbEnabled && wakeWordEnabled && !conv.voiceActive && !chatOpen && !voiceModeActive && !sttBusy,
     onWake,
   });
 

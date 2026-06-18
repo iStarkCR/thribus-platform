@@ -12,12 +12,14 @@ function norm(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-/** Para o modo voz: "Bukowiski off" (ou só "off"/"desliga" no fim da fala). */
+/** Para o modo voz: "off", "para", "chega", "tchau"… (ou "Bukowiski <comando>"). */
 export function isStopPhrase(text: string): boolean {
   const t = norm(text).trim();
   const last = t.split(/\s+/).pop() ?? '';
-  if (/^(off|ofi|ofe|of|ofis?|desliga|desligar|para|parar)$/.test(last)) return true;
-  if (/[bmp]uk?[oae]?[wv]isk\w*\s+(o+f|deslig|par)/.test(t)) return true;
+  // comando solto no fim da fala
+  if (/^(o+f+|o+fi|o+fe|deslig\w*|par\w*|pare|cheg\w*|tchau|stop|encerr\w*|fech\w*|sai|sair|silencio)$/.test(last)) return true;
+  // "bukowiski <comando>" (nome mal transcrito incluso)
+  if (/[bmp]uk?[oae]?[wv]i?sk?\w*\s+(o+f|deslig|par|cheg|tchau|stop|encerr|fech|sai|silenci)/.test(t)) return true;
   return false;
 }
 

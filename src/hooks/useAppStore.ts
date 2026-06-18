@@ -41,6 +41,9 @@ interface AppState {
   /** Modo voz ativo no TalkPage — o orbe pausa seu recognizer pra não disputar o mic. */
   voiceModeActive: boolean;
   setVoiceModeActive: (v: boolean) => void;
+  /** Algum mic (transcrição do composer) está captando — o wake word pausa pra não disputar. */
+  sttBusy: boolean;
+  setSttBusy: (v: boolean) => void;
   toasts: Array<{ id: string; message: string; type: 'green' | 'amber' | 'red' | 'blue' }>;
   /** Confirmação imperativa no padrão do sistema (substitui window.confirm). */
   confirmRequest: { title: string; message: string; confirmLabel?: string; danger?: boolean; resolve: (v: boolean) => void } | null;
@@ -139,6 +142,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   consumeVoiceAutostart: () => set({ voiceAutostart: false }),
   voiceModeActive: false,
   setVoiceModeActive: (v) => set({ voiceModeActive: v }),
+  sttBusy: false,
+  setSttBusy: (v) => set({ sttBusy: v }),
   toasts: [],
   confirmRequest: null,
   promptRequest: null,
