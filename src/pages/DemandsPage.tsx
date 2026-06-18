@@ -8,6 +8,7 @@ import {
   demandsConfigured, type Demand, type DemandStatus, type DemandMessage,
 } from '@/services/demands';
 import { Markdown } from '@/components/shared/Markdown';
+import { MessageSteps } from '@/components/shared/ThinkingActivity';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -278,6 +279,7 @@ function DetailModal({
           {demand.result && (
             <Bubble who={name} side="agent"><Markdown text={demand.result} /></Bubble>
           )}
+          <MessageSteps refId={demand.id} className="-mt-1 ml-9" />
           {messages.map((m) =>
             m.status === 'error' ? (
               <Bubble key={m.id} who={name} side="agent">

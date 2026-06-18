@@ -14,6 +14,47 @@ const VERB: Record<string, string> = {
 };
 const verbFor = (label: string | null) => (label && VERB[label]) || `usando ${label || 'ferramenta'}`;
 
+/**
+ * "Executado N passos" — o processo que o colaborador fez (tool calls), expansível,
+ * numa mensagem/demanda JÁ concluída. Lê os run_events do ref (msg do usuário ou demanda).
+ */
+export function MessageSteps({ refId, className }: { refId?: string | null; className?: string }) {
+  const [events, setEvents] = useState<RunEvent[]>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!refId) { setEvents([]); return; }
+    let on = true;
+    listRunEvents(refId).then((e) => { if (on) setEvents(e); }).catch(() => {});
+    return () => { on = false; };
+  }, [refId]);
+
+  if (!events.length) return null;
+
+  return (
+    <div className={className ?? 'mt-1.5'}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 text-[11.5px] text-creme-faint hover:text-creme-mute transition-colors"
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        Executado {events.length} {events.length === 1 ? 'passo' : 'passos'}
+      </button>
+      {open && (
+        <div className="mt-1 ml-1 border-l border-default pl-3 space-y-1">
+          {events.map((e) => (
+            <div key={e.id} className="flex items-start gap-1.5 text-[11.5px] leading-snug">
+              <Wrench size={11} className="mt-0.5 shrink-0 text-brand-bright/70" />
+              <span className="font-semibold text-creme-mute shrink-0">{verbFor(e.label)}</span>
+              {e.detail && <span className="text-creme-faint font-mono break-all">{e.detail}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ThinkingActivity({ agentName, refId }: { agentName: string; refId?: string | null }) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [open, setOpen] = useState(false);

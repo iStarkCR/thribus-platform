@@ -12,7 +12,7 @@ import { isStopPhrase } from '@/hooks/useOrbConversation';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { Markdown } from '@/components/shared/Markdown';
-import { ThinkingActivity } from '@/components/shared/ThinkingActivity';
+import { ThinkingActivity, MessageSteps } from '@/components/shared/ThinkingActivity';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import { createDemand } from '@/services/demands';
@@ -643,7 +643,7 @@ export function TalkPage() {
             </div>
           ) : (
             <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 py-5 space-y-4">
-              {messages.map((m) =>
+              {messages.map((m, mi) =>
                 m.role === 'user' ? (
                   <div key={m.id} className="flex justify-end">
                     <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[15px] leading-[1.7]">
@@ -663,6 +663,7 @@ export function TalkPage() {
                         <Markdown text={m.content} />
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
+                      <MessageSteps refId={[...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null} />
                     </div>
                   </div>
                 ),
