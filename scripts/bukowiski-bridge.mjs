@@ -29,7 +29,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { spawn } from 'node:child_process';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -634,6 +634,79 @@ async function tickRoutines(teamIds) {
   }
 }
 
+// ─── Skills (cadastradas pelo painel ↔ ~/.claude/skills) ────────────────────
+const SKILLS_DIR = join(homedir(), '.claude/skills');
+const SKILLS_MANIFEST = join(homedir(), '.thribus/bridge/managed-skills.json');
+let skillsImported = false;
+let skillsSyncedAt = 0;
+
+function readManifest() {
+  try { return JSON.parse(readFileSync(SKILLS_MANIFEST, 'utf8')); } catch { return []; }
+}
+function writeManifest(list) {
+  try { mkdirSync(join(homedir(), '.thribus/bridge'), { recursive: true }); writeFileSync(SKILLS_MANIFEST, JSON.stringify(list, null, 2)); } catch { /* ok */ }
+}
+function parseFrontmatter(md) {
+  const m = md.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+  if (!m) return { name: '', description: '', body: md.trim() };
+  const fm = m[1];
+  const get = (k) => (fm.match(new RegExp(`^${k}:\\s*(.+)$`, 'm'))?.[1] || '').trim().replace(/^["']|["']$/g, '');
+  return { name: get('name'), description: get('description'), body: (m[2] || '').trim() };
+}
+function buildSkillMd(s) {
+  const desc = String(s.description || '').replace(/\s*\n\s*/g, ' ').trim();
+  return `---\nname: ${s.slug}\ndescription: ${desc}\n---\n\n${s.body || ''}\n`;
+}
+
+// Importa as skills REAIS pro painel (espelho managed=false) — 1x no boot.
+async function importSkills() {
+  if (skillsImported) return;
+  skillsImported = true;
+  let dirs = [];
+  try { dirs = readdirSync(SKILLS_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return; }
+  let n = 0;
+  for (const slug of dirs) {
+    const file = join(SKILLS_DIR, slug, 'SKILL.md');
+    if (!existsSync(file)) continue;
+    try {
+      const { name, description, body } = parseFrontmatter(readFileSync(file, 'utf8'));
+      const { data: ex } = await sb.from('cortex_skills').select('managed').eq('slug', slug).maybeSingle();
+      if (ex?.managed) continue; // não sobrescreve uma skill do painel
+      await sb.from('cortex_skills').upsert(
+        { slug, name: name || slug, description: description || null, body, managed: false, enabled: true, user_id: null },
+        { onConflict: 'slug' },
+      );
+      n++;
+    } catch (e) { console.error('[skill import]', slug, e.message); }
+  }
+  console.log(`[skills] ${n} skills reais espelhadas no painel`);
+}
+
+// Materializa as skills do painel (managed+enabled) em ~/.claude/skills e remove
+// (SÓ do manifesto — nunca toca nas reais) as desligadas/apagadas.
+async function materializeSkills() {
+  if (Date.now() - skillsSyncedAt < 15_000) return;
+  skillsSyncedAt = Date.now();
+  const { data, error } = await sb.from('cortex_skills').select('slug,description,body,enabled').eq('managed', true);
+  if (error) return;
+  const manifest = readManifest();
+  const desired = (data || []).filter((s) => s.enabled);
+  const desiredSlugs = new Set(desired.map((s) => s.slug));
+  for (const s of desired) {
+    try {
+      const dir = join(SKILLS_DIR, s.slug);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'SKILL.md'), buildSkillMd(s));
+    } catch (e) { console.error('[skill write]', s.slug, e.message); }
+  }
+  for (const slug of manifest) {
+    if (desiredSlugs.has(slug)) continue;
+    try { const dir = join(SKILLS_DIR, slug); if (existsSync(dir)) rmSync(dir, { recursive: true, force: true }); } catch { /* ok */ }
+  }
+  const next = [...desiredSlugs].sort();
+  if (JSON.stringify(next) !== JSON.stringify([...manifest].sort())) writeManifest(next);
+}
+
 console.log(
   `Ponte Bukowiski no ar · model=${BRAIN.model} (config do painel) · poll=${POLL_MS}ms\n` +
     `  atende: time interno (client="${TEAM_CLIENT}") com acesso total\n` +
@@ -644,6 +717,8 @@ async function loop() {
   for (;;) {
     const teamIds = await loadTeamIds();
     await loadBrainConfig();        // modelo/esforço/teto vindos do painel (cache 15s)
+    await importSkills();           // espelha as skills reais no painel (1x)
+    await materializeSkills();      // skills do painel → ~/.claude/skills (cache 15s)
     await tick(teamIds);            // chat interativo primeiro
     await tickDemandReplies(teamIds); // respostas no thread (conversa ativa) têm prioridade
     await tickRoutines(teamIds);    // rotinas vencidas viram demanda
