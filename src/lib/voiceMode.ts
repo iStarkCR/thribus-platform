@@ -172,7 +172,7 @@ export class VoiceController {
       const threshold = Math.max(0.02, this.noiseFloor * 2.2);
       if (now - this._vadLogAt > 600) {
         this._vadLogAt = now;
-        console.debug(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive}`);
+        console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive}`);
       }
       if (rms > threshold) {
         if (!this.speechActive) { this.speechActive = true; this._setState('speaking'); }
@@ -207,14 +207,14 @@ export class VoiceController {
 
     const stopped = new Promise<void>((res) => { if (rec && rec.state !== 'inactive') { rec.onstop = () => res(); rec.stop(); } else res(); });
     await stopped;
-    console.debug(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms chunks=${chunks.length}`);
+    console.log(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms chunks=${chunks.length}`);
     if (this.cancelled || chunks.length === 0 || !hadSpeech) { if (!this.cancelled) this._beginListening(); return; }
 
     this._setState('processing');
     try {
       const blob = new Blob(chunks, { type: rec?.mimeType || 'audio/webm' });
       const text = (await this.o.transcribe(blob, dur)).trim();
-      console.debug(`[voz] transcrito: "${text}"`);
+      console.log(`[voz] transcrito: "${text}"`);
       if (this.cancelled) return;
       if (!text || this.o.isNoise?.(text)) { this._beginListening(); return; } // sem fala de verdade → re-ouve
       this.o.onTranscript?.(text);

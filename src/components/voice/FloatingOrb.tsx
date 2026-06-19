@@ -133,8 +133,9 @@ export function FloatingOrb() {
   const intensity = conv.voiceActive ? 0.95 : chatOpen ? 0.85 : hovered ? 0.7 : wakeFlash ? 0.6 : 0.32;
   const listening = wakeWordEnabled && !conv.voiceActive && !chatOpen && !voiceModeActive;
   // Esfera muda de cor pelo estado do modo voz: verde (ouvindo) → âmbar (pensando) → azul (respondendo).
-  const hue = conv.voiceActive ? (conv.state === 'thinking' ? -62 : conv.state === 'speaking' ? 95 : 6) : 0;
+  const hue = conv.voiceActive ? (conv.state === 'thinking' ? -62 : conv.state === 'speaking' ? 95 : conv.state === 'talking' ? 0 : 6) : 0;
   const haloColor = conv.state === 'thinking' ? '250 190 90' : conv.state === 'speaking' ? '110 170 250' : 'var(--brand-bright)';
+  const stateLabel = conv.state === 'thinking' ? 'Pensando' : conv.state === 'speaking' ? 'Respondendo' : conv.state === 'talking' ? 'Você falando' : 'Ouvindo';
 
   return (
     <>
@@ -200,7 +201,7 @@ export function FloatingOrb() {
             style={{ background: `rgba(${haloColor}/0.16)`, color: `rgb(${haloColor})`, border: `1px solid rgba(${haloColor}/0.45)` }}
           >
             <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: `rgb(${haloColor})` }} />
-            {conv.state === 'thinking' ? 'Pensando' : conv.state === 'speaking' ? 'Respondendo' : 'Ouvindo'}
+            {stateLabel}
           </span>
         )}
       </button>

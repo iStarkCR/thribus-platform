@@ -7,6 +7,7 @@ const MASK = 'radial-gradient(circle, #000 86%, transparent 99%)';
 const STATE_UI = {
   idle: { label: 'Ouvindo', color: '124 217 154', hue: 0 },
   listening: { label: 'Ouvindo', color: '124 217 154', hue: 0 },
+  talking: { label: 'Você falando', color: '124 217 154', hue: 0 },
   thinking: { label: 'Pensando', color: '244 194 103', hue: -62 },
   speaking: { label: 'Respondendo', color: '127 176 245', hue: 95 },
 } as const;

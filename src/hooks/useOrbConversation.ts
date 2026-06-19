@@ -33,9 +33,14 @@ function isNoise(t: string): boolean {
   return /amara\.org|legendas?\s+(pela|by)|subtitles?\s+by|obrigad[oa] por (assistir|ver)|^muito obrigad|♪|\[(música|musica|aplausos|risos)\]/i.test(s);
 }
 
-export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
+export type VoiceState = 'idle' | 'listening' | 'talking' | 'thinking' | 'speaking';
+// 'speaking' do motor = usuário falando (VAD detectou voz); 'playing' = TTS tocando.
 const mapState = (s: RawVoiceState): VoiceState =>
-  s === 'processing' ? 'thinking' : s === 'playing' ? 'speaking' : s === 'idle' ? 'idle' : 'listening';
+  s === 'processing' ? 'thinking'
+  : s === 'playing' ? 'speaking'
+  : s === 'speaking' ? 'talking'
+  : s === 'idle' ? 'idle'
+  : 'listening';
 
 /**
  * Conversa única com o Bukowiski (texto + voz). O modo voz usa o VoiceController
@@ -192,6 +197,7 @@ export function useOrbConversation() {
     voiceActive,
     state,
     listening: state === 'listening',
+    talking: state === 'talking',
     speaking: state === 'speaking',
     waiting,
     sttSupported: typeof navigator !== 'undefined' && !!navigator.mediaDevices,
