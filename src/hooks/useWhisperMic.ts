@@ -1,6 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import { transcribeBlob } from '@/services/voiceSkill';
 
+// O Whisper "alucina" frases-padrão de legenda quando o áudio é silêncio/ruído.
+// Tratamos como vazio pra não enviar lixo.
+function isWhisperNoise(t: string): boolean {
+  const s = t.toLowerCase().trim();
+  if (s.length < 2) return true;
+  return /amara\.org|legendas?\s+(pela|by)|subtitles?\s+by|obrigado por (assistir|ver)|♪|\[(música|musica|aplausos|risos)\]/i.test(s);
+}
+
 /**
  * Captura de voz por gravação + Whisper (STT do backend) — substitui o Web
  * Speech do navegador no modo voz quando o agente usa provider OpenAI.
@@ -63,9 +71,9 @@ export function useWhisperMic(agentId: string) {
         if (!worth) { onText(''); return; }
         setTranscribing(true);
         const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
-        const text = await transcribeBlob(agentId, blob).catch(() => null);
+        const text = (await transcribeBlob(agentId, blob).catch(() => null) ?? '').trim();
         setTranscribing(false);
-        onText((text ?? '').trim());
+        onText(isWhisperNoise(text) ? '' : text);
       };
 
       const tick = () => {

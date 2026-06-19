@@ -8,6 +8,7 @@ import { listSessions, createSession, touchSession } from '@/services/chatSessio
 import { getVoiceConfig, ttsBlob, type VoiceConfig } from '@/services/voiceSkill';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
+const ORB_SESSION_KEY = 'orbSessionId'; // sessão dedicada do orbe (não compartilha c/ o painel)
 // WAV silencioso — tocado no gesto do clique pra destravar autoplay do <audio>.
 const SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 
@@ -60,10 +61,14 @@ export function useOrbConversation() {
     let alive = true;
     (async () => {
       const sessions = await listSessions(BUKOWISKI_ID, uid).catch(() => []);
-      let sid: string | null = sessions[0]?.id ?? null;
+      // Sessão DEDICADA do orbe (guardada no localStorage) — separada das
+      // conversas do painel. Reusa se ainda existir; senão cria a do orbe.
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(ORB_SESSION_KEY) : null;
+      let sid: string | null = stored && sessions.some((s) => s.id === stored) ? stored : null;
       if (!sid) {
-        const s = await createSession(BUKOWISKI_ID, uid, { title: 'Conversa rápida' }).catch(() => null);
+        const s = await createSession(BUKOWISKI_ID, uid, { title: 'Orbe — conversa rápida' }).catch(() => null);
         sid = s?.id ?? null;
+        if (sid && typeof localStorage !== 'undefined') localStorage.setItem(ORB_SESSION_KEY, sid);
       }
       if (!alive) return;
       setSessionId(sid);
