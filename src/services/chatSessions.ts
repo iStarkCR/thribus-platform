@@ -21,11 +21,23 @@ export interface ChatSession {
   updatedAt: string;
   contextTokens: number;
   archivedAt: string | null;
+  color: string | null;
+  pinnedAt: string | null;
 }
 
 const FOLDER_COLS = 'id,name,sort_order,parent_id,color';
 const toFolder = (r: { id: string; name: string; sort_order: number; parent_id: string | null; color: string | null }): ChatFolder => ({
   id: r.id, name: r.name, sortOrder: r.sort_order, parentId: r.parent_id, color: r.color,
+});
+
+const SESSION_COLS = 'id,agent_id,folder_id,title,updated_at,context_tokens,archived_at,color,pinned_at';
+interface SessionRow {
+  id: string; agent_id: string; folder_id: string | null; title: string; updated_at: string;
+  context_tokens: number | null; archived_at: string | null; color: string | null; pinned_at: string | null;
+}
+const toSession = (r: SessionRow): ChatSession => ({
+  id: r.id, agentId: r.agent_id, folderId: r.folder_id, title: r.title, updatedAt: r.updated_at,
+  contextTokens: r.context_tokens ?? 0, archivedAt: r.archived_at ?? null, color: r.color ?? null, pinnedAt: r.pinned_at ?? null,
 });
 
 export async function listFolders(agentId: string, userId: string): Promise<ChatFolder[]> {
@@ -76,20 +88,12 @@ export async function listSessions(agentId: string, userId: string): Promise<Cha
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('chat_sessions')
-    .select('id,agent_id,folder_id,title,updated_at,context_tokens,archived_at')
+    .select(SESSION_COLS)
     .eq('agent_id', agentId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((r) => ({
-    id: r.id,
-    agentId: r.agent_id,
-    folderId: r.folder_id,
-    title: r.title,
-    updatedAt: r.updated_at,
-    contextTokens: r.context_tokens ?? 0,
-    archivedAt: r.archived_at ?? null,
-  }));
+  return ((data ?? []) as SessionRow[]).map(toSession);
 }
 
 export async function createSession(
@@ -106,10 +110,10 @@ export async function createSession(
       folder_id: opts.folderId ?? null,
       title: opts.title ?? 'Nova conversa',
     })
-    .select('id,agent_id,folder_id,title,updated_at,context_tokens,archived_at')
+    .select(SESSION_COLS)
     .single();
   if (error) throw error;
-  return { id: data.id, agentId: data.agent_id, folderId: data.folder_id, title: data.title, updatedAt: data.updated_at, contextTokens: data.context_tokens ?? 0, archivedAt: data.archived_at ?? null };
+  return toSession(data as SessionRow);
 }
 
 export async function renameSession(id: string, title: string): Promise<void> {
@@ -136,6 +140,49 @@ export async function setSessionArchived(id: string, archived: boolean): Promise
   const { error } = await supabase.from('chat_sessions').update({ archived_at: archivedAt }).eq('id', id);
   if (error) throw error;
   return archivedAt;
+}
+
+export async function setSessionColor(id: string, color: string | null): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('chat_sessions').update({ color }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function setSessionPinned(id: string, pinned: boolean): Promise<string | null> {
+  if (!supabase) return null;
+  const pinnedAt = pinned ? new Date().toISOString() : null;
+  const { error } = await supabase.from('chat_sessions').update({ pinned_at: pinnedAt }).eq('id', id);
+  if (error) throw error;
+  return pinnedAt;
+}
+
+/**
+ * Duplica uma conversa (fork): cria uma nova sessão com o mesmo histórico, pra
+ * ramificar sem mexer na original. A nova NÃO herda a sessão do claude nem a
+ * janela de contexto — o daemon recomeça o contexto semeando com o histórico
+ * copiado na próxima mensagem.
+ */
+export async function forkSession(source: ChatSession, userId: string): Promise<ChatSession> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const created = await createSession(source.agentId, userId, { folderId: source.folderId, title: `${source.title} (cópia)` });
+  if (source.color) await setSessionColor(created.id, source.color);
+  const { data: msgs, error } = await supabase
+    .from('collaborator_messages')
+    .select('role,content,channel,attachments,created_at')
+    .eq('session_id', source.id)
+    .eq('status', 'done')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  if (msgs && msgs.length) {
+    const rows = msgs.map((m) => ({
+      session_id: created.id, agent_id: source.agentId, user_id: userId,
+      role: m.role, content: m.content, status: 'done', channel: m.channel,
+      attachments: m.attachments ?? null, created_at: m.created_at,
+    }));
+    const { error: insErr } = await supabase.from('collaborator_messages').insert(rows);
+    if (insErr) throw insErr;
+  }
+  return { ...created, color: source.color };
 }
 
 export async function touchSession(id: string): Promise<void> {

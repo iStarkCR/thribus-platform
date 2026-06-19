@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip,
-  ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, ArchiveRestore,
+  ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -19,8 +19,10 @@ import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import { createDemand } from '@/services/demands';
 import { RoutineModal } from '@/components/routines/RoutineModal';
 import { SessionUsageModal } from '@/components/chat/SessionUsageModal';
+import { SessionContextMenu } from '@/components/chat/SessionContextMenu';
+import { TranscriptModal } from '@/components/chat/TranscriptModal';
 import {
-  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession, setSessionArchived,
+  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession, setSessionArchived, setSessionColor, setSessionPinned, forkSession,
   type ChatFolder, type ChatSession,
 } from '@/services/chatSessions';
 
@@ -77,6 +79,7 @@ export function TalkPage() {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [sessMenu, setSessMenu] = useState<{ id: string; x: number; y: number } | null>(null); // menu (…) de uma conversa
   const [showArchived, setShowArchived] = useState(false);
+  const [transcriptFor, setTranscriptFor] = useState<ChatSession | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null); // folder id ou 'root'
   const dragItemRef = useRef<{ type: 'session' | 'folder'; id: string } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -262,22 +265,58 @@ export function TalkPage() {
   const lastUserMsgId = waiting ? messages[messages.length - 1].id : null;
 
   // Agrupa sessões por pasta + hierarquia de pastas (só as ATIVAS — arquivadas
-  // ficam numa seção à parte no rodapé).
-  const liveSessions = sessions.filter((s) => !s.archivedAt);
+  // ficam numa seção à parte no rodapé). Fixadas (pin) sobem pro topo.
+  const liveSessions = sessions
+    .filter((s) => !s.archivedAt)
+    .sort((a, b) => (a.pinnedAt ? 0 : 1) - (b.pinnedAt ? 0 : 1)); // estável: mantém updated_at desc dentro de cada grupo
   const archivedSessions = sessions.filter((s) => s.archivedAt);
   const ungrouped = liveSessions.filter((s) => !s.folderId);
   const byFolder = (fid: string) => liveSessions.filter((s) => s.folderId === fid);
   const rootFolders = folders.filter((f) => !f.parentId);
   const childFolders = (pid: string) => folders.filter((f) => f.parentId === pid);
 
+  const patchSession = (id: string, patch: Partial<ChatSession>) =>
+    setSessions((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+
   async function toggleArchive(s: ChatSession) {
     try {
       const archivedAt = await setSessionArchived(s.id, !s.archivedAt);
-      setSessions((prev) => prev.map((x) => (x.id === s.id ? { ...x, archivedAt } : x)));
+      patchSession(s.id, { archivedAt });
       if (!s.archivedAt && activeId === s.id) setActiveId(liveSessions.find((x) => x.id !== s.id)?.id ?? null);
       useAppStore.getState().addToast(s.archivedAt ? 'Conversa desarquivada' : 'Conversa arquivada', 'green');
     } catch (e) {
       useAppStore.getState().addToast('Falha ao arquivar: ' + (e as Error).message, 'red');
+    }
+  }
+
+  async function togglePin(s: ChatSession) {
+    try {
+      const pinnedAt = await setSessionPinned(s.id, !s.pinnedAt);
+      patchSession(s.id, { pinnedAt });
+    } catch (e) {
+      useAppStore.getState().addToast('Falha ao fixar: ' + (e as Error).message, 'red');
+    }
+  }
+
+  async function changeColor(s: ChatSession, color: string | null) {
+    try { await setSessionColor(s.id, color); patchSession(s.id, { color }); }
+    catch (e) { useAppStore.getState().addToast('Falha ao mudar cor: ' + (e as Error).message, 'red'); }
+  }
+
+  async function moveToFolder(s: ChatSession, folderId: string | null) {
+    try { await moveSession(s.id, folderId); patchSession(s.id, { folderId }); }
+    catch (e) { useAppStore.getState().addToast('Falha ao mover: ' + (e as Error).message, 'red'); }
+  }
+
+  async function forkSessionAction(s: ChatSession) {
+    if (!userId) return;
+    try {
+      const copy = await forkSession(s, userId);
+      setSessions((prev) => [copy, ...prev]);
+      setActiveId(copy.id);
+      useAppStore.getState().addToast('Conversa duplicada', 'green');
+    } catch (e) {
+      useAppStore.getState().addToast('Falha ao duplicar: ' + (e as Error).message, 'red');
     }
   }
 
@@ -921,21 +960,28 @@ export function TalkPage() {
       {sessMenu && (() => {
         const s = sessions.find((x) => x.id === sessMenu.id);
         if (!s) return null;
-        const top = Math.min(sessMenu.y + 4, window.innerHeight - 160);
         return (
-          <>
-            <div className="fixed inset-0 z-[58]" onClick={() => setSessMenu(null)} />
-            <div className="fixed z-[59] w-48 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px]" style={{ left: Math.max(8, sessMenu.x - 192), top }}>
-              <button onClick={() => { renameSessionAction(s); setSessMenu(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim"><Pencil size={14} className="text-creme-faint" /> Renomear</button>
-              <button onClick={() => { toggleArchive(s); setSessMenu(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim">
-                {s.archivedAt ? <><ArchiveRestore size={14} className="text-creme-faint" /> Desarquivar</> : <><Archive size={14} className="text-creme-faint" /> Arquivar</>}
-              </button>
-              <div className="my-1 border-t border-default" />
-              <button onClick={() => { removeSession(s.id); setSessMenu(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-semantic-red"><Trash2 size={14} /> Apagar</button>
-            </div>
-          </>
+          <SessionContextMenu
+            session={s}
+            folders={folders}
+            colors={FOLDER_COLORS}
+            pos={sessMenu}
+            onClose={() => setSessMenu(null)}
+            onRename={() => renameSessionAction(s)}
+            onTogglePin={() => togglePin(s)}
+            onSetColor={(c) => changeColor(s, c)}
+            onMove={(fid) => moveToFolder(s, fid)}
+            onFork={() => forkSessionAction(s)}
+            onTranscript={() => setTranscriptFor(s)}
+            onToggleArchive={() => toggleArchive(s)}
+            onDelete={() => removeSession(s.id)}
+          />
         );
       })()}
+
+      {transcriptFor && agent && (
+        <TranscriptModal sessionId={transcriptFor.id} title={transcriptFor.title} agentName={agent.name} onClose={() => setTranscriptFor(null)} />
+      )}
 
       {/* Modo voz — tela cheia imersiva (estilo CORTEX) */}
       {voiceMode && (
@@ -1001,7 +1047,10 @@ function SessionItem({ session, active, depth = 0, onClick, onMenu, onDragStartI
       style={{ paddingLeft: depth * 14 + 12 }}
       onClick={onClick}
     >
-      {session.archivedAt ? <Archive size={14} className="text-creme-faint shrink-0" /> : <MessageSquare size={15} className="text-creme-faint shrink-0" />}
+      {session.archivedAt
+        ? <Archive size={14} className="text-creme-faint shrink-0" />
+        : <MessageSquare size={15} className={`shrink-0 ${session.color ? '' : 'text-creme-faint'}`} style={session.color ? { color: session.color } : undefined} />}
+      {session.pinnedAt && !session.archivedAt && <Pin size={11} className="text-brand-bright shrink-0 -ml-1" />}
       <span className={`flex-1 min-w-0 text-[14.5px] truncate ${active ? 'text-creme font-medium' : 'text-creme-mute'}`}>{session.title}</span>
       <button onClick={openMenu} className="opacity-0 group-hover:opacity-100 text-creme-faint hover:text-creme p-1 shrink-0" title="Opções da conversa">
         <MoreVertical size={14} />
