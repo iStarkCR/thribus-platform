@@ -166,13 +166,35 @@ export function useOrbConversation() {
     startListenOnce();
   }, [voice, startListenOnce]);
 
+  // Garante uma sessão do orbe válida (recria se a do localStorage sumiu).
+  async function ensureSession(uid: string): Promise<string | null> {
+    if (sessionRef.current) return sessionRef.current;
+    const s = await createSession(BUKOWISKI_ID, uid, { title: 'Orbe — conversa rápida' }).catch(() => null);
+    if (s) {
+      setSessionId(s.id);
+      sessionRef.current = s.id;
+      if (typeof localStorage !== 'undefined') localStorage.setItem(ORB_SESSION_KEY, s.id);
+    }
+    return sessionRef.current;
+  }
+
   async function send(textArg: string) {
     const text = textArg.trim();
-    const sid = sessionRef.current;
-    if (!text || !sid || !userId) return;
-    setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid, agentId: BUKOWISKI_ID, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: [], createdAt: '' }]);
+    if (!text || !userId) return;
+    let sid = await ensureSession(userId);
+    if (!sid) return;
+    setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid as string, agentId: BUKOWISKI_ID, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: [], createdAt: '' }]);
     try {
-      await sendMessage(sid, BUKOWISKI_ID, userId, text);
+      try {
+        await sendMessage(sid, BUKOWISKI_ID, userId, text);
+      } catch (e) {
+        // sessão sumiu (FK violation) → recria do zero e reenvia
+        if (!/foreign key|violates|constraint/i.test((e as Error).message)) throw e;
+        setSessionId(null); sessionRef.current = null;
+        sid = await ensureSession(userId);
+        if (!sid) throw e;
+        await sendMessage(sid, BUKOWISKI_ID, userId, text);
+      }
       await touchSession(sid);
       await refetch();
     } catch (e) {
