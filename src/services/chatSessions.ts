@@ -20,6 +20,7 @@ export interface ChatSession {
   title: string;
   updatedAt: string;
   contextTokens: number;
+  archivedAt: string | null;
 }
 
 const FOLDER_COLS = 'id,name,sort_order,parent_id,color';
@@ -75,7 +76,7 @@ export async function listSessions(agentId: string, userId: string): Promise<Cha
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('chat_sessions')
-    .select('id,agent_id,folder_id,title,updated_at,context_tokens')
+    .select('id,agent_id,folder_id,title,updated_at,context_tokens,archived_at')
     .eq('agent_id', agentId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
@@ -87,6 +88,7 @@ export async function listSessions(agentId: string, userId: string): Promise<Cha
     title: r.title,
     updatedAt: r.updated_at,
     contextTokens: r.context_tokens ?? 0,
+    archivedAt: r.archived_at ?? null,
   }));
 }
 
@@ -104,10 +106,10 @@ export async function createSession(
       folder_id: opts.folderId ?? null,
       title: opts.title ?? 'Nova conversa',
     })
-    .select('id,agent_id,folder_id,title,updated_at,context_tokens')
+    .select('id,agent_id,folder_id,title,updated_at,context_tokens,archived_at')
     .single();
   if (error) throw error;
-  return { id: data.id, agentId: data.agent_id, folderId: data.folder_id, title: data.title, updatedAt: data.updated_at, contextTokens: data.context_tokens ?? 0 };
+  return { id: data.id, agentId: data.agent_id, folderId: data.folder_id, title: data.title, updatedAt: data.updated_at, contextTokens: data.context_tokens ?? 0, archivedAt: data.archived_at ?? null };
 }
 
 export async function renameSession(id: string, title: string): Promise<void> {
@@ -128,7 +130,46 @@ export async function deleteSession(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function setSessionArchived(id: string, archived: boolean): Promise<string | null> {
+  if (!supabase) return null;
+  const archivedAt = archived ? new Date().toISOString() : null;
+  const { error } = await supabase.from('chat_sessions').update({ archived_at: archivedAt }).eq('id', id);
+  if (error) throw error;
+  return archivedAt;
+}
+
 export async function touchSession(id: string): Promise<void> {
   if (!supabase) return;
   await supabase.from('chat_sessions').update({ updated_at: new Date().toISOString() }).eq('id', id);
+}
+
+// ─── Uso agregado por sessão (tokens/custo consumidos por conversa) ───────────
+export interface SessionUsage {
+  costUsd: number;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  runs: number;
+  lastAt: string | null;
+}
+
+/** Mapa session_id → uso somado (via RPC chat_session_usage). */
+export async function getSessionsUsage(agentId: string): Promise<Map<string, SessionUsage>> {
+  const out = new Map<string, SessionUsage>();
+  if (!supabase) return out;
+  const { data, error } = await supabase.rpc('chat_session_usage', { p_agent_id: agentId });
+  if (error) throw error;
+  for (const r of (data ?? []) as Array<Record<string, number | string | null>>) {
+    out.set(String(r.session_id), {
+      costUsd: Number(r.cost_usd) || 0,
+      totalTokens: Number(r.total_tokens) || 0,
+      inputTokens: Number(r.input_tokens) || 0,
+      outputTokens: Number(r.output_tokens) || 0,
+      cacheReadTokens: Number(r.cache_read_tokens) || 0,
+      runs: Number(r.runs) || 0,
+      lastAt: (r.last_at as string) ?? null,
+    });
+  }
+  return out;
 }

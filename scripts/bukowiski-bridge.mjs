@@ -87,7 +87,7 @@ async function loadBrainConfig() {
 }
 
 // Grava o custo/tokens reais de uma execução (best-effort; nunca derruba o loop).
-async function recordUsage({ userId, agentId, kind, refId, usage }) {
+async function recordUsage({ userId, agentId, kind, refId, sessionId, usage }) {
   if (!usage) return;
   try {
     await sb.from('cortex_usage').insert({
@@ -95,6 +95,7 @@ async function recordUsage({ userId, agentId, kind, refId, usage }) {
       agent_id: agentId ?? null,
       kind,
       ref_id: refId ?? null,
+      session_id: sessionId ?? null,
       model: usage.model || BRAIN.model,
       effort: effortApplies(BRAIN.model) ? BRAIN.effort : null,
       cost_usd: usage.costUsd,
@@ -295,6 +296,10 @@ function runClaude(prompt, opts = {}) {
     let buf = '';
     let err = '';
     let result = null;
+    // Uso da ÚLTIMA mensagem do assistant — reflete a janela de contexto real do
+    // último turno (input+cache da chamada final), ao contrário do uso do evento
+    // 'result', que SOMA todos os round-trips de tool calls e infla o número.
+    let lastAssistantUsage = null;
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       reject(new Error(`timeout ${timeoutMs}ms`));
@@ -306,6 +311,9 @@ function runClaude(prompt, opts = {}) {
       if (!s) return;
       let evt;
       try { evt = JSON.parse(s); } catch { return; }
+      if (evt.type === 'assistant' && evt.message) {
+        if (evt.message.usage) lastAssistantUsage = evt.message.usage;
+      }
       if (evt.type === 'assistant' && evt.message && Array.isArray(evt.message.content)) {
         for (const b of evt.message.content) {
           if (b && b.type === 'tool_use' && opts.onEvent) {
@@ -340,7 +348,13 @@ function runClaude(prompt, opts = {}) {
       if (buf.trim()) handleLine(buf); // última linha sem \n final
       if (result) {
         if (result.isError) reject(new Error(result.text || 'claude retornou erro'));
-        else resolve({ text: result.text, usage: result.usage, sessionId: result.sessionId });
+        else {
+          const lu = lastAssistantUsage;
+          const contextTokens = lu
+            ? (lu.input_tokens || 0) + (lu.cache_creation_input_tokens || 0) + (lu.cache_read_input_tokens || 0) + (lu.output_tokens || 0)
+            : null;
+          resolve({ text: result.text, usage: result.usage, sessionId: result.sessionId, contextTokens });
+        }
         return;
       }
       if (code !== 0) reject(new Error(`claude saiu com código ${code}: ${err.slice(0, 400)}`));
@@ -415,15 +429,17 @@ async function processMessage(msg) {
   });
   await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', msg.id);
 
-  // grava a sessão do claude + a janela de contexto (pro painel mostrar X/1M)
+  // grava a sessão do claude + a janela de contexto (pro painel mostrar X/1M).
+  // Usa o uso da última mensagem do assistant (janela real do turno); só cai no
+  // uso cumulativo do 'result' se a última mensagem não trouxe usage.
   if (msg.session_id && r.sessionId) {
-    const ctx = r.usage ? (r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.outputTokens) : null;
+    const ctx = r.contextTokens ?? (r.usage ? r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.outputTokens : null);
     const patch = { claude_session_id: r.sessionId };
     if (ctx != null) patch.context_tokens = ctx;
     await sb.from('chat_sessions').update(patch).eq('id', msg.session_id);
   }
 
-  await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, usage: r.usage });
+  await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, sessionId: msg.session_id, usage: r.usage });
   console.log(
     `[ok] ${agent.name} respondeu (${reply.length} chars` +
       `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip,
-  ListChecks, Lightbulb, Clock,
+  ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, ArchiveRestore,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -18,8 +18,9 @@ import { listMessages, sendMessage, subscribeChat, chatConfigured, uploadAttachm
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import { createDemand } from '@/services/demands';
 import { RoutineModal } from '@/components/routines/RoutineModal';
+import { SessionUsageModal } from '@/components/chat/SessionUsageModal';
 import {
-  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession,
+  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession, setSessionArchived,
   type ChatFolder, type ChatSession,
 } from '@/services/chatSessions';
 
@@ -60,6 +61,7 @@ export function TalkPage() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [cmdIdx, setCmdIdx] = useState(0); // item selecionado no menu de comandos "/"
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(0);
@@ -68,10 +70,13 @@ export function TalkPage() {
   const [delegateOpen, setDelegateOpen] = useState(false);
   const [planMode, setPlanMode] = useState(false);
   const [routineOpen, setRoutineOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [sessMenu, setSessMenu] = useState<{ id: string; x: number; y: number } | null>(null); // menu (…) de uma conversa
+  const [showArchived, setShowArchived] = useState(false);
   const [dragOverId, setDragOverId] = useState<string | null>(null); // folder id ou 'root'
   const dragItemRef = useRef<{ type: 'session' | 'folder'; id: string } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -139,7 +144,7 @@ export function TalkPage() {
     const [f, s] = await Promise.all([listFolders(agentId, userId), listSessions(agentId, userId)]);
     setFolders(f);
     setSessions(s);
-    setActiveId((cur) => cur ?? s[0]?.id ?? null);
+    setActiveId((cur) => cur ?? s.find((x) => !x.archivedAt)?.id ?? null);
   }, [agentId, userId]);
 
   useEffect(() => {
@@ -256,11 +261,25 @@ export function TalkPage() {
   // mensagem do usuário em processamento → chave dos passos "por trás"
   const lastUserMsgId = waiting ? messages[messages.length - 1].id : null;
 
-  // Agrupa sessões por pasta + hierarquia de pastas.
-  const ungrouped = sessions.filter((s) => !s.folderId);
-  const byFolder = (fid: string) => sessions.filter((s) => s.folderId === fid);
+  // Agrupa sessões por pasta + hierarquia de pastas (só as ATIVAS — arquivadas
+  // ficam numa seção à parte no rodapé).
+  const liveSessions = sessions.filter((s) => !s.archivedAt);
+  const archivedSessions = sessions.filter((s) => s.archivedAt);
+  const ungrouped = liveSessions.filter((s) => !s.folderId);
+  const byFolder = (fid: string) => liveSessions.filter((s) => s.folderId === fid);
   const rootFolders = folders.filter((f) => !f.parentId);
   const childFolders = (pid: string) => folders.filter((f) => f.parentId === pid);
+
+  async function toggleArchive(s: ChatSession) {
+    try {
+      const archivedAt = await setSessionArchived(s.id, !s.archivedAt);
+      setSessions((prev) => prev.map((x) => (x.id === s.id ? { ...x, archivedAt } : x)));
+      if (!s.archivedAt && activeId === s.id) setActiveId(liveSessions.find((x) => x.id !== s.id)?.id ?? null);
+      useAppStore.getState().addToast(s.archivedAt ? 'Conversa desarquivada' : 'Conversa arquivada', 'green');
+    } catch (e) {
+      useAppStore.getState().addToast('Falha ao arquivar: ' + (e as Error).message, 'red');
+    }
+  }
 
   // ─── Drag-drop: organizar conversas e pastas ────────────────────────────────
   function isDescendant(folderId: string, ancestorId: string): boolean {
@@ -467,7 +486,7 @@ export function TalkPage() {
           <div>
             {subs.map((sf) => renderFolder(sf, depth + 1))}
             {sess.map((s) => (
-              <SessionItem key={s.id} session={s} active={s.id === activeId} depth={depth + 1} onClick={() => setActiveId(s.id)} onRename={() => renameSessionAction(s)} onDelete={() => removeSession(s.id)} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+              <SessionItem key={s.id} session={s} active={s.id === activeId} depth={depth + 1} onClick={() => setActiveId(s.id)} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
             ))}
             {sess.length === 0 && subs.length === 0 && (
               <div className="text-[11px] text-creme-faint italic py-1" style={{ paddingLeft: (depth + 1) * 12 + 14 }}>vazia</div>
@@ -484,6 +503,23 @@ export function TalkPage() {
   if (!agent) {
     return <div className="p-6 text-creme-faint text-[13px]">Colaborador não encontrado.</div>;
   }
+
+  // ─── Comandos "/" (estilo Claude) — ações locais, não viram mensagem ──────────
+  // Disparam ao digitar "/" no início do input. Cada um mapeia pra uma ação que já
+  // existe no chat; selecionar limpa o input (o comando NÃO é enviado ao daemon).
+  const slashCommands: { id: string; label: string; hint: string; icon: React.ReactNode; keywords: string[]; run: () => void }[] = [
+    { id: 'limpar', label: 'Nova conversa', hint: 'limpa o contexto', icon: <Plus size={15} />, keywords: ['clear', 'nova', 'limpar', 'novo', 'reset', 'new'], run: () => newSession(null) },
+    { id: 'plano', label: planMode ? 'Desligar modo plano' : 'Modo plano', hint: 'planeja antes de executar', icon: <Lightbulb size={15} />, keywords: ['plano', 'plan', 'planejar'], run: () => setPlanMode((p) => !p) },
+    { id: 'anexar', label: 'Anexar arquivo', hint: 'img · PDF · vídeo', icon: <Paperclip size={15} />, keywords: ['anexar', 'arquivo', 'file', 'upload', 'attach'], run: () => fileInputRef.current?.click() },
+    { id: 'agendar', label: 'Agendar rotina', hint: 'repetir no tempo', icon: <Clock size={15} />, keywords: ['agendar', 'rotina', 'schedule', 'cron'], run: () => setRoutineOpen(true) },
+    ...(voice.sttSupported ? [{ id: 'voz', label: 'Modo voz', hint: 'conversar falando', icon: <AudioLines size={15} />, keywords: ['voz', 'voice', 'falar', 'audio'], run: () => startVoiceMode() }] : []),
+  ];
+  const slashQuery = input.startsWith('/') && !input.includes(' ') && !input.includes('\n') ? input.slice(1).toLowerCase() : null;
+  const slashMatches = slashQuery === null ? [] : slashCommands.filter(
+    (c) => slashQuery === '' || c.id.includes(slashQuery) || c.label.toLowerCase().includes(slashQuery) || c.keywords.some((k) => k.includes(slashQuery)),
+  );
+  const slashOpen = slashMatches.length > 0;
+  const runSlash = (c: { run: () => void }) => { c.run(); setInput(''); setCmdIdx(0); };
 
   return (
     <div className="-m-6 h-screen grid grid-cols-[300px_1fr] overflow-hidden">
@@ -520,7 +556,7 @@ export function TalkPage() {
               )}
               <div className="space-y-0.5">
                 {ungrouped.map((s) => (
-                  <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => setActiveId(s.id)} onRename={() => renameSessionAction(s)} onDelete={() => removeSession(s.id)} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+                  <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => setActiveId(s.id)} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
                 ))}
               </div>
             </div>
@@ -529,6 +565,23 @@ export function TalkPage() {
           {sessions.length === 0 && (
             <div className="px-2 py-6 text-center text-[12px] text-creme-faint">
               Nenhuma sessão ainda.<br />Crie uma em "Nova sessão".
+            </div>
+          )}
+
+          {/* Arquivadas */}
+          {archivedSessions.length > 0 && (
+            <div className="pt-2 mt-1 border-t border-default">
+              <button onClick={() => setShowArchived((v) => !v)} className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] font-bold uppercase tracking-wider text-creme-faint hover:text-creme-mute transition-colors">
+                {showArchived ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <Archive size={13} /> Arquivadas <span className="text-creme-faint/70">{archivedSessions.length}</span>
+              </button>
+              {showArchived && (
+                <div className="space-y-0.5">
+                  {archivedSessions.map((s) => (
+                    <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => setActiveId(s.id)} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -573,6 +626,15 @@ export function TalkPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Uso por sessão — histórico de tokens/custo/contexto */}
+            <button
+              onClick={() => setUsageOpen(true)}
+              title="Uso por sessão — tokens, custo e contexto de cada conversa"
+              className="w-9 h-9 flex items-center justify-center rounded-xl border border-default bg-surface-2 text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
+            >
+              <BarChart3 size={16} />
+            </button>
+
             {/* Modo voz — ícone na barra */}
             {voice.sttSupported && (
               <button
@@ -712,7 +774,25 @@ export function TalkPage() {
             className="hidden"
             onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
           />
-          <div className="flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
+          <div className="relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
+            {slashOpen && (
+              <div className="absolute bottom-full mb-2 left-0 right-0 z-[61] rounded-xl border border-default bg-surface-1 shadow-2xl p-1.5 max-h-72 overflow-y-auto">
+                <div className="px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-creme-faint">Comandos</div>
+                {slashMatches.map((c, i) => (
+                  <button
+                    key={c.id}
+                    onMouseEnter={() => setCmdIdx(i)}
+                    onClick={() => runSlash(c)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors ${i === Math.min(cmdIdx, slashMatches.length - 1) ? 'bg-brand/10 text-brand-bright' : 'text-creme-mute hover:bg-surface-hover'}`}
+                  >
+                    <span className={`shrink-0 ${i === Math.min(cmdIdx, slashMatches.length - 1) ? 'text-brand-bright' : 'text-creme-faint'}`}>{c.icon}</span>
+                    <span className="font-mono text-[12px] shrink-0 opacity-80">/{c.id}</span>
+                    <span className="flex-1 text-left font-medium">{c.label}</span>
+                    <span className="text-[10.5px] text-creme-faint shrink-0">{c.hint}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="relative shrink-0">
               <button
                 onClick={() => { setPlusOpen((o) => !o); setDelegateOpen(false); }}
@@ -748,9 +828,15 @@ export function TalkPage() {
             </div>
             <textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => { setInput(e.target.value); setCmdIdx(0); }}
               onPaste={(e) => { const fs = Array.from(e.clipboardData?.files ?? []); if (fs.length) { e.preventDefault(); addFiles(fs); } }}
               onKeyDown={(e) => {
+                if (slashOpen) {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIdx((i) => (i + 1) % slashMatches.length); return; }
+                  if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIdx((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
+                  if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); runSlash(slashMatches[Math.min(cmdIdx, slashMatches.length - 1)]); return; }
+                  if (e.key === 'Escape') { e.preventDefault(); setInput(''); return; }
+                }
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   send();
@@ -789,6 +875,17 @@ export function TalkPage() {
         </div>
       </div>
 
+      {usageOpen && (
+        <SessionUsageModal
+          agentId={agent.id}
+          agentName={agent.name}
+          sessions={sessions}
+          folders={folders}
+          activeId={activeId}
+          onClose={() => setUsageOpen(false)}
+          onOpenSession={(id) => setActiveId(id)}
+        />
+      )}
       {infoOpen && <AgentInfoModal agent={agent} onClose={() => setInfoOpen(false)} onEdit={() => setEditOpen(true)} />}
       {editOpen && <AgentDetailModal agent={agent} onClose={() => setEditOpen(false)} />}
       {routineOpen && userId && (
@@ -815,6 +912,26 @@ export function TalkPage() {
               <button onClick={() => { renameFolderAction(mf); setMenuFor(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim"><Pencil size={14} className="text-creme-faint" /> Renomear</button>
               <div className="my-1 border-t border-default" />
               <button onClick={() => { removeFolder(mf); setMenuFor(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-semantic-red"><Trash2 size={14} /> Apagar</button>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Menu (…) de uma conversa */}
+      {sessMenu && (() => {
+        const s = sessions.find((x) => x.id === sessMenu.id);
+        if (!s) return null;
+        const top = Math.min(sessMenu.y + 4, window.innerHeight - 160);
+        return (
+          <>
+            <div className="fixed inset-0 z-[58]" onClick={() => setSessMenu(null)} />
+            <div className="fixed z-[59] w-48 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px]" style={{ left: Math.max(8, sessMenu.x - 192), top }}>
+              <button onClick={() => { renameSessionAction(s); setSessMenu(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim"><Pencil size={14} className="text-creme-faint" /> Renomear</button>
+              <button onClick={() => { toggleArchive(s); setSessMenu(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim">
+                {s.archivedAt ? <><ArchiveRestore size={14} className="text-creme-faint" /> Desarquivar</> : <><Archive size={14} className="text-creme-faint" /> Arquivar</>}
+              </button>
+              <div className="my-1 border-t border-default" />
+              <button onClick={() => { removeSession(s.id); setSessMenu(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-semantic-red"><Trash2 size={14} /> Apagar</button>
             </div>
           </>
         );
@@ -873,25 +990,22 @@ export function TalkPage() {
   );
 }
 
-function SessionItem({ session, active, depth = 0, onClick, onRename, onDelete, onDragStartItem }: { session: ChatSession; active: boolean; depth?: number; onClick: () => void; onRename: () => void; onDelete: () => void; onDragStartItem: () => void }) {
+function SessionItem({ session, active, depth = 0, onClick, onMenu, onDragStartItem }: { session: ChatSession; active: boolean; depth?: number; onClick: () => void; onMenu: (pos: { x: number; y: number }) => void; onDragStartItem: () => void }) {
+  const openMenu = (e: React.MouseEvent) => { e.stopPropagation(); e.preventDefault(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); onMenu({ x: r.right, y: r.bottom }); };
   return (
     <div
       draggable
       onDragStart={(e) => { onDragStartItem(); e.dataTransfer.effectAllowed = 'move'; }}
+      onContextMenu={openMenu}
       className={`group flex items-center gap-2.5 pr-2 py-2.5 rounded-lg cursor-pointer transition-colors ${active ? 'bg-brand/10' : 'hover:bg-surface-hover'}`}
       style={{ paddingLeft: depth * 14 + 12 }}
       onClick={onClick}
     >
-      <MessageSquare size={15} className="text-creme-faint shrink-0" />
+      {session.archivedAt ? <Archive size={14} className="text-creme-faint shrink-0" /> : <MessageSquare size={15} className="text-creme-faint shrink-0" />}
       <span className={`flex-1 min-w-0 text-[14.5px] truncate ${active ? 'text-creme font-medium' : 'text-creme-mute'}`}>{session.title}</span>
-      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0">
-        <button onClick={(e) => { e.stopPropagation(); onRename(); }} className="text-creme-faint hover:text-creme p-1" title="Renomear conversa">
-          <Pencil size={13} />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-creme-faint hover:text-semantic-red p-1" title="Apagar conversa">
-          <Trash2 size={13} />
-        </button>
-      </div>
+      <button onClick={openMenu} className="opacity-0 group-hover:opacity-100 text-creme-faint hover:text-creme p-1 shrink-0" title="Opções da conversa">
+        <MoreVertical size={14} />
+      </button>
     </div>
   );
 }
