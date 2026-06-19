@@ -636,7 +636,18 @@ export function TalkPage() {
                     <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[15px] leading-[1.7]">
                       {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
                       {m.content && <span className="whitespace-pre-wrap">{m.content}</span>}
-                      {m.status === 'error' && <div className="text-[11px] mt-1 text-white/80">erro: {m.error}</div>}
+                      {m.status === 'error' && (
+                        <div className="text-[11px] mt-1 text-white/80 flex items-center gap-2 flex-wrap">
+                          <span>erro: {m.error}</span>
+                          <button
+                            onClick={() => send(m.content)}
+                            disabled={sending}
+                            className="underline underline-offset-2 hover:text-white disabled:opacity-50 shrink-0"
+                          >
+                            ↻ Reenviar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
