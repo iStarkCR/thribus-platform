@@ -1,21 +1,22 @@
 import { useCallback, useRef, useState } from 'react';
 import { transcribeBlob } from '@/services/voiceSkill';
 
-// O Whisper "alucina" frases-padrão de legenda quando o áudio é silêncio/ruído.
-// Tratamos como vazio pra não enviar lixo.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const SR: any = typeof window !== 'undefined' ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition : null;
+
+// O Whisper "alucina" frases-padrão quando o áudio é silêncio/ruído. Descarta.
 function isWhisperNoise(t: string): boolean {
   const s = t.toLowerCase().trim();
   if (s.length < 2) return true;
-  return /amara\.org|legendas?\s+(pela|by)|subtitles?\s+by|obrigado por (assistir|ver)|♪|\[(música|musica|aplausos|risos)\]/i.test(s);
+  return /amara\.org|legendas?\s+(pela|by)|subtitles?\s+by|obrigad[oa] por (assistir|ver)|^muito obrigad|♪|\[(música|musica|aplausos|risos)\]/i.test(s);
 }
 
 /**
- * Captura de voz por gravação + Whisper (STT do backend) — substitui o Web
- * Speech do navegador no modo voz quando o agente usa provider OpenAI.
- *
- * Grava com MediaRecorder e usa um AnalyserNode pra detectar fim de fala
- * (silêncio por ~1.4s). Limiar FIXO (calibrar pelo ruído cortava o início da
- * fala) e mic com noiseSuppression/echoCancellation. Transcrição precisa.
+ * Captura de voz: grava com MediaRecorder e usa o SpeechRecognition do navegador
+ * SÓ como detector de fala (VAD) — ele acerta bem QUANDO há fala e quando ela
+ * termina. O áudio gravado vai pro Whisper (transcrição precisa). Se o navegador
+ * não confirmar fala, NADA é enviado (sem alucinação). Sem SpeechRecognition,
+ * cai num timer simples.
  */
 export function useWhisperMic(agentId: string) {
   const [recording, setRecording] = useState(false);
@@ -33,40 +34,28 @@ export function useWhisperMic(agentId: string) {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-      const ctx = new AudioContext();
-      if (ctx.state === 'suspended') { try { await ctx.resume(); } catch { /* noop */ } }
-      const src = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      src.connect(analyser);
-      const buf = new Uint8Array(analyser.frequencyBinCount);
       const rec = new MediaRecorder(stream);
       const chunks: BlobPart[] = [];
       rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
 
-      let spoke = false, silenceStart = 0, raf = 0, done = false;
-      const t0 = performance.now();
-      const THRESH = 0.012;     // limiar fixo de fala (sem calibração — cortava o início)
-      const SILENCE_MS = 1400;  // silêncio após falar → encerra
-      const MAX_MS = 14000;     // teto de duração
-      const MIN_REC_MS = 400;   // gravação mínima pra valer
+      let heardSpeech = false, done = false;
+      let recog: any = null;
+      let maxTimer: ReturnType<typeof setTimeout> | null = null;
 
       const finish = () => {
         if (done) return;
         done = true;
-        cancelAnimationFrame(raf);
+        if (maxTimer) clearTimeout(maxTimer);
         stopRef.current = null;
+        try { recog?.stop(); } catch { /* noop */ }
         try { rec.stop(); } catch { /* noop */ }
       };
       stopRef.current = finish;
 
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        ctx.close().catch(() => { /* noop */ });
         setRecording(false);
-        const dur = performance.now() - t0;
-        const worth = chunks.length > 0 && dur >= MIN_REC_MS && (spoke || dur >= MAX_MS - 1500);
-        if (!worth) { onText(''); return; }
+        if (!heardSpeech || chunks.length === 0) { onText(''); return; } // sem fala confirmada → não alucina
         setTranscribing(true);
         const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
         const text = (await transcribeBlob(agentId, blob).catch(() => null) ?? '').trim();
@@ -74,22 +63,28 @@ export function useWhisperMic(agentId: string) {
         onText(isWhisperNoise(text) ? '' : text);
       };
 
-      const tick = () => {
-        analyser.getByteTimeDomainData(buf);
-        let sum = 0;
-        for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
-        const rms = Math.sqrt(sum / buf.length);
-        const now = performance.now();
-        if (rms > THRESH) { spoke = true; silenceStart = 0; }
-        else if (spoke && !silenceStart) silenceStart = now;
-        else if (spoke && silenceStart && now - silenceStart > SILENCE_MS) { finish(); return; }
-        if (now - t0 > MAX_MS) { finish(); return; }
-        raf = requestAnimationFrame(tick);
-      };
+      // SpeechRecognition = detector de fala (não usamos o texto dele, só o sinal).
+      if (SR) {
+        recog = new SR();
+        recog.lang = 'pt-BR';
+        recog.continuous = false;
+        recog.interimResults = true;
+        recog.onresult = () => { heardSpeech = true; }; // captou voz
+        recog.onend = () => finish();                    // parou de falar → encerra
+        // 'no-speech' = silêncio real (descarta). Outro erro (conflito de mic)
+        // → não confia no VAD: assume fala pra não perder o áudio gravado.
+        recog.onerror = (e: any) => { if (e?.error && e.error !== 'no-speech') heardSpeech = true; finish(); };
+        try { recog.start(); } catch { /* noop */ }
+      } else {
+        // sem SpeechRecognition: assume fala e corta em 6s
+        heardSpeech = true;
+        maxTimer = setTimeout(finish, 6000);
+      }
+      // teto de segurança (caso o onend nunca venha)
+      maxTimer = setTimeout(finish, 15000);
 
       rec.start();
       setRecording(true);
-      raf = requestAnimationFrame(tick);
     } catch {
       stopRef.current = null;
       setRecording(false);
