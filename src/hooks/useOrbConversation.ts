@@ -1,68 +1,66 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/hooks/useSession';
-import { useVoice } from '@/hooks/useVoice';
-import { useWhisperMic } from '@/hooks/useWhisperMic';
 import { useAppStore } from '@/hooks/useAppStore';
 import { listMessages, sendMessage, subscribeChat, type ChatMessage } from '@/services/collaboratorChat';
 import { listSessions, createSession, touchSession } from '@/services/chatSessions';
-import { getVoiceConfig, ttsBlob, type VoiceConfig } from '@/services/voiceSkill';
+import { ttsBlob, transcribeBlob } from '@/services/voiceSkill';
+import { VoiceController, type VoiceState as RawVoiceState } from '@/lib/voiceMode';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 const ORB_SESSION_KEY = 'orbSessionId'; // sessão dedicada do orbe (não compartilha c/ o painel)
-// WAV silencioso — tocado no gesto do clique pra destravar autoplay do <audio>.
-const SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 
 function norm(s: string): string {
-  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 /** Para o modo voz: "off", "para", "chega", "tchau"… (ou "Bukowiski <comando>"). */
 export function isStopPhrase(text: string): boolean {
   const t = norm(text).trim();
   const last = t.split(/\s+/).pop() ?? '';
-  // comando solto no fim da fala
   if (/^(o+f+|o+fi|o+fe|deslig\w*|par\w*|pare|cheg\w*|tchau|stop|encerr\w*|fech\w*|sai|sair|silencio)$/.test(last)) return true;
-  // "bukowiski <comando>" (nome mal transcrito incluso)
   if (/[bmp]uk?[oae]?[wv]i?sk?\w*\s+(o+f|deslig|par|cheg|tchau|stop|encerr|fech|sai|silenci)/.test(t)) return true;
   return false;
 }
 
+// Alucinações do Whisper sobre silêncio.
+function isNoise(t: string): boolean {
+  const s = t.toLowerCase().trim();
+  if (s.length < 2) return true;
+  return /amara\.org|legendas?\s+(pela|by)|subtitles?\s+by|obrigad[oa] por (assistir|ver)|^muito obrigad|♪|\[(música|musica|aplausos|risos)\]/i.test(s);
+}
+
 export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
+const mapState = (s: RawVoiceState): VoiceState =>
+  s === 'processing' ? 'thinking' : s === 'playing' ? 'speaking' : s === 'idle' ? 'idle' : 'listening';
 
 /**
- * Conversa única com o Bukowiski (texto + voz). O orbe usa pra falar por voz
- * (sem UI) e o chat popover é só uma view da mesma conversa.
+ * Conversa única com o Bukowiski (texto + voz). O modo voz usa o VoiceController
+ * (motor contínuo, portado do CORTEX): mic aberto o tempo todo, VAD por energia,
+ * fala a resposta em frases. O OrbChat é só a view de texto da mesma conversa.
  */
 export function useOrbConversation() {
   const { user } = useSession();
   const userId = user?.id ?? null;
-  const voice = useVoice();
-  const whisper = useWhisperMic(BUKOWISKI_ID);
-  const speakingRef = useRef(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [voiceActive, setVoiceActive] = useState(false);
-  const [speakingProvider, setSpeakingProvider] = useState(false);
+  const [state, setState] = useState<VoiceState>('idle');
 
-  const voiceActiveRef = useRef(false);
   const sessionRef = useRef<string | null>(null);
-  const waitingRef = useRef(false);
-  const spokenRef = useRef<string | null>(null);
-  const cfgRef = useRef<VoiceConfig | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => { voiceActiveRef.current = voiceActive; }, [voiceActive]);
+  const ctrlRef = useRef<VoiceController | null>(null);
+  const inputSinkRef = useRef<((t: string) => void) | null>(null);
+  // resolver da resposta atual (turn-based): a próxima msg assistant 'done' resolve.
+  const pendingReplyRef = useRef<((s: string) => void) | null>(null);
   useEffect(() => { sessionRef.current = sessionId; }, [sessionId]);
 
-  // Sessão (reusa a do Bukowiski ou cria) + config de voz.
+  // ─── Sessão dedicada do orbe (localStorage) + mensagens ─────────────────────
   useEffect(() => {
     if (!userId) return;
     const uid = userId;
     let alive = true;
     (async () => {
       const sessions = await listSessions(BUKOWISKI_ID, uid).catch(() => []);
-      // Sessão DEDICADA do orbe (guardada no localStorage) — separada das
-      // conversas do painel. Reusa se ainda existir; senão cria a do orbe.
       const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(ORB_SESSION_KEY) : null;
       let sid: string | null = stored && sessions.some((s) => s.id === stored) ? stored : null;
       if (!sid) {
@@ -74,7 +72,6 @@ export function useOrbConversation() {
       setSessionId(sid);
       if (sid) setMessages(await listMessages(sid).catch(() => []));
     })();
-    getVoiceConfig(BUKOWISKI_ID).then((c) => { cfgRef.current = c; }).catch(() => {});
     return () => { alive = false; };
   }, [userId]);
 
@@ -89,84 +86,17 @@ export function useOrbConversation() {
     return subscribeChat(userId, refetch);
   }, [userId, refetch]);
 
-  const speakReply = useCallback(async (text: string, onEnd?: () => void) => {
-    const cfg = cfgRef.current;
-    if (cfg?.enabled && cfg.provider !== 'browser') {
-      try {
-        const blob = await ttsBlob(BUKOWISKI_ID, text);
-        if (blob) {
-          // Reusa o <audio> já destravado no clique (autoplay) em vez de criar um novo.
-          const a = audioRef.current ?? (audioRef.current = new Audio());
-          a.muted = false;
-          a.src = URL.createObjectURL(blob);
-          setSpeakingProvider(true);
-          const done = () => { setSpeakingProvider(false); onEnd?.(); };
-          a.onended = done; a.onerror = done;
-          await a.play();
-          return;
-        }
-      } catch { /* cai pro navegador */ }
+  // Resolve a resposta pendente quando a msg assistant 'done' chega (realtime).
+  useEffect(() => {
+    if (messages.length === 0 || !pendingReplyRef.current) return;
+    const last = messages[messages.length - 1];
+    if (last.role === 'assistant' && last.status === 'done') {
+      const resolve = pendingReplyRef.current;
+      pendingReplyRef.current = null;
+      resolve(last.content);
     }
-    voice.speak(text, onEnd);
-  }, [voice]);
+  }, [messages]);
 
-  // onResult/onIdle/send/startListenOnce referenciam-se; hoisted como function.
-  const startListenOnce = useCallback(() => {
-    const cfg = cfgRef.current;
-    // STT do backend (Whisper) quando o agente é OpenAI — transcrição precisa.
-    // Senão, Web Speech do navegador (fallback).
-    if (cfg?.provider === 'openai' && cfg.sttEnabled) {
-      whisper.capture((t) => { if (t) onResult(t); else onIdle(); });
-    } else if (voice.sttSupported) {
-      voice.startListening(onResult, onIdle);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice, whisper]);
-
-  // STT terminou sem captura (silêncio/timeout): se ainda em modo voz e sem
-  // resposta pendente nem falando, re-arma o mic — senão trava em "Ouvindo".
-  function onIdle() {
-    if (voiceActiveRef.current && !waitingRef.current) {
-      setTimeout(() => { if (voiceActiveRef.current && !waitingRef.current && !speakingRef.current) startListenOnce(); }, 350);
-    }
-  }
-
-  const stopVoice = useCallback(() => {
-    setVoiceActive(false);
-    voiceActiveRef.current = false;
-    whisper.cancel();
-    voice.stopListening();
-    voice.cancelSpeak();
-    audioRef.current?.pause();
-    setSpeakingProvider(false);
-  }, [voice, whisper]);
-
-  function onResult(text: string) {
-    if (!voiceActiveRef.current) { setInputFromVoice(text); return; }
-    if (isStopPhrase(text)) { stopVoice(); return; }
-    if (waitingRef.current) return; // turn-based: espera a resposta
-    send(text);
-  }
-
-  // Quando não está em modo voz (transcrição p/ input), o consumidor injeta.
-  const inputSinkRef = useRef<((t: string) => void) | null>(null);
-  function setInputFromVoice(text: string) { inputSinkRef.current?.(text); }
-
-  const startVoice = useCallback(() => {
-    voice.unlock(); // destrava o speechSynthesis (fallback) dentro do gesto do clique
-    // destrava autoplay do <audio> do TTS backend tocando um silêncio no gesto
-    try {
-      const a = audioRef.current ?? (audioRef.current = new Audio());
-      a.muted = true;
-      a.src = SILENCE;
-      a.play().catch(() => {});
-    } catch { /* noop */ }
-    setVoiceActive(true);
-    voiceActiveRef.current = true;
-    startListenOnce();
-  }, [voice, startListenOnce]);
-
-  // Garante uma sessão do orbe válida (recria se a do localStorage sumiu).
   async function ensureSession(uid: string): Promise<string | null> {
     if (sessionRef.current) return sessionRef.current;
     const s = await createSession(BUKOWISKI_ID, uid, { title: 'Orbe — conversa rápida' }).catch(() => null);
@@ -178,17 +108,18 @@ export function useOrbConversation() {
     return sessionRef.current;
   }
 
-  async function send(textArg: string) {
+  // Envia o texto e RESOLVE com a resposta do daemon (via realtime). Recria a
+  // sessão se ela sumiu (FK). Usado pelo modo voz e pelo chat de texto.
+  const sendAndAwait = useCallback(async (textArg: string): Promise<string> => {
     const text = textArg.trim();
-    if (!text || !userId) return;
+    if (!text || !userId) return '';
     let sid = await ensureSession(userId);
-    if (!sid) return;
+    if (!sid) return '';
     setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid as string, agentId: BUKOWISKI_ID, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: [], createdAt: '' }]);
     try {
       try {
         await sendMessage(sid, BUKOWISKI_ID, userId, text);
       } catch (e) {
-        // sessão sumiu (FK violation) → recria do zero e reenvia
         if (!/foreign key|violates|constraint/i.test((e as Error).message)) throw e;
         setSessionId(null); sessionRef.current = null;
         sid = await ensureSession(userId);
@@ -196,53 +127,64 @@ export function useOrbConversation() {
         await sendMessage(sid, BUKOWISKI_ID, userId, text);
       }
       await touchSession(sid);
-      await refetch();
     } catch (e) {
       setMessages((m) => m.filter((x) => !x.id.startsWith('tmp-')));
       useAppStore.getState().addToast('Falha ao enviar: ' + (e as Error).message, 'red');
+      return '';
     }
-  }
+    // aguarda a resposta do daemon (realtime) — timeout de segurança em 4min
+    return await new Promise<string>((resolve) => {
+      pendingReplyRef.current = resolve;
+      setTimeout(() => { if (pendingReplyRef.current === resolve) { pendingReplyRef.current = null; resolve(''); } }, 240000);
+    });
+  }, [userId]);
 
-  // Fala a última resposta quando em modo voz; depois volta a ouvir.
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (last.role === 'assistant' && last.status === 'done' && last.id !== spokenRef.current) {
-      spokenRef.current = last.id;
-      if (voiceActiveRef.current) speakReply(last.content, () => { if (voiceActiveRef.current) startListenOnce(); });
-    }
+  // ─── Modo voz (VoiceController) ─────────────────────────────────────────────
+  const startVoice = useCallback(() => {
+    if (ctrlRef.current) return;
+    const ctrl = new VoiceController({
+      transcribe: async (blob) => (await transcribeBlob(BUKOWISKI_ID, blob)) ?? '',
+      tts: (txt) => ttsBlob(BUKOWISKI_ID, txt),
+      sendAndAwait,
+      isNoise,
+      onState: (s) => setState(mapState(s)),
+      onTranscript: (t) => { if (isStopPhrase(t)) stopVoice(); },
+      onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
+    });
+    ctrlRef.current = ctrl;
+    setVoiceActive(true);
+    ctrl.start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages]);
+  }, [sendAndAwait]);
 
-  useEffect(() => () => { voice.stopListening(); voice.cancelSpeak(); audioRef.current?.pause(); }, [voice]);
+  const stopVoice = useCallback(() => {
+    ctrlRef.current?.stop();
+    ctrlRef.current = null;
+    pendingReplyRef.current = null;
+    setVoiceActive(false);
+    setState('idle');
+  }, []);
+
+  useEffect(() => () => { ctrlRef.current?.stop(); ctrlRef.current = null; }, []);
+
+  // Chat de texto (OrbChat) — envia sem TTS.
+  const send = useCallback((textArg: string) => { void sendAndAwait(textArg).then(() => refetch()); }, [sendAndAwait, refetch]);
 
   const waiting = messages.length > 0 && messages[messages.length - 1].role === 'user' && ['pending', 'processing'].includes(messages[messages.length - 1].status);
-  waitingRef.current = waiting;
-
-  const speaking = voice.speaking || speakingProvider;
-  speakingRef.current = speaking;
-  const state: VoiceState = !voiceActive
-    ? 'idle'
-    : speaking
-      ? 'speaking'
-      : (waiting || whisper.transcribing)
-        ? 'thinking'
-        : 'listening';
 
   return {
     messages,
     voiceActive,
     state,
-    listening: voice.listening || whisper.recording,
-    speaking,
+    listening: state === 'listening',
+    speaking: state === 'speaking',
     waiting,
-    sttSupported: voice.sttSupported,
+    sttSupported: typeof navigator !== 'undefined' && !!navigator.mediaDevices,
     send,
     startVoice,
     stopVoice,
-    /** Liga a transcrição (mic fora do modo voz) a um setter de input. */
     bindInputSink: (fn: ((t: string) => void) | null) => { inputSinkRef.current = fn; },
-    listenForInput: () => { if (voice.listening) voice.stopListening(); else startListenOnce(); },
+    listenForInput: () => { /* push-to-talk do input: usa o modo voz */ },
   };
 }
 
