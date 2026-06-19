@@ -2,12 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/hooks/useSession';
 import { useAppStore } from '@/hooks/useAppStore';
 import { listMessages, sendMessage, subscribeChat, type ChatMessage } from '@/services/collaboratorChat';
-import { listSessions, createSession, touchSession } from '@/services/chatSessions';
+import { listSessions, createSession, touchSession, listFolders, createFolder } from '@/services/chatSessions';
 import { ttsBlob, transcribeBlob } from '@/services/voiceSkill';
 import { VoiceController, type VoiceState as RawVoiceState } from '@/lib/voiceMode';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 const ORB_SESSION_KEY = 'orbSessionId'; // sessão dedicada do orbe (não compartilha c/ o painel)
+// Pasta-marcador da sessão do orbe. O painel ESCONDE essa pasta e suas sessões,
+// pra que orbe e painel nunca compartilhem a mesma conversa (o orbe dá touch e
+// viraria a "mais recente", que o painel auto-seleciona).
+export const ORB_FOLDER_NAME = '__orbe__';
 
 function norm(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -48,6 +52,7 @@ export function useOrbConversation() {
   const [state, setState] = useState<VoiceState>('idle');
 
   const sessionRef = useRef<string | null>(null);
+  const orbFolderRef = useRef<string | null>(null); // pasta dedicada do orbe
   const ctrlRef = useRef<VoiceController | null>(null);
   const inputSinkRef = useRef<((t: string) => void) | null>(null);
   // resolver da resposta atual (turn-based): a próxima msg assistant 'done' resolve.
@@ -60,11 +65,21 @@ export function useOrbConversation() {
     const uid = userId;
     let alive = true;
     (async () => {
-      const sessions = await listSessions(BUKOWISKI_ID, uid).catch(() => []);
+      const [folders, sessions] = await Promise.all([
+        listFolders(BUKOWISKI_ID, uid).catch(() => []),
+        listSessions(BUKOWISKI_ID, uid).catch(() => []),
+      ]);
+      // Garante a pasta dedicada do orbe.
+      let folder = folders.find((f) => f.name === ORB_FOLDER_NAME) ?? null;
+      if (!folder) folder = await createFolder(BUKOWISKI_ID, uid, ORB_FOLDER_NAME).catch(() => null);
+      const folderId = folder?.id ?? null;
+      orbFolderRef.current = folderId;
+      // Só reusa a sessão guardada se ela existe E está na pasta do orbe. Se o
+      // estado antigo apontava p/ uma sessão do painel (contaminada), cria nova.
       const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(ORB_SESSION_KEY) : null;
-      let sid: string | null = stored && sessions.some((s) => s.id === stored) ? stored : null;
+      let sid: string | null = stored && sessions.some((s) => s.id === stored && s.folderId === folderId) ? stored : null;
       if (!sid) {
-        const s = await createSession(BUKOWISKI_ID, uid, { title: 'Orbe — conversa rápida' }).catch(() => null);
+        const s = await createSession(BUKOWISKI_ID, uid, { title: 'Orbe — conversa rápida', folderId }).catch(() => null);
         sid = s?.id ?? null;
         if (sid && typeof localStorage !== 'undefined') localStorage.setItem(ORB_SESSION_KEY, sid);
       }
@@ -99,7 +114,7 @@ export function useOrbConversation() {
 
   async function ensureSession(uid: string): Promise<string | null> {
     if (sessionRef.current) return sessionRef.current;
-    const s = await createSession(BUKOWISKI_ID, uid, { title: 'Orbe — conversa rápida' }).catch(() => null);
+    const s = await createSession(BUKOWISKI_ID, uid, { title: 'Orbe — conversa rápida', folderId: orbFolderRef.current }).catch(() => null);
     if (s) {
       setSessionId(s.id);
       sessionRef.current = s.id;

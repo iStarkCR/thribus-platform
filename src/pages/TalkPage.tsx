@@ -8,7 +8,7 @@ import {
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
-import { isStopPhrase } from '@/hooks/useOrbConversation';
+import { isStopPhrase, ORB_FOLDER_NAME } from '@/hooks/useOrbConversation';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
@@ -137,9 +137,14 @@ export function TalkPage() {
   const loadTree = useCallback(async () => {
     if (!agentId || !userId) return;
     const [f, s] = await Promise.all([listFolders(agentId, userId), listSessions(agentId, userId)]);
-    setFolders(f);
-    setSessions(s);
-    setActiveId((cur) => cur ?? s.find((x) => !x.archivedAt)?.id ?? null);
+    // Esconde a pasta do orbe e suas sessões — o orbe tem conversa própria, fora
+    // do painel (senão o painel auto-selecionaria a sessão do orbe).
+    const orbFolderId = f.find((x) => x.name === ORB_FOLDER_NAME)?.id ?? null;
+    const fVisible = orbFolderId ? f.filter((x) => x.id !== orbFolderId) : f;
+    const sVisible = orbFolderId ? s.filter((x) => x.folderId !== orbFolderId) : s;
+    setFolders(fVisible);
+    setSessions(sVisible);
+    setActiveId((cur) => cur ?? sVisible.find((x) => !x.archivedAt)?.id ?? null);
   }, [agentId, userId]);
 
   useEffect(() => {
