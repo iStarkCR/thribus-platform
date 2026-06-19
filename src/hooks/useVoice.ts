@@ -12,6 +12,23 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const SR: any =
   typeof window !== 'undefined' ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition : null;
 
+/** Tira markdown/símbolos pra fala soar natural (sem "asterisco", "pipe"…). */
+function ttsClean(s: string): string {
+  return (s || '')
+    .replace(/```[\s\S]*?```/g, ' (código) ')          // blocos de código
+    .replace(/`([^`]+)`/g, '$1')                        // inline code
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')               // imagens
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')            // links → só o texto
+    .replace(/^\s*\|.*\|\s*$/gm, '')                    // linhas de tabela
+    .replace(/^[\s>#-]*[-*+]\s+/gm, '')                 // bullets
+    .replace(/[*_#>~|]+/g, ' ')                          // símbolos soltos
+    .replace(/:\w+:/g, '')                              // shortcodes de emoji
+    .replace(/\n{2,}/g, '. ')
+    .replace(/\n/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export function useVoice() {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -78,25 +95,52 @@ export function useVoice() {
     );
   }
 
+  const keepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const speak = useCallback(
     (text: string, onEnd?: () => void) => {
-      if (!ttsSupported || !text) { onEnd?.(); return; }
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'pt-BR';
-      const v = pickVoice();
-      if (v) u.voice = v;
-      u.rate = 1.02;
-      u.pitch = 1;
-      u.onstart = () => setSpeaking(true);
-      u.onend = () => { setSpeaking(false); onEnd?.(); };
-      u.onerror = () => { setSpeaking(false); onEnd?.(); };
-      window.speechSynthesis.speak(u);
+      const clean = ttsClean(text);
+      if (!ttsSupported || !clean) { onEnd?.(); return; }
+      const synth = window.speechSynthesis;
+      synth.cancel();
+
+      const run = () => {
+        const u = new SpeechSynthesisUtterance(clean.slice(0, 4500));
+        u.lang = 'pt-BR';
+        const v = pickVoice();
+        if (v) u.voice = v;
+        u.rate = 1.02;
+        u.pitch = 1;
+        const stop = () => {
+          setSpeaking(false);
+          if (keepAliveRef.current) { clearInterval(keepAliveRef.current); keepAliveRef.current = null; }
+        };
+        u.onstart = () => {
+          setSpeaking(true);
+          // Chrome corta falas longas (~15s) — resume periódico mantém vivo.
+          if (keepAliveRef.current) clearInterval(keepAliveRef.current);
+          keepAliveRef.current = setInterval(() => synth.resume(), 7000);
+        };
+        u.onend = () => { stop(); onEnd?.(); };
+        u.onerror = () => { stop(); onEnd?.(); };
+        synth.speak(u);
+      };
+
+      // No Chrome getVoices() vem vazio até carregar — espera o evento na 1ª vez.
+      if (synth.getVoices().length === 0) {
+        let fired = false;
+        const go = () => { if (fired) return; fired = true; synth.onvoiceschanged = null; run(); };
+        synth.onvoiceschanged = go;
+        setTimeout(go, 600);
+      } else {
+        run();
+      }
     },
     [ttsSupported],
   );
 
   const cancelSpeak = useCallback(() => {
+    if (keepAliveRef.current) { clearInterval(keepAliveRef.current); keepAliveRef.current = null; }
     if (ttsSupported) window.speechSynthesis.cancel();
     setSpeaking(false);
   }, [ttsSupported]);

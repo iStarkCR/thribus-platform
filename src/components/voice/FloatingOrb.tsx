@@ -173,6 +173,16 @@ export function FloatingOrb() {
             Bukowiski 👂
           </span>
         )}
+        {/* Estado do modo voz — Ouvindo / Pensando / Respondendo (cor por estado) */}
+        {conv.voiceActive && (
+          <span
+            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.16em] shadow-lg pointer-events-none flex items-center gap-1.5 backdrop-blur"
+            style={{ background: `rgba(${haloColor}/0.16)`, color: `rgb(${haloColor})`, border: `1px solid rgba(${haloColor}/0.45)` }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: `rgb(${haloColor})` }} />
+            {conv.state === 'thinking' ? 'Pensando' : conv.state === 'speaking' ? 'Respondendo' : 'Ouvindo'}
+          </span>
+        )}
       </button>
 
       {chatOpen && (
