@@ -987,7 +987,7 @@ export function TalkPage() {
       {voiceMode && (
         <div
           className="fixed inset-0 z-[65] flex flex-col items-center justify-center overflow-hidden"
-          style={{ background: 'radial-gradient(ellipse at center, rgba(22,42,28,0.55) 0%, #050806 72%)' }}
+          style={{ background: 'radial-gradient(ellipse at center, #162a1c 0%, #050806 72%)' }}
         >
           <style>{`@keyframes orbDot{0%,100%{opacity:.2;transform:scaleY(1)}50%{opacity:1;transform:scaleY(2.4)}}`}</style>
 
