@@ -78,10 +78,14 @@ export class VoiceController {
   private audioQueue: Promise<Blob | null>[] = [];
   private queueRunning = false;
 
-  private readonly SPEECH_THRESHOLD = 0.014; // valor que comprovadamente capta a fala
-  private readonly SILENCE_MS = 1400;
-  private readonly MIN_SPEECH_MS = 400;
-  private readonly MAX_UTTERANCE_MS = 20000;
+  // Threshold de fala é ADAPTATIVO: calibrado pelo ruído de fundo no start().
+  // Fixo travava em "ouvindo" quando o ambiente passava do valor fixo → o
+  // silêncio nunca era detectado e só finalizava no teto de MAX_UTTERANCE.
+  private speechThreshold = 0.014;
+  private noiseFloor = 0.006;
+  private readonly SILENCE_MS = 1100;
+  private readonly MIN_SPEECH_MS = 350;
+  private readonly MAX_UTTERANCE_MS = 15000;
 
   constructor(opts: VoiceControllerOpts) { this.o = opts; }
 
@@ -108,6 +112,7 @@ export class VoiceController {
       a.play().catch(() => { /* noop */ });
       this.persistentAudio = a;
 
+      await this._calibrate();
       this._beginListening();
     } catch (e) {
       this.o.onError?.(e as Error);
@@ -137,6 +142,31 @@ export class VoiceController {
     this.o.onState?.(s);
   }
 
+  // Mede o ruído de fundo por ~500ms e define o limiar de fala relativo a ele.
+  // Ambiente silencioso → limiar baixo (capta fala fraca); barulhento → limiar
+  // mais alto (o silêncio depois da fala fica abaixo dele e finaliza o turno).
+  private async _calibrate(): Promise<void> {
+    if (!this.analyser) return;
+    const buf = new Uint8Array(this.analyser.fftSize);
+    const samples: number[] = [];
+    const t0 = performance.now();
+    await new Promise<void>((res) => {
+      const tick = () => {
+        if (this.cancelled || performance.now() - t0 > 500) return res();
+        this.analyser!.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+        samples.push(Math.sqrt(sum / buf.length));
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    if (this.cancelled || samples.length === 0) return;
+    samples.sort((a, b) => a - b);
+    this.noiseFloor = samples[Math.floor(samples.length / 2)]; // mediana
+    this.speechThreshold = Math.max(0.012, this.noiseFloor * 2.5 + 0.008);
+  }
+
   // ─── Escuta: grava + monitora energia ──────────────────────────────────────
   private _beginListening(): void {
     if (this.cancelled || !this.stream) return;
@@ -164,7 +194,7 @@ export class VoiceController {
       const rms = Math.sqrt(sum / buf.length);
       this.o.onLevel?.(rms);
       const now = performance.now();
-      if (rms > this.SPEECH_THRESHOLD) {
+      if (rms > this.speechThreshold) {
         if (!this.speechActive) { this.speechActive = true; this._setState('speaking'); }
         if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
       } else if (this.speechActive && !this.silenceTimer) {
