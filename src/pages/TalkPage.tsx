@@ -40,8 +40,7 @@ const BUKOWISKI_ID = 'bukowiski-thribus';
  */
 export function TalkPage() {
   const agents = useAppStore((s) => s.agents);
-  const voiceAutostart = useAppStore((s) => s.voiceAutostart);
-  const consumeVoiceAutostart = useAppStore((s) => s.consumeVoiceAutostart);
+  const requestVoiceMode = useAppStore((s) => s.requestVoiceMode);
   const setVoiceModeActive = useAppStore((s) => s.setVoiceModeActive);
   const setSttBusy = useAppStore((s) => s.setSttBusy);
   const { user } = useSession();
@@ -121,14 +120,7 @@ export function TalkPage() {
   }, [voice.listening, voiceMode, setSttBusy]);
   useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
 
-  // Auto-start do modo voz quando vindo do orbe flutuante / wake word.
-  useEffect(() => {
-    if (voiceAutostart && agentId && voice.sttSupported && !voiceModeRef.current) {
-      consumeVoiceAutostart();
-      startVoiceMode();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceAutostart, agentId, voice.sttSupported]);
+  // O modo voz é gerenciado pelo FloatingOrb (motor único). O TalkPage só pede.
 
   // Limpa o flag global de modo voz ao sair da página.
   useEffect(() => () => setVoiceModeActive(false), [setVoiceModeActive]);
@@ -237,12 +229,6 @@ export function TalkPage() {
   function micToggle() {
     if (voice.listening) { voice.stopListening(); setSttBusy(false); }
     else startListenOnce();
-  }
-  function startVoiceMode() {
-    setVoiceMode(true);
-    voiceModeRef.current = true;
-    setVoiceModeActive(true);
-    startListenOnce();
   }
   function stopVoiceMode() {
     setVoiceMode(false);
@@ -551,7 +537,7 @@ export function TalkPage() {
     { id: 'plano', label: planMode ? 'Desligar modo plano' : 'Modo plano', hint: 'planeja antes de executar', icon: <Lightbulb size={15} />, keywords: ['plano', 'plan', 'planejar'], run: () => setPlanMode((p) => !p) },
     { id: 'anexar', label: 'Anexar arquivo', hint: 'img · PDF · vídeo', icon: <Paperclip size={15} />, keywords: ['anexar', 'arquivo', 'file', 'upload', 'attach'], run: () => fileInputRef.current?.click() },
     { id: 'agendar', label: 'Agendar rotina', hint: 'repetir no tempo', icon: <Clock size={15} />, keywords: ['agendar', 'rotina', 'schedule', 'cron'], run: () => setRoutineOpen(true) },
-    ...(voice.sttSupported ? [{ id: 'voz', label: 'Modo voz', hint: 'conversar falando', icon: <AudioLines size={15} />, keywords: ['voz', 'voice', 'falar', 'audio'], run: () => startVoiceMode() }] : []),
+    { id: 'voz', label: 'Modo voz', hint: 'conversar falando', icon: <AudioLines size={15} />, keywords: ['voz', 'voice', 'falar', 'audio'], run: () => requestVoiceMode() },
   ];
   const slashQuery = input.startsWith('/') && !input.includes(' ') && !input.includes('\n') ? input.slice(1).toLowerCase() : null;
   const slashMatches = slashQuery === null ? [] : slashCommands.filter(
@@ -675,15 +661,13 @@ export function TalkPage() {
             </button>
 
             {/* Modo voz — ícone na barra */}
-            {voice.sttSupported && (
-              <button
-                onClick={() => (voiceMode ? stopVoiceMode() : startVoiceMode())}
-                title="Modo voz — conversa falando"
-                className={`w-9 h-9 flex items-center justify-center rounded-xl border transition-colors ${voiceMode ? 'bg-brand/15 border-brand/40 text-brand-bright' : 'bg-surface-2 border-default text-creme-mute hover:text-creme hover:bg-surface-hover'}`}
-              >
-                {voiceMode ? <AudioLines size={16} className="animate-pulse" /> : <Headphones size={16} />}
-              </button>
-            )}
+            <button
+              onClick={() => requestVoiceMode()}
+              title="Modo voz — conversa falando (motor do orbe)"
+              className="w-9 h-9 flex items-center justify-center rounded-xl border bg-surface-2 border-default text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
+            >
+              <Headphones size={16} />
+            </button>
 
             {/* Trocar colaborador */}
             <div className="relative">

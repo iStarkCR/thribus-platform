@@ -22,7 +22,7 @@ export function OrbVoiceOverlay({ conv, onClose }: { conv: OrbConversation; onCl
   return (
     <div
       className="fixed inset-0 z-[62] flex flex-col items-center justify-center overflow-hidden"
-      style={{ background: 'radial-gradient(ellipse at center, rgba(20,46,31,0.94) 0%, #040805 76%)' }}
+      style={{ background: 'radial-gradient(ellipse at center, #142e1f 0%, #040805 76%)' }}
     >
       {/* Rede de fundo — esfera grande bem esmaecida */}
       <div className="absolute inset-0 opacity-[0.18] pointer-events-none">

@@ -4,6 +4,7 @@ import { useAppStore } from '@/hooks/useAppStore';
 import { useWakeWordListener } from '@/hooks/useWakeWordListener';
 import { useOrbConversation } from '@/hooks/useOrbConversation';
 import { OrbChat } from '@/components/voice/OrbChat';
+import { OrbVoiceOverlay } from '@/components/voice/OrbVoiceOverlay';
 
 const ORB_SIZE = 88;
 const MARGIN = 18;
@@ -43,8 +44,17 @@ export function FloatingOrb() {
   const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
   const voiceModeActive = useAppStore((s) => s.voiceModeActive);
   const sttBusy = useAppStore((s) => s.sttBusy);
+  const voiceAutostart = useAppStore((s) => s.voiceAutostart);
+  const consumeVoiceAutostart = useAppStore((s) => s.consumeVoiceAutostart);
 
   const conv = useOrbConversation();
+
+  // Botão "Modo voz" do TalkPage (ou wake word externa) pede o modo voz → liga
+  // o motor único do orbe e abre o overlay imersivo. Um motor só, sessão própria.
+  useEffect(() => {
+    if (voiceAutostart && !conv.voiceActive) { consumeVoiceAutostart(); conv.startVoice(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceAutostart]);
 
   const [pos, setPos] = useState<Pos>(loadPos);
   const [dragging, setDragging] = useState(false);
@@ -189,10 +199,9 @@ export function FloatingOrb() {
         <OrbChat orb={{ x: pos.x, y: pos.y, size: ORB_SIZE }} onClose={() => setChatOpen(false)} conv={conv} />
       )}
 
-      {/* Modo voz por fala (wake word) NÃO abre tela cheia — só a orbe pequena
-          reage (cor/pulso por conv.state). "Bukowiski off" encerra. Igual ao
-          FloatingAssistantOrb do CORTEX. O OrbVoiceOverlay foi removido daqui de
-          propósito; a conversa por voz é gerenciada inteira pelo useOrbConversation. */}
+      {/* Modo voz em tela cheia — MOTOR ÚNICO (VoiceController), acionado pelo
+          clique no orbe, pela wake word ou pelo botão "Modo voz" do TalkPage. */}
+      {conv.voiceActive && <OrbVoiceOverlay conv={conv} onClose={() => conv.stopVoice()} />}
     </>
   );
 }
