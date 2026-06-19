@@ -6,8 +6,9 @@ import { transcribeBlob } from '@/services/voiceSkill';
  * Speech do navegador no modo voz quando o agente usa provider OpenAI.
  *
  * Grava com MediaRecorder e usa um AnalyserNode pra detectar fim de fala
- * (silêncio por ~1.3s) — aí para, manda o áudio pro Whisper e devolve o texto.
- * Transcrição muito mais precisa em pt-BR que o SpeechRecognition do browser.
+ * (silêncio por ~1.1s). O limiar é CALIBRADO pelo ruído de fundo (não fixo),
+ * o AudioContext é forçado a 'running' (Chrome cria 'suspended'), e o áudio
+ * vai pro Whisper sempre que houver fala — transcrição precisa em pt-BR.
  */
 export function useWhisperMic(agentId: string) {
   const [recording, setRecording] = useState(false);
@@ -19,12 +20,12 @@ export function useWhisperMic(agentId: string) {
     stopRef.current = null;
   }, []);
 
-  /** Grava até o silêncio, transcreve via Whisper. onText('') se nada captado. */
   const capture = useCallback(async (onText: (t: string) => void) => {
     if (stopRef.current) return; // já há uma captura em andamento
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const ctx = new AudioContext();
+      if (ctx.state === 'suspended') { try { await ctx.resume(); } catch { /* noop */ } }
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
@@ -34,12 +35,13 @@ export function useWhisperMic(agentId: string) {
       const chunks: BlobPart[] = [];
       rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
 
-      let spoke = false, silenceStart = 0, speakStart = 0, raf = 0, done = false;
+      let spoke = false, silenceStart = 0, raf = 0, done = false;
+      let noiseSum = 0, noiseN = 0, dynThresh = 0.02, calibrated = false;
       const t0 = performance.now();
-      const THRESH = 0.02;      // volume RMS pra considerar "fala"
-      const SILENCE_MS = 1300;  // silêncio após falar → encerra
-      const MAX_MS = 14000;     // teto de duração
-      const MIN_MS = 300;       // fala mínima pra valer (evita ruído curto)
+      const CALIB_MS = 400;     // mede o ruído de fundo no início
+      const SILENCE_MS = 1100;  // silêncio após falar → encerra
+      const MAX_MS = 13000;     // teto de duração
+      const MIN_REC_MS = 500;   // gravação mínima pra valer
 
       const finish = () => {
         if (done) return;
@@ -54,8 +56,11 @@ export function useWhisperMic(agentId: string) {
         stream.getTracks().forEach((t) => t.stop());
         ctx.close().catch(() => { /* noop */ });
         setRecording(false);
-        const spokeMs = speakStart ? performance.now() - speakStart : 0;
-        if (!spoke || spokeMs < MIN_MS) { onText(''); return; }
+        const dur = performance.now() - t0;
+        // envia se detectou fala, ou se gravou quase até o teto (fala que o VAD
+        // pode ter perdido). Silêncio curto → descarta (re-arma sem custo).
+        const worth = chunks.length > 0 && dur >= MIN_REC_MS && (spoke || dur >= MAX_MS - 1500);
+        if (!worth) { onText(''); return; }
         setTranscribing(true);
         const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
         const text = await transcribeBlob(agentId, blob).catch(() => null);
@@ -69,7 +74,13 @@ export function useWhisperMic(agentId: string) {
         for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
         const rms = Math.sqrt(sum / buf.length);
         const now = performance.now();
-        if (rms > THRESH) { if (!spoke) speakStart = now; spoke = true; silenceStart = 0; }
+        if (!calibrated) {
+          if (now - t0 < CALIB_MS) { noiseSum += rms; noiseN++; raf = requestAnimationFrame(tick); return; }
+          const floor = noiseN ? noiseSum / noiseN : 0.01;
+          dynThresh = Math.max(0.013, floor * 2.5); // fala = bem acima do ruído medido
+          calibrated = true;
+        }
+        if (rms > dynThresh) { spoke = true; silenceStart = 0; }
         else if (spoke && !silenceStart) silenceStart = now;
         else if (spoke && silenceStart && now - silenceStart > SILENCE_MS) { finish(); return; }
         if (now - t0 > MAX_MS) { finish(); return; }
