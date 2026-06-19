@@ -201,6 +201,18 @@ export interface SessionUsage {
   lastAt: string | null;
 }
 
+/** Mapa session_id → canal de origem (telegram/talki/thribus). */
+export async function getSessionsChannels(agentId: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!supabase) return out;
+  const { data, error } = await supabase.rpc('chat_session_channels', { p_agent_id: agentId });
+  if (error) throw error;
+  for (const r of (data ?? []) as Array<{ session_id: string; channel: string }>) {
+    out.set(String(r.session_id), r.channel);
+  }
+  return out;
+}
+
 /** Mapa session_id → uso somado (via RPC chat_session_usage). */
 export async function getSessionsUsage(agentId: string): Promise<Map<string, SessionUsage>> {
   const out = new Map<string, SessionUsage>();

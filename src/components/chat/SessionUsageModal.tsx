@@ -4,9 +4,19 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { X, BarChart3, Loader2, ArrowUpDown, MessageSquare } from 'lucide-react';
-import { getSessionsUsage, type ChatSession, type ChatFolder, type SessionUsage } from '@/services/chatSessions';
+import { getSessionsUsage, getSessionsChannels, type ChatSession, type ChatFolder, type SessionUsage } from '@/services/chatSessions';
 
 const CONTEXT_MAX = 1_000_000; // janela do Opus 4.8
+
+// Canal de origem da sessão. Só 'thribus' (painel) tem contexto medido pelo
+// nosso bridge; canais externos gravam por conta própria (valor não-confiável).
+const CHANNELS: Record<string, { label: string; cls: string }> = {
+  thribus: { label: 'Painel', cls: 'bg-brand/15 text-brand-bright' },
+  telegram: { label: 'Telegram', cls: 'bg-sky-500/15 text-sky-300' },
+  talki: { label: 'WhatsApp', cls: 'bg-emerald-500/15 text-emerald-300' },
+  whatsapp: { label: 'WhatsApp', cls: 'bg-emerald-500/15 text-emerald-300' },
+};
+const channelMeta = (c: string | undefined) => CHANNELS[c ?? 'thribus'] ?? { label: c ?? '—', cls: 'bg-surface-3 text-creme-faint' };
 
 const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 const fmtUsd = (n: number) => (n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`);
@@ -36,16 +46,20 @@ export function SessionUsageModal({
   onOpenSession: (id: string) => void;
 }) {
   const [usage, setUsage] = useState<Map<string, SessionUsage> | null>(null);
+  const [channels, setChannels] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('recent');
 
   useEffect(() => {
     let alive = true;
-    getSessionsUsage(agentId)
-      .then((u) => { if (alive) setUsage(u); })
+    Promise.all([getSessionsUsage(agentId), getSessionsChannels(agentId).catch(() => new Map<string, string>())])
+      .then(([u, ch]) => { if (alive) { setUsage(u); setChannels(ch); } })
       .catch((e) => { if (alive) setError((e as Error).message); });
     return () => { alive = false; };
   }, [agentId]);
+
+  // Contexto só é confiável pras sessões do painel (canal 'thribus').
+  const isPanel = (id: string) => (channels.get(id) ?? 'thribus') === 'thribus';
 
   const folderName = useMemo(() => {
     const m = new Map(folders.map((f) => [f.id, f.name]));
@@ -61,7 +75,7 @@ export function SessionUsageModal({
     const arr = [...rows];
     arr.sort((a, b) => {
       switch (sortKey) {
-        case 'context': return b.session.contextTokens - a.session.contextTokens;
+        case 'context': return (isPanel(b.session.id) ? b.session.contextTokens : 0) - (isPanel(a.session.id) ? a.session.contextTokens : 0);
         case 'tokens': return (b.usage?.totalTokens ?? 0) - (a.usage?.totalTokens ?? 0);
         case 'cost': return (b.usage?.costUsd ?? 0) - (a.usage?.costUsd ?? 0);
         case 'runs': return (b.usage?.runs ?? 0) - (a.usage?.runs ?? 0);
@@ -69,7 +83,8 @@ export function SessionUsageModal({
       }
     });
     return arr;
-  }, [rows, sortKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, sortKey, channels]);
 
   const totals = useMemo(() => {
     let tokens = 0, cost = 0, runs = 0;
@@ -118,26 +133,33 @@ export function SessionUsageModal({
               <tbody>
                 {sorted.map(({ session: s, folderName: fn, usage: u }) => {
                   const pct = Math.min(100, (s.contextTokens / CONTEXT_MAX) * 100);
+                  const meta = channelMeta(channels.get(s.id));
+                  const panel = isPanel(s.id);
                   return (
                     <tr
                       key={s.id}
                       onClick={() => { onOpenSession(s.id); onClose(); }}
                       className={`border-b border-default/60 cursor-pointer transition-colors hover:bg-surface-hover ${s.id === activeId ? 'bg-brand/[0.06]' : ''}`}
                     >
-                      <td className="px-4 py-2.5 max-w-[260px]">
+                      <td className="px-4 py-2.5 max-w-[280px]">
                         <div className="flex items-center gap-2 min-w-0">
                           <MessageSquare size={13} className="text-creme-faint shrink-0" />
                           <span className="text-creme-dim truncate font-medium">{s.title}</span>
+                          <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.label}</span>
                         </div>
                         {fn && <div className="text-[10.5px] text-creme-faint pl-[21px] truncate">{fn}</div>}
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                        <div className="flex items-center gap-2 justify-end">
-                          <div className="w-12 h-1.5 rounded-full bg-surface-3 overflow-hidden">
-                            <div className={`h-full rounded-full ${pct >= 85 ? 'bg-amber-400' : 'bg-brand'}`} style={{ width: `${pct}%` }} />
+                        {panel ? (
+                          <div className="flex items-center gap-2 justify-end">
+                            <div className="w-12 h-1.5 rounded-full bg-surface-3 overflow-hidden">
+                              <div className={`h-full rounded-full ${pct >= 85 ? 'bg-amber-400' : 'bg-brand'}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="font-mono text-creme-mute">{fmtTokens(s.contextTokens)}</span>
                           </div>
-                          <span className="font-mono text-creme-mute">{fmtTokens(s.contextTokens)}</span>
-                        </div>
+                        ) : (
+                          <span className="font-mono text-creme-faint" title="Sem dado confiável — o contexto de canal externo não é medido pelo painel">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono text-creme-mute whitespace-nowrap">{u ? fmtTokens(u.totalTokens) : '—'}</td>
                       <td className="px-4 py-2.5 text-right font-mono text-creme-mute whitespace-nowrap">{u ? fmtUsd(u.costUsd) : '—'}</td>
@@ -151,8 +173,8 @@ export function SessionUsageModal({
           )}
         </div>
 
-        <div className="px-5 py-2.5 border-t border-default text-[11px] text-creme-faint shrink-0">
-          <span className="font-semibold text-creme-mute">Contexto</span> = janela atual da conversa (X/1M). <span className="font-semibold text-creme-mute">Tokens</span> = total processado em todas as execuções da sessão.
+        <div className="px-5 py-2.5 border-t border-default text-[11px] text-creme-faint shrink-0 leading-relaxed">
+          <span className="font-semibold text-creme-mute">Contexto</span> = janela atual da conversa (X/1M) — só medido nas sessões do <span className="text-brand-bright">Painel</span>. <span className="font-semibold text-creme-mute">Tokens</span> = total processado nas execuções. Canais externos (Telegram/WhatsApp) rodam por outro bridge, então aparecem com "—".
         </div>
       </div>
     </div>
