@@ -39,7 +39,7 @@ export function useVoice() {
 
   // ─── STT ──────────────────────────────────────────────────────────────────
   const startListening = useCallback(
-    (onResult: (text: string) => void) => {
+    (onResult: (text: string) => void, onIdle?: () => void) => {
       if (!SR) return;
       recogRef.current?.stop(); // nunca deixa dois reconhecimentos rodando juntos
       const recog = new SR();
@@ -64,6 +64,7 @@ export function useVoice() {
           delivered = true;
           const t = finalText.trim();
           if (t) onResult(t);
+          else onIdle?.(); // terminou sem captura (silêncio/timeout) → re-armar
         }
       };
       recog.onerror = () => setListening(false);
@@ -145,6 +146,20 @@ export function useVoice() {
     setSpeaking(false);
   }, [ttsSupported]);
 
+  // Destrava o TTS DENTRO de um gesto do usuário (clique). O Chrome bloqueia
+  // speechSynthesis quando o speak() real vem segundos depois, fora de gesto —
+  // um utterance mudo aqui "aquece" o sintetizador pra falar a resposta depois.
+  const unlock = useCallback(() => {
+    if (!ttsSupported) return;
+    try {
+      const synth = window.speechSynthesis;
+      synth.resume();
+      const u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0;
+      synth.speak(u);
+    } catch { /* noop */ }
+  }, [ttsSupported]);
+
   useEffect(() => {
     return () => {
       recogRef.current?.stop();
@@ -152,5 +167,5 @@ export function useVoice() {
     };
   }, [ttsSupported]);
 
-  return { listening, speaking, sttSupported, ttsSupported, startListening, stopListening, speak, cancelSpeak };
+  return { listening, speaking, sttSupported, ttsSupported, startListening, stopListening, speak, cancelSpeak, unlock };
 }

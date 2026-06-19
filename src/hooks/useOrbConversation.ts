@@ -98,11 +98,19 @@ export function useOrbConversation() {
     voice.speak(text, onEnd);
   }, [voice]);
 
-  // onResult/send/startListenOnce referenciam-se; declarados como function (hoisted).
+  // onResult/onIdle/send/startListenOnce referenciam-se; hoisted como function.
   const startListenOnce = useCallback(() => {
-    if (voice.sttSupported) voice.startListening(onResult);
+    if (voice.sttSupported) voice.startListening(onResult, onIdle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice]);
+
+  // STT terminou sem captura (silêncio/timeout do Chrome): se ainda em modo voz
+  // e sem resposta pendente, re-arma o mic — senão o orbe trava em "Ouvindo".
+  function onIdle() {
+    if (voiceActiveRef.current && !waitingRef.current) {
+      setTimeout(() => { if (voiceActiveRef.current && !waitingRef.current && !voice.speaking) startListenOnce(); }, 350);
+    }
+  }
 
   const stopVoice = useCallback(() => {
     setVoiceActive(false);
@@ -125,10 +133,11 @@ export function useOrbConversation() {
   function setInputFromVoice(text: string) { inputSinkRef.current?.(text); }
 
   const startVoice = useCallback(() => {
+    voice.unlock(); // destrava o TTS dentro do gesto do clique (pra falar a resposta depois)
     setVoiceActive(true);
     voiceActiveRef.current = true;
     startListenOnce();
-  }, [startListenOnce]);
+  }, [voice, startListenOnce]);
 
   async function send(textArg: string) {
     const text = textArg.trim();
