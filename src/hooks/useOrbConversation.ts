@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
+import { useWhisperMic } from '@/hooks/useWhisperMic';
 import { useAppStore } from '@/hooks/useAppStore';
 import { listMessages, sendMessage, subscribeChat, type ChatMessage } from '@/services/collaboratorChat';
 import { listSessions, createSession, touchSession } from '@/services/chatSessions';
@@ -35,6 +36,8 @@ export function useOrbConversation() {
   const { user } = useSession();
   const userId = user?.id ?? null;
   const voice = useVoice();
+  const whisper = useWhisperMic(BUKOWISKI_ID);
+  const speakingRef = useRef(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -104,26 +107,34 @@ export function useOrbConversation() {
 
   // onResult/onIdle/send/startListenOnce referenciam-se; hoisted como function.
   const startListenOnce = useCallback(() => {
-    if (voice.sttSupported) voice.startListening(onResult, onIdle);
+    const cfg = cfgRef.current;
+    // STT do backend (Whisper) quando o agente é OpenAI — transcrição precisa.
+    // Senão, Web Speech do navegador (fallback).
+    if (cfg?.provider === 'openai' && cfg.sttEnabled) {
+      whisper.capture((t) => { if (t) onResult(t); else onIdle(); });
+    } else if (voice.sttSupported) {
+      voice.startListening(onResult, onIdle);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice]);
+  }, [voice, whisper]);
 
-  // STT terminou sem captura (silêncio/timeout do Chrome): se ainda em modo voz
-  // e sem resposta pendente, re-arma o mic — senão o orbe trava em "Ouvindo".
+  // STT terminou sem captura (silêncio/timeout): se ainda em modo voz e sem
+  // resposta pendente nem falando, re-arma o mic — senão trava em "Ouvindo".
   function onIdle() {
     if (voiceActiveRef.current && !waitingRef.current) {
-      setTimeout(() => { if (voiceActiveRef.current && !waitingRef.current && !voice.speaking) startListenOnce(); }, 350);
+      setTimeout(() => { if (voiceActiveRef.current && !waitingRef.current && !speakingRef.current) startListenOnce(); }, 350);
     }
   }
 
   const stopVoice = useCallback(() => {
     setVoiceActive(false);
     voiceActiveRef.current = false;
+    whisper.cancel();
     voice.stopListening();
     voice.cancelSpeak();
     audioRef.current?.pause();
     setSpeakingProvider(false);
-  }, [voice]);
+  }, [voice, whisper]);
 
   function onResult(text: string) {
     if (!voiceActiveRef.current) { setInputFromVoice(text); return; }
@@ -182,13 +193,20 @@ export function useOrbConversation() {
   waitingRef.current = waiting;
 
   const speaking = voice.speaking || speakingProvider;
-  const state: VoiceState = !voiceActive ? 'idle' : speaking ? 'speaking' : waiting ? 'thinking' : 'listening';
+  speakingRef.current = speaking;
+  const state: VoiceState = !voiceActive
+    ? 'idle'
+    : speaking
+      ? 'speaking'
+      : (waiting || whisper.transcribing)
+        ? 'thinking'
+        : 'listening';
 
   return {
     messages,
     voiceActive,
     state,
-    listening: voice.listening,
+    listening: voice.listening || whisper.recording,
     speaking,
     waiting,
     sttSupported: voice.sttSupported,
