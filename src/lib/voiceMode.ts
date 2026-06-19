@@ -78,10 +78,10 @@ export class VoiceController {
   private audioQueue: Promise<Blob | null>[] = [];
   private queueRunning = false;
 
-  private readonly SPEECH_THRESHOLD = 0.04;
-  private readonly SILENCE_MS = 1200;
+  private readonly SPEECH_THRESHOLD = 0.014; // valor que comprovadamente capta a fala
+  private readonly SILENCE_MS = 1400;
   private readonly MIN_SPEECH_MS = 400;
-  private readonly MAX_UTTERANCE_MS = 25000;
+  private readonly MAX_UTTERANCE_MS = 20000;
 
   constructor(opts: VoiceControllerOpts) { this.o = opts; }
 
@@ -91,7 +91,7 @@ export class VoiceController {
     this.cancelled = false;
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: { echoCancellation: true, noiseSuppression: true },
       });
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.audioCtx = new Ctx();
@@ -172,7 +172,7 @@ export class VoiceController {
           if (performance.now() - this.recordStart >= this.MIN_SPEECH_MS) this._finalizeUtterance();
         }, this.SILENCE_MS);
       }
-      if (now - this.recordStart > this.MAX_UTTERANCE_MS && this.speechActive) { this._finalizeUtterance(); return; }
+      if (now - this.recordStart > this.MAX_UTTERANCE_MS) { this._finalizeUtterance(); return; } // teto absoluto (não trava)
       this.rafId = requestAnimationFrame(tick);
     };
     this.rafId = requestAnimationFrame(tick);
@@ -182,6 +182,7 @@ export class VoiceController {
     if (this.cancelled) return;
     if (this.rafId) cancelAnimationFrame(this.rafId);
     if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
+    const hadSpeech = this.speechActive; // só transcreve se detectou fala de verdade
     const dur = performance.now() - this.recordStart;
     const rec = this.recorder;
     this.recorder = null;
@@ -190,7 +191,7 @@ export class VoiceController {
 
     const stopped = new Promise<void>((res) => { if (rec && rec.state !== 'inactive') { rec.onstop = () => res(); rec.stop(); } else res(); });
     await stopped;
-    if (this.cancelled || chunks.length === 0) { if (!this.cancelled) this._beginListening(); return; }
+    if (this.cancelled || chunks.length === 0 || !hadSpeech) { if (!this.cancelled) this._beginListening(); return; }
 
     this._setState('processing');
     try {
