@@ -78,13 +78,14 @@ export class VoiceController {
   private audioQueue: Promise<Blob | null>[] = [];
   private queueRunning = false;
 
-  // Valores PROVADOS do CORTEX (voiceMode.js). O autoGainControl no mic normaliza
-  // o nível de entrada, então um threshold fixo de 0.045 funciona em qualquer
-  // ambiente — sem ele e com limiar baixo, o ruído travava em "ouvindo".
-  private readonly SPEECH_THRESHOLD = 0.045;
+  // VAD adaptativo: o limiar de fala é RELATIVO ao ruído de fundo, medido
+  // continuamente. Limiar fixo não funciona entre micros/ganhos diferentes —
+  // num setup a fala não cruzava o valor e travava em "ouvindo" pra sempre.
+  private noiseFloor = 0.015;
   private readonly SILENCE_MS = 1200;
   private readonly MIN_SPEECH_MS = 400;
   private readonly MAX_UTTERANCE_MS = 30000;
+  private _vadLogAt = 0;
 
   constructor(opts: VoiceControllerOpts) { this.o = opts; }
 
@@ -167,15 +168,27 @@ export class VoiceController {
       const rms = Math.sqrt(sum / buf.length);
       this.o.onLevel?.(rms);
       const now = performance.now();
-      if (rms > this.SPEECH_THRESHOLD) {
+      // Limiar relativo ao ruído de fundo: fala é bem mais alta que o piso.
+      const threshold = Math.max(0.02, this.noiseFloor * 2.2);
+      if (now - this._vadLogAt > 600) {
+        this._vadLogAt = now;
+        console.debug(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive}`);
+      }
+      if (rms > threshold) {
         if (!this.speechActive) { this.speechActive = true; this._setState('speaking'); }
         if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
-      } else if (this.speechActive && !this.silenceTimer) {
-        this.silenceTimer = setTimeout(() => {
-          if (performance.now() - this.recordStart >= this.MIN_SPEECH_MS) this._finalizeUtterance();
-        }, this.SILENCE_MS);
+      } else {
+        // Sem fala: o piso de ruído acompanha o ambiente (média móvel).
+        if (!this.speechActive) this.noiseFloor = this.noiseFloor * 0.9 + rms * 0.1;
+        if (this.speechActive && !this.silenceTimer) {
+          this.silenceTimer = setTimeout(() => {
+            this.silenceTimer = null;
+            if (performance.now() - this.recordStart >= this.MIN_SPEECH_MS) this._finalizeUtterance();
+          }, this.SILENCE_MS);
+        }
       }
-      if (now - this.recordStart > this.MAX_UTTERANCE_MS) { this._finalizeUtterance(); return; } // teto absoluto (não trava)
+      // Teto só finaliza se houve fala — senão re-ouve no _finalizeUtterance.
+      if (now - this.recordStart > this.MAX_UTTERANCE_MS && this.speechActive) { this._finalizeUtterance(); return; }
       this.rafId = requestAnimationFrame(tick);
     };
     this.rafId = requestAnimationFrame(tick);
@@ -194,12 +207,14 @@ export class VoiceController {
 
     const stopped = new Promise<void>((res) => { if (rec && rec.state !== 'inactive') { rec.onstop = () => res(); rec.stop(); } else res(); });
     await stopped;
+    console.debug(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms chunks=${chunks.length}`);
     if (this.cancelled || chunks.length === 0 || !hadSpeech) { if (!this.cancelled) this._beginListening(); return; }
 
     this._setState('processing');
     try {
       const blob = new Blob(chunks, { type: rec?.mimeType || 'audio/webm' });
       const text = (await this.o.transcribe(blob, dur)).trim();
+      console.debug(`[voz] transcrito: "${text}"`);
       if (this.cancelled) return;
       if (!text || this.o.isNoise?.(text)) { this._beginListening(); return; } // sem fala de verdade → re-ouve
       this.o.onTranscript?.(text);
