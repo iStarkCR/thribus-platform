@@ -51,7 +51,7 @@ export function FloatingOrb() {
   const [hovered, setHovered] = useState(false);
   const [wakeFlash, setWakeFlash] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number } | null>(null);
+  const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number; shift: boolean; right: boolean } | null>(null);
 
   // Mantém o orbe dentro da viewport ao redimensionar.
   useEffect(() => {
@@ -78,7 +78,7 @@ export function FloatingOrb() {
   // ─── Drag ──────────────────────────────────────────────────────────────────
   const onPointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    dragState.current = { moved: false, offX: e.clientX - pos.x, offY: e.clientY - pos.y, startX: e.clientX, startY: e.clientY };
+    dragState.current = { moved: false, offX: e.clientX - pos.x, offY: e.clientY - pos.y, startX: e.clientX, startY: e.clientY, shift: e.shiftKey, right: e.button === 2 };
     setDragging(true);
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -96,8 +96,14 @@ export function FloatingOrb() {
       const final = clamp({ x: e.clientX - ds.offX, y: e.clientY - ds.offY });
       setPos(final);
       if (typeof localStorage !== 'undefined') localStorage.setItem(POS_KEY, JSON.stringify(final));
+    } else if (ds.shift || ds.right) {
+      // Shift+click ou botão direito → conversa por TEXTO (popover). Igual ao CORTEX.
+      if (conv.voiceActive) conv.stopVoice();
+      setChatOpen((o) => !o);
     } else {
-      setChatOpen((o) => !o); // clique sem arrastar → abre/fecha a conversa
+      // Clique normal → MODO VOZ (toggle), igual ao orbe do CORTEX.
+      setChatOpen(false);
+      if (conv.voiceActive) conv.stopVoice(); else conv.startVoice();
     }
   };
 
@@ -113,11 +119,12 @@ export function FloatingOrb() {
   return (
     <>
       <button
-        aria-label="Conversar com o Bukowiski"
-        title="Conversar com o Bukowiski"
+        aria-label="Falar com o Bukowiski"
+        title="Clique pra falar · Shift+click pra texto · Arraste pra mover"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onContextMenu={(e) => e.preventDefault()}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
         className="fixed z-[60] rounded-full select-none touch-none group transition-transform duration-200"
