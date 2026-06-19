@@ -7,6 +7,8 @@ import { listSessions, createSession, touchSession } from '@/services/chatSessio
 import { getVoiceConfig, ttsBlob, type VoiceConfig } from '@/services/voiceSkill';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
+// WAV silencioso — tocado no gesto do clique pra destravar autoplay do <audio>.
+const SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 
 function norm(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -85,8 +87,10 @@ export function useOrbConversation() {
       try {
         const blob = await ttsBlob(BUKOWISKI_ID, text);
         if (blob) {
-          const a = new Audio(URL.createObjectURL(blob));
-          audioRef.current = a;
+          // Reusa o <audio> já destravado no clique (autoplay) em vez de criar um novo.
+          const a = audioRef.current ?? (audioRef.current = new Audio());
+          a.muted = false;
+          a.src = URL.createObjectURL(blob);
           setSpeakingProvider(true);
           const done = () => { setSpeakingProvider(false); onEnd?.(); };
           a.onended = done; a.onerror = done;
@@ -133,7 +137,14 @@ export function useOrbConversation() {
   function setInputFromVoice(text: string) { inputSinkRef.current?.(text); }
 
   const startVoice = useCallback(() => {
-    voice.unlock(); // destrava o TTS dentro do gesto do clique (pra falar a resposta depois)
+    voice.unlock(); // destrava o speechSynthesis (fallback) dentro do gesto do clique
+    // destrava autoplay do <audio> do TTS backend tocando um silêncio no gesto
+    try {
+      const a = audioRef.current ?? (audioRef.current = new Audio());
+      a.muted = true;
+      a.src = SILENCE;
+      a.play().catch(() => {});
+    } catch { /* noop */ }
     setVoiceActive(true);
     voiceActiveRef.current = true;
     startListenOnce();
