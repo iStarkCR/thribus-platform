@@ -242,13 +242,16 @@ export class VoiceController {
     const { sentences, remaining } = extractSentences(clean + '\n');
     const all = [...sentences];
     if (remaining.trim().length >= 3) all.push(remaining.trim());
+    console.log(`[voz] resposta: ${reply.length} chars, ${all.length} frase(s) p/ TTS`);
     for (const s of all) this._enqueue(s);
     await this._waitQueue();
     if (!this.cancelled) this._beginListening();
   }
 
   private _enqueue(sentence: string): void {
-    const p = this.o.tts(sentence).catch(() => null);
+    const p = this.o.tts(sentence)
+      .then((b) => { console.log(`[voz] tts "${sentence.slice(0, 24)}…" → ${b?.size ?? 0} bytes`); return b; })
+      .catch((e) => { console.log(`[voz] tts ERRO: ${(e as Error).message}`); return null; });
     this.audioQueue.push(p);
     if (!this.queueRunning) this._drainQueue();
   }
@@ -280,10 +283,11 @@ export class VoiceController {
       audio.src = url;
       audio.muted = false;
       this._setState('playing');
+      console.log(`[voz] tocando áudio (${blob.size} bytes)`);
       const done = () => { URL.revokeObjectURL(url); resolve(); };
       audio.onended = done;
       audio.onerror = done;
-      audio.play().catch(() => { this.o.onError?.(new Error('Áudio bloqueado pelo navegador. Clique na esfera de novo.')); done(); });
+      audio.play().catch((e) => { console.log(`[voz] play bloqueado: ${(e as Error).message}`); this.o.onError?.(new Error('Áudio bloqueado pelo navegador. Clique na esfera de novo.')); done(); });
     });
   }
 }
