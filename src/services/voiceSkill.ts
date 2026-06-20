@@ -69,10 +69,21 @@ export async function saveVoiceConfig(agentId: string, cfg: VoiceConfig): Promis
 /** TTS via provider configurado. Retorna Blob de áudio, ou null se for navegador. */
 export async function ttsBlob(agentId: string, text: string): Promise<Blob | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.functions.invoke('tts', { body: { agentId, text } });
-  if (error) throw error;
-  if (data instanceof Blob && data.type.includes('audio')) return data;
-  return null;
+  // fetch CRU (não supabase.functions.invoke): a função retorna audio/mpeg, e o
+  // invoke só converte pra Blob quando Content-Type é application/octet-stream —
+  // p/ audio/mpeg ele faz .text() e corrompe o binário. Lemos response.blob().
+  const url = import.meta.env.VITE_SUPABASE_URL ?? '';
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
+  const { data: s } = await supabase.auth.getSession();
+  const token = s?.session?.access_token ?? anonKey;
+  const r = await fetch(`${url}/functions/v1/tts`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, apikey: anonKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agentId, text }),
+  });
+  if (!r.ok) throw new Error(`tts HTTP ${r.status}`);
+  const blob = await r.blob();
+  return blob.size > 0 && blob.type.includes('audio') ? blob : null;
 }
 
 /** Transcreve áudio via Whisper (OpenAI). Retorna texto ou null. */
