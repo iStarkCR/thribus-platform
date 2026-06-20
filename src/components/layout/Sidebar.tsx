@@ -3,9 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   ChevronRight, Zap, Settings, Building2, Bell, Lock,
-  LogOut, User, Moon, HelpCircle, PanelLeftClose, PanelLeft,
+  LogOut, User, Moon, HelpCircle, PanelLeftClose, PanelLeft, Sparkles,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
+import { useGlass } from '@/hooks/useTheme';
 import { useSession } from '@/hooks/useSession';
 import { useAccess } from '@/hooks/useRole';
 import { NAV_ITEMS } from '@/lib/nav';
@@ -26,7 +27,7 @@ export function Sidebar() {
     .filter((g) => g.items.length > 0);
 
   return (
-    <aside className={clsx('fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-50 transition-[width] duration-200', collapsed ? 'w-[64px]' : 'w-[244px]')}>
+    <aside className={clsx('glass-panel fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-50 transition-[width] duration-200', collapsed ? 'w-[64px]' : 'w-[244px]')}>
       {/* Brand + sino + recolher */}
       <div className={clsx('h-14 flex items-center border-b border-default shrink-0', collapsed ? 'justify-center px-2' : 'px-3 gap-2.5')}>
         <div className="w-[30px] h-[30px] rounded-lg bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center shrink-0">
@@ -122,6 +123,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   const role = (user?.user_metadata?.role as string | undefined) ?? 'CEO · Thribus Tech';
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase();
 
+  const { glass, toggle: toggleGlass } = useGlass();
   const go = (path: string) => { navigate(path); setOpen(false); };
   const logout = async () => {
     setOpen(false);
@@ -174,6 +176,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
           <div className="border-t border-default" />
           <MenuItem icon={<HelpCircle size={13} />} label="Ajuda & Academy" onClick={() => go('/help')} />
           <MenuItem icon={<Moon size={13} />} label="Aparência / Tema" onClick={() => go('/settings')} />
+          <MenuItem icon={<Sparkles size={13} />} label={glass ? 'Liquid Glass · ligado' : 'Liquid Glass'} onClick={() => toggleGlass()} />
           <div className="border-t border-default" />
           <MenuItem icon={<LogOut size={13} />} label="Sair" danger onClick={logout} />
         </div>

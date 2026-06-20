@@ -896,7 +896,7 @@ export function TalkPage() {
               onCancel={() => setRecording(false)}
             />
           ) : (
-          <div className="relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
+          <div className="glass-panel relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
             {slashOpen && (
               <div className="absolute bottom-full mb-2 left-0 right-0 z-[61] rounded-xl border border-default bg-surface-1 shadow-2xl p-1.5 max-h-72 overflow-y-auto">
                 <div className="px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-creme-faint">Comandos</div>

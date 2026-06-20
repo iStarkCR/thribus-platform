@@ -25,7 +25,7 @@ export function Modal({ title, subtitle, children, footer, onClose, maxWidth = '
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="bg-surface-1 border border-hover rounded-2xl w-full overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.6)] animate-modal-in"
+        className="glass-panel bg-surface-1 border border-hover rounded-2xl w-full overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.6)] animate-modal-in"
         style={{ maxWidth, maxHeight: '85vh' }}
       >
         {/* Header */}

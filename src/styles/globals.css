@@ -154,4 +154,38 @@
   .textarea {
     @apply input min-h-[80px] resize-y leading-relaxed;
   }
+
+  /* ─── Liquid Glass (tema opcional via <html class="glass">) ──────────────────
+   * Material translúcido nos painéis do shell + aurora sutil ao fundo (estilo
+   * Apple "Liquid Glass"). NÃO afeta o orbe nem as esferas (componentes à parte).
+   * `.glass-panel` é inerte sem a classe `glass` no html — liga/desliga limpo. */
+  html.glass body { background-color: #060a06; }
+  html.glass body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(46% 38% at 14% 8%,  rgba(140,196,122,0.13), transparent 62%),
+      radial-gradient(42% 36% at 90% 14%, rgba(96,165,250,0.07),  transparent 60%),
+      radial-gradient(58% 50% at 82% 96%, rgba(107,143,94,0.18),  transparent 64%),
+      radial-gradient(40% 34% at 24% 92%, rgba(168,212,150,0.09), transparent 60%);
+    animation: glassAurora 26s ease-in-out infinite alternate;
+  }
+  @keyframes glassAurora {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to   { transform: translate3d(0, -1.5%, 0) scale(1.06); }
+  }
+  html.glass #root { position: relative; z-index: 1; }
+
+  html.glass .glass-panel {
+    background: rgba(16, 24, 16, 0.55) !important;
+    backdrop-filter: blur(22px) saturate(135%);
+    -webkit-backdrop-filter: blur(22px) saturate(135%);
+    border-color: rgba(237, 232, 220, 0.12) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 12px 34px rgba(0, 0, 0, 0.28);
+  }
+  html.glass .glass-soft {
+    background: rgba(20, 30, 20, 0.42) !important;
+    backdrop-filter: blur(16px) saturate(130%);
+    -webkit-backdrop-filter: blur(16px) saturate(130%);
+  }
 }

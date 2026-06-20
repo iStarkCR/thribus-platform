@@ -1,11 +1,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
-import { initTheme } from './hooks/useTheme';
+import { initTheme, initGlass } from './hooks/useTheme';
 import './styles/globals.css';
 
 // Aplica tema persistido ANTES de montar o React (evita flash de tema errado)
 initTheme();
+initGlass();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

@@ -71,3 +71,38 @@ export function useTheme(): { theme: Theme; setTheme: (t: Theme) => void; toggle
 
   return { theme, setTheme, toggle };
 }
+
+/* ─── Liquid Glass (tema opcional, independente do light/dark) ─────────────── */
+const GLASS_KEY = 'thribus.glass';
+const GLASS_EVENT = 'thribus-glass-change';
+
+function readGlass(): boolean {
+  if (typeof window === 'undefined') return false;
+  try { return localStorage.getItem(GLASS_KEY) === '1'; } catch { return false; }
+}
+function applyGlass(on: boolean): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.classList.toggle('glass', on);
+}
+/** Aplica o estado de glass ANTES do React montar (evita flash). */
+export function initGlass(): void { applyGlass(readGlass()); }
+
+export function useGlass(): { glass: boolean; toggle: () => void } {
+  const [glass, setGlass] = useState<boolean>(readGlass);
+  useEffect(() => {
+    const onSync = (e: Event) => {
+      const detail = (e as CustomEvent<{ on: boolean }>).detail;
+      if (detail) { setGlass(detail.on); applyGlass(detail.on); }
+    };
+    window.addEventListener(GLASS_EVENT, onSync);
+    return () => window.removeEventListener(GLASS_EVENT, onSync);
+  }, []);
+  const toggle = () => {
+    const next = !readGlass();
+    setGlass(next);
+    applyGlass(next);
+    try { localStorage.setItem(GLASS_KEY, next ? '1' : '0'); } catch { /* ignora */ }
+    window.dispatchEvent(new CustomEvent(GLASS_EVENT, { detail: { on: next } }));
+  };
+  return { glass, toggle };
+}
