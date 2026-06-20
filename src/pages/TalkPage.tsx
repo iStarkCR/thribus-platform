@@ -1132,18 +1132,28 @@ export function TalkPage() {
             const color = panelVoiceState === 'thinking' ? '244 194 103' : panelVoiceState === 'speaking' ? '127 176 245' : '124 217 154';
             const label = panelVoiceState === 'speaking' ? 'Respondendo' : panelVoiceState === 'thinking' ? 'Pensando' : panelVoiceState === 'talking' ? 'Você falando' : 'Ouvindo';
             const intensity = panelVoiceState === 'speaking' ? 0.95 : panelVoiceState === 'thinking' ? 0.5 : 0.4 + panelLevel * 0.55;
+            const talking = panelVoiceState === 'talking';
+            const responding = panelVoiceState === 'speaking';
+            const reacting = talking || responding;
+            // Você falando → escala com o nível do mic. Ele respondendo → respira ritmado.
+            const sphereScale = talking ? 1 + panelLevel * 0.16 : 1;
+            const sphereAnim = responding ? 'voiceBreathe 1.5s ease-in-out infinite' : undefined;
             return (
               <div className="relative z-10 flex flex-col items-center gap-8">
+                <style>{`@keyframes orbSpin{to{transform:rotate(360deg)}}@keyframes voiceBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}@keyframes voiceRipple{0%{transform:scale(0.9);opacity:.55}100%{transform:scale(1.7);opacity:0}}`}</style>
                 <div className="relative aspect-square w-[min(60vmin,540px)]">
+                  {/* Ondas (ripple) emanando — quando você fala ou ele responde */}
+                  {reacting && [0, 1, 2].map((i) => (
+                    <span key={i} className="absolute inset-0 rounded-full border-2 pointer-events-none" style={{ borderColor: `rgba(${color}/0.5)`, animation: `voiceRipple ${responding ? 1.9 : 1.5}s ease-out ${i * 0.55}s infinite` }} />
+                  ))}
                   <div
-                    className="absolute inset-0 rounded-full overflow-hidden transition-[filter] duration-500"
-                    style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', filter: hue ? `hue-rotate(${hue}deg)` : undefined }}
+                    className="absolute inset-0 rounded-full overflow-hidden transition-[filter,transform] duration-300"
+                    style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', filter: hue ? `hue-rotate(${hue}deg)` : undefined, transform: `scale(${sphereScale})`, animation: sphereAnim }}
                   >
                     <NeuralSphere className="absolute inset-0" intensity={intensity} interactionMultiplier={0} parallaxMultiplier={0} ambient={false} />
                   </div>
-                  <div className="absolute -inset-6 rounded-full pointer-events-none transition-all duration-500" style={{ background: `radial-gradient(circle, rgba(${color}/0.22) 0%, transparent 66%)` }} />
+                  <div className="absolute -inset-6 rounded-full pointer-events-none transition-all duration-500" style={{ background: `radial-gradient(circle, rgba(${color}/${reacting ? 0.32 : 0.22}) 0%, transparent 66%)` }} />
                   <div className="absolute -inset-[7%] rounded-full border border-dashed pointer-events-none" style={{ borderColor: `rgba(${color}/0.3)`, animation: 'orbSpin 18s linear infinite' }} />
-                  <style>{`@keyframes orbSpin{to{transform:rotate(360deg)}}`}</style>
                 </div>
                 <div className="flex items-center gap-2.5 px-5 py-2 rounded-full border backdrop-blur transition-all duration-300" style={{ borderColor: `rgba(${color}/0.4)`, background: `rgba(${color}/0.08)` }}>
                   <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: `rgb(${color})` }} />
@@ -1218,14 +1228,6 @@ export function TalkPage() {
             </div>
             );
           })()}
-
-          {/* Encerrar — botão claro */}
-          <button
-            onClick={stopPanelVoice}
-            className="absolute bottom-10 z-10 px-5 py-2.5 rounded-full border border-default bg-surface-1/70 backdrop-blur text-[12px] font-semibold uppercase tracking-[0.2em] text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
-          >
-            Encerrar
-          </button>
         </div>
       )}
     </div>
