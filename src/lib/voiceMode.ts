@@ -91,7 +91,9 @@ export class VoiceController {
   private playResolve: (() => void) | null = null;
 
   // VAD adaptativo: limiar RELATIVO ao ruído de fundo (média móvel).
-  private noiseFloor = 0.015;
+  private noiseFloor = 0.02;
+  private _above = 0; // frames seguidos acima do limiar (debounce do início da fala)
+  private readonly ONSET_FRAMES = 4; // ~65ms — ignora estalo/clique/eco curto
   private readonly SILENCE_MS = 1100;
   private readonly MIN_SPEECH_MS = 350;
   private readonly MAX_UTTERANCE_MS = 30000;
@@ -197,20 +199,23 @@ export class VoiceController {
       const rms = Math.sqrt(sum / buf.length);
       this.o.onLevel?.(rms);
       const now = performance.now();
-      const base = Math.max(0.02, this.noiseFloor * 2.2);
-      // Durante o playback exige fala mais clara (anti-eco) pra cortar a resposta.
-      const threshold = this.playing ? Math.max(base, 0.07, this.noiseFloor * 4) : base;
+      const base = Math.max(0.035, this.noiseFloor * 2.8);
+      // Durante o playback exige fala BEM mais clara (anti-eco) pra cortar a resposta.
+      const threshold = this.playing ? Math.max(base, 0.12, this.noiseFloor * 5) : base;
       if (now - this._vadLogAt > 700) {
         this._vadLogAt = now;
         console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} play=${this.playing}`);
       }
       if (rms > threshold) {
-        if (!this.speechActive) {
+        // Só conta como fala após ONSET_FRAMES seguidos acima do limiar (debounce).
+        this._above++;
+        if (!this.speechActive && this._above >= this.ONSET_FRAMES) {
           this.speechActive = true;
           this._onSpeechStart();
         }
         if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
       } else {
+        this._above = 0;
         // Piso de ruído só acompanha o ambiente quando NÃO há fala nem playback
         // (senão a voz do próprio assistente inflaria o piso).
         if (!this.speechActive && !this.playing) this.noiseFloor = this.noiseFloor * 0.9 + rms * 0.1;
