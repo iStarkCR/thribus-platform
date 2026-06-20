@@ -17,7 +17,7 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 // Ex.: "Bukowiski" (w com som de v) → "Bukoviski"; "Thribus" → "Tríbus".
 function phonetic(text: string): string {
   return text
-    .replace(/Bukowiski/gi, 'Bukoviski')
+    .replace(/Bukowiski/gi, 'Bukóviski')
     .replace(/Thribus/gi, 'Tríbus');
 }
 
