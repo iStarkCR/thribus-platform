@@ -86,10 +86,10 @@ export function DashboardPage() {
   }, [executions, range, prevRange]);
 
   const metricCards = [
-    { icon: Bot, label: 'Colaboradores Ativos', value: metrics?.activeAgents ?? 0, trend: metrics?.trends.agents ?? 0, style: 'bg-brand/10 text-brand-bright' },
-    { icon: MessageSquare, label: 'Atendimentos Hoje', value: metrics?.totalToday ?? 0, trend: metrics?.trends.conversations ?? 0, style: 'bg-semantic-blue/10 text-semantic-blue' },
-    { icon: CheckCircle, label: 'Taxa de Resolução', value: `${metrics?.resolutionRate ?? 0}%`, trend: metrics?.trends.resolution ?? 0, style: 'bg-semantic-green/10 text-semantic-green' },
-    { icon: ArrowUpRight, label: 'Escalamentos Hoje', value: metrics?.escalationsToday ?? 0, trend: metrics?.trends.escalations ?? 0, style: 'bg-semantic-amber/10 text-semantic-amber' },
+    { icon: Bot, label: 'Colaboradores Ativos', value: metrics?.activeAgents ?? 0, trend: metrics?.trends.agents ?? 0, style: 'bg-brand/10 text-brand-bright', accent: '--brand-bright' },
+    { icon: MessageSquare, label: 'Atendimentos Hoje', value: metrics?.totalToday ?? 0, trend: metrics?.trends.conversations ?? 0, style: 'bg-semantic-blue/10 text-semantic-blue', accent: '--semantic-blue' },
+    { icon: CheckCircle, label: 'Taxa de Resolução', value: `${metrics?.resolutionRate ?? 0}%`, trend: metrics?.trends.resolution ?? 0, style: 'bg-semantic-green/10 text-semantic-green', accent: '--semantic-green' },
+    { icon: ArrowUpRight, label: 'Escalamentos Hoje', value: metrics?.escalationsToday ?? 0, trend: metrics?.trends.escalations ?? 0, style: 'bg-semantic-amber/10 text-semantic-amber', accent: '--semantic-amber' },
   ];
 
   return (
@@ -114,23 +114,25 @@ export function DashboardPage() {
           const Icon = m.icon;
           const isNeg = typeof m.trend === 'number' && m.trend < 0;
           return (
-            <div key={m.label} className="group relative overflow-hidden rounded-2xl border border-default bg-surface-2 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-hover hover:shadow-[0_20px_44px_-22px_rgba(0,0,0,0.65)]">
-              <span className="pointer-events-none absolute top-0 left-5 right-5 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
-              <div className="flex items-start justify-between mb-4">
-                <div className={clsx('w-9 h-9 rounded-xl flex items-center justify-center transition-transform duration-200 group-hover:scale-105', m.style)}>
-                  <Icon size={16} />
+            <div
+              key={m.label}
+              className="group relative overflow-hidden rounded-2xl border bg-surface-2 pl-6 pr-5 py-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-22px_rgba(0,0,0,0.65)]"
+              style={{ borderColor: `rgb(var(${m.accent}) / 0.28)` }}
+            >
+              {/* Barra de accent à esquerda (estilo D · Bold Accent) */}
+              <span className="pointer-events-none absolute left-0 top-0 bottom-0 w-[3px] rounded-r-full" style={{ background: `linear-gradient(180deg, rgb(var(${m.accent})), rgb(var(${m.accent}) / 0.25))` }} />
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10.5px] text-creme-mute font-semibold uppercase tracking-[0.1em]">{m.label}</span>
+                <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-105', m.style)}>
+                  <Icon size={14} />
                 </div>
-                <span className={clsx(
-                  'text-[12px] font-mono font-semibold px-2 py-0.5 rounded-full',
-                  m.label === 'Escalamentos Hoje'
-                    ? (isNeg ? 'bg-semantic-green/10 text-semantic-green' : 'bg-semantic-red/10 text-semantic-red')
-                    : (isNeg ? 'bg-semantic-red/10 text-semantic-red' : 'bg-semantic-green/10 text-semantic-green'),
-                )}>
-                  {isNeg ? '' : '+'}{m.trend}{typeof m.trend === 'number' && m.label !== 'Colaboradores Ativos' ? '%' : ''}
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-[30px] font-extrabold text-creme tracking-tight leading-none">{m.value}</span>
+                <span className="text-[11.5px] font-mono font-semibold" style={{ color: `rgb(var(${m.accent}))` }}>
+                  {isNeg ? '▼' : '▲'} {isNeg ? '' : '+'}{m.trend}{typeof m.trend === 'number' && m.label !== 'Colaboradores Ativos' ? '%' : ''}
                 </span>
               </div>
-              <div className="text-[30px] font-extrabold text-creme tracking-tight leading-none mb-2">{m.value}</div>
-              <div className="text-[11px] text-creme-mute font-semibold uppercase tracking-[0.09em]">{m.label}</div>
             </div>
           );
         })}
