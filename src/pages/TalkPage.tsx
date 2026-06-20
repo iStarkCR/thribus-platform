@@ -9,7 +9,7 @@ import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
 import { isStopPhrase, isNoise, mapVoiceState, ORB_FOLDER_NAME, type VoiceState } from '@/hooks/useOrbConversation';
-import { VoiceController } from '@/lib/voiceMode';
+import { VoiceController, type VoiceTurn } from '@/lib/voiceMode';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
@@ -116,6 +116,7 @@ export function TalkPage() {
   const [panelVoiceState, setPanelVoiceState] = useState<VoiceState>('idle');
   const [panelMuted, setPanelMuted] = useState(false); // mic pausado no modo voz
   const [panelLevel, setPanelLevel] = useState(0); // energia do mic (esfera reativa)
+  const [panelTurns, setPanelTurns] = useState<VoiceTurn[]>([]); // fila de falas
   const panelVoiceRef = useRef<VoiceController | null>(null);
   const levelRef = useRef(0);
   const lastLevelAtRef = useRef(0);
@@ -182,6 +183,7 @@ export function TalkPage() {
         const now = performance.now();
         if (now - lastLevelAtRef.current > 80) { lastLevelAtRef.current = now; setPanelLevel(levelRef.current); }
       },
+      onTurns: (turns) => setPanelTurns(turns),
       onTranscript: (t) => { if (isStopPhrase(t)) stopPanelVoice(); },
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
     });
@@ -192,7 +194,7 @@ export function TalkPage() {
     panelVoiceRef.current?.stop();
     panelVoiceRef.current = null;
     pendingReplyRef.current = null;
-    levelRef.current = 0; setPanelLevel(0);
+    levelRef.current = 0; setPanelLevel(0); setPanelTurns([]);
     setPanelVoiceState('idle');
     setVoiceMode(false); voiceModeRef.current = false; setVoiceModeActive(false);
   }
@@ -1119,22 +1121,49 @@ export function TalkPage() {
             </div>
           </div>
 
-          {/* Esfera central + status — reage à voz (mic level) estilo CORTEX */}
-          <div className="relative z-10 flex flex-col items-center gap-7">
-            <div className="relative aspect-square w-[min(60vmin,540px)]">
-              <div
-                className="absolute inset-0 rounded-full overflow-hidden"
-                style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
-              >
-                <NeuralSphere className="absolute inset-0" intensity={panelVoiceState === 'speaking' ? 0.95 : panelVoiceState === 'thinking' ? 0.5 : 0.4 + panelLevel * 0.55} />
+          {/* Esfera central + status — reage à voz (nível do mic) e muda de COR por
+              estado, igual ao CORTEX: verde (ouvindo/falando) → âmbar (pensando) →
+              azul (respondendo). */}
+          {(() => {
+            const hue = panelVoiceState === 'thinking' ? -62 : panelVoiceState === 'speaking' ? 95 : 0;
+            const color = panelVoiceState === 'thinking' ? '244 194 103' : panelVoiceState === 'speaking' ? '127 176 245' : '124 217 154';
+            const label = panelVoiceState === 'speaking' ? 'Respondendo' : panelVoiceState === 'thinking' ? 'Pensando' : panelVoiceState === 'talking' ? 'Você falando' : 'Ouvindo';
+            const intensity = panelVoiceState === 'speaking' ? 0.95 : panelVoiceState === 'thinking' ? 0.5 : 0.4 + panelLevel * 0.55;
+            return (
+              <div className="relative z-10 flex flex-col items-center gap-8">
+                <div className="relative aspect-square w-[min(60vmin,540px)]">
+                  <div
+                    className="absolute inset-0 rounded-full overflow-hidden transition-[filter] duration-500"
+                    style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', filter: hue ? `hue-rotate(${hue}deg)` : undefined }}
+                  >
+                    <NeuralSphere className="absolute inset-0" intensity={intensity} />
+                  </div>
+                  <div className="absolute -inset-6 rounded-full pointer-events-none transition-all duration-500" style={{ background: `radial-gradient(circle, rgba(${color}/0.22) 0%, transparent 66%)` }} />
+                  <div className="absolute -inset-[7%] rounded-full border border-dashed pointer-events-none" style={{ borderColor: `rgba(${color}/0.3)`, animation: 'orbSpin 18s linear infinite' }} />
+                  <style>{`@keyframes orbSpin{to{transform:rotate(360deg)}}`}</style>
+                </div>
+                <div className="flex items-center gap-2.5 px-5 py-2 rounded-full border backdrop-blur transition-all duration-300" style={{ borderColor: `rgba(${color}/0.4)`, background: `rgba(${color}/0.08)` }}>
+                  <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: `rgb(${color})` }} />
+                  <span className="text-[12px] font-semibold uppercase tracking-[0.3em]" style={{ color: `rgb(${color})` }}>{label}</span>
+                </div>
               </div>
-              <div className="pointer-events-none absolute -inset-[7%] rounded-full ring-1 ring-brand/[0.07]" />
-              <div className="pointer-events-none absolute -inset-[16%] rounded-full ring-1 ring-brand/[0.035]" />
+            );
+          })()}
+
+          {/* Fila de falas — canto inferior esquerdo (o que está pendente/na fila) */}
+          {panelTurns.length > 0 && (
+            <div className="absolute bottom-8 left-7 z-10 w-[min(320px,40vw)] flex flex-col gap-1.5">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-creme-faint/70 mb-0.5">Fila · {panelTurns.length}</div>
+              {panelTurns.map((t) => (
+                <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-default bg-surface-1/60 backdrop-blur">
+                  {t.status === 'processing'
+                    ? <Loader2 size={12} className="text-brand-bright animate-spin shrink-0" />
+                    : <Clock size={12} className="text-creme-faint shrink-0" />}
+                  <span className="text-[12px] text-creme-mute truncate">{t.text}</span>
+                </div>
+              ))}
             </div>
-            <div className="text-[12px] font-semibold uppercase tracking-[0.3em] text-brand-bright/70">
-              {panelVoiceState === 'speaking' ? 'Respondendo…' : panelVoiceState === 'thinking' ? 'Pensando…' : panelVoiceState === 'talking' ? 'Você falando…' : 'Ouvindo…'}
-            </div>
-          </div>
+          )}
 
           {/* Encerrar — botão claro */}
           <button

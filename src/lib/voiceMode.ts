@@ -1,24 +1,24 @@
 /**
- * Motor de modo voz CONTÍNUO e NÃO-BLOQUEANTE (full-duplex leve).
+ * Motor de modo voz CONTÍNUO, em FILA e half-duplex.
  *
- * - Mic aberto o tempo todo; o VAD nunca pausa (ouve durante o "pensando" e
- *   enquanto o assistente fala).
- * - BARGE-IN: se você começa a falar enquanto ele responde, a fala dele é
- *   cortada na hora e sua nova fala assume.
- * - NÃO-BLOQUEANTE: cada fala finalizada é DESPACHADA numa fila por trás
- *   (transcreve → ack → resposta → TTS). O loop de escuta não espera a resposta,
- *   então você pode continuar falando / pedir uma execução e seguir conversando.
- * - Anti-eco: durante o playback o limiar de fala sobe (só corta com fala clara)
- *   e o piso de ruído não é atualizado (não conta a voz dele).
+ * - Mic aberto o tempo todo, MAS ignorado enquanto o assistente fala (half-duplex)
+ *   → o eco da própria voz / ruído durante o playback não vira turno falso, e a
+ *   resposta SEMPRE termina (sem barge-in cortando).
+ * - Cada fala finalizada é transcrita e entra numa FILA visível; a resposta de
+ *   cada turno é gerada e falada em ORDEM (você pode emendar falas enquanto ele
+ *   pensa — elas esperam a vez).
+ * - VAD adaptativo, menos sensível, com silêncio mais longo (não corta no meio).
  */
 
 export type VoiceState = 'idle' | 'listening' | 'speaking' | 'processing' | 'playing';
+export type VoiceTurn = { id: string; text: string; status: 'queued' | 'processing' };
 
 export interface VoiceControllerOpts {
   onState?: (s: VoiceState) => void;
   onLevel?: (rms: number) => void;          // energia do mic (entrada)
   onTranscript?: (t: string) => void;       // o que o usuário falou
   onReply?: (t: string) => void;            // resposta do assistente
+  onTurns?: (turns: VoiceTurn[]) => void;   // fila de turnos (pendente/processando)
   onError?: (e: Error) => void;
   /** Grava → texto (edge function transcribe). */
   transcribe: (blob: Blob, durationMs: number) => Promise<string>;
@@ -71,31 +71,32 @@ export class VoiceController {
   private analyser: AnalyserNode | null = null;
   private persistentAudio: HTMLAudioElement | null = null;
 
-  // captura contínua (um recorder por enunciado, re-armado sem gap)
+  // captura contínua (um recorder por enunciado)
   private recorder: MediaRecorder | null = null;
   private curChunks: BlobPart[] = [];
   private rafId = 0;
   private silenceTimer: ReturnType<typeof setTimeout> | null = null;
   private speechActive = false;
   private recordStart = 0;
+  private muted = false;
+  private _above = 0;
 
-  // fila de DESPACHO (transcreve→responde) — serial, roda por trás
-  private dispatchQueue: { blob: Blob; dur: number }[] = [];
-  private dispatchRunning = false;
+  // fila de turnos (transcritos) + worker serial de resposta
+  private turns: VoiceTurn[] = [];
+  private replyQueue: { id: string; text: string }[] = [];
+  private replyRunning = false;
+  private turnSeq = 0;
 
-  // fila de TTS (toca em sequência) + estado de playback (pra barge-in)
+  // fila de TTS (toca em sequência, em ordem dos turnos)
   private audioQueue: Promise<Blob | null>[] = [];
   private queueRunning = false;
   private playing = false;
-  private curAudio: HTMLAudioElement | null = null;
   private playResolve: (() => void) | null = null;
 
-  // VAD adaptativo: limiar RELATIVO ao ruído de fundo (média móvel).
-  private noiseFloor = 0.02;
-  private muted = false; // mic pausado pelo usuário (não escuta, sessão segue viva)
-  private _above = 0; // frames seguidos acima do limiar (debounce do início da fala)
-  private readonly ONSET_FRAMES = 4; // ~65ms — ignora estalo/clique/eco curto
-  private readonly SILENCE_MS = 1100;
+  // VAD adaptativo (média móvel do ruído).
+  private noiseFloor = 0.025;
+  private readonly ONSET_FRAMES = 5;      // ~80ms acima do limiar pra contar fala
+  private readonly SILENCE_MS = 1500;     // silêncio pra encerrar a fala (não corta no meio)
   private readonly MIN_SPEECH_MS = 350;
   private readonly MAX_UTTERANCE_MS = 30000;
   private _vadLogAt = 0;
@@ -104,17 +105,10 @@ export class VoiceController {
 
   getState(): VoiceState { return this.state; }
 
-  // Mic pausado: não escuta (nem barge-in nem nova fala) mas a sessão segue viva.
   setMuted(b: boolean): void {
     this.muted = b;
-    if (b) {
-      this.speechActive = false;
-      this._above = 0;
-      if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
-      try { this.recorder?.state !== 'inactive' && this.recorder?.stop(); } catch { /* noop */ }
-      this._armRecorder(); // descarta o que estava capturando
-      this._refreshState();
-    }
+    if (b) { this.speechActive = false; this._above = 0; if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; } this._resetRecorder(); }
+    this._refreshState();
   }
 
   async start(): Promise<void> {
@@ -132,7 +126,6 @@ export class VoiceController {
       this.analyser.smoothingTimeConstant = 0.6;
       source.connect(this.analyser);
 
-      // destrava autoplay dentro do gesto do start()
       const a = new Audio();
       a.src = SILENCE_1S;
       a.play().catch(() => { /* noop */ });
@@ -154,14 +147,13 @@ export class VoiceController {
     if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
     try { this.recorder?.state !== 'inactive' && this.recorder?.stop(); } catch { /* noop */ }
     this.recorder = null;
-    this.dispatchQueue = [];
-    this.dispatchRunning = false;
+    this.turns = []; this.replyQueue = []; this.replyRunning = false;
+    this.o.onTurns?.([]);
     this.audioQueue = [];
     this.queueRunning = false;
     this.playing = false;
     this.playResolve?.(); this.playResolve = null;
     if (this.persistentAudio) { try { this.persistentAudio.pause(); } catch { /* noop */ } }
-    this.curAudio = null;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
     if (this.audioCtx && this.audioCtx.state !== 'closed') this.audioCtx.close().catch(() => { /* noop */ });
@@ -174,18 +166,17 @@ export class VoiceController {
     this.o.onState?.(s);
   }
 
-  // Estado de UI derivado: falando > tocando > pensando > ouvindo.
   private _refreshState(): void {
     if (this.cancelled) return;
     if (this.speechActive) this._setState('speaking');
     else if (this.playing) this._setState('playing');
-    else if (this.dispatchRunning || this.dispatchQueue.length > 0) this._setState('processing');
+    else if (this.replyRunning || this.turns.length > 0) this._setState('processing');
     else this._setState('listening');
   }
 
-  // ─── Captura contínua ───────────────────────────────────────────────────────
-  // Cada recorder tem o SEU array de chunks (closure) — re-armar não rouba o áudio
-  // do anterior (o ondataavailable do sem-timeslice só dispara no stop()).
+  private _emitTurns(): void { this.o.onTurns?.(this.turns.map((t) => ({ ...t }))); }
+
+  // ─── Captura ────────────────────────────────────────────────────────────────
   private _armRecorder(): void {
     if (this.cancelled || !this.stream) return;
     const chunks: BlobPart[] = [];
@@ -199,7 +190,17 @@ export class VoiceController {
     } catch (e) { this.o.onError?.(e as Error); return; }
     this.recordStart = performance.now();
     this.speechActive = false;
+    this._above = 0;
     if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
+  }
+
+  // Para o recorder atual e arma um novo (descarta o que estava capturando — ex:
+  // o eco do próprio playback). Sem sobrepor dois recorders no mesmo stream.
+  private _resetRecorder(): void {
+    const rec = this.recorder;
+    this.recorder = null;
+    if (rec && rec.state !== 'inactive') { try { rec.onstop = () => this._armRecorder(); rec.stop(); } catch { this._armRecorder(); } }
+    else this._armRecorder();
   }
 
   private _monitorVAD(): void {
@@ -207,41 +208,31 @@ export class VoiceController {
     const buf = new Uint8Array(this.analyser.fftSize);
     const tick = () => {
       if (this.cancelled) return;
-      if (this.muted) { this.o.onLevel?.(0); this.rafId = requestAnimationFrame(tick); return; }
+      // Half-duplex: enquanto ELE fala (ou mic pausado), ignora a entrada → sem
+      // eco virando turno e sem cortar a resposta.
+      if (this.muted || this.playing) { this.o.onLevel?.(0); this._above = 0; this.rafId = requestAnimationFrame(tick); return; }
       this.analyser!.getByteTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
       const rms = Math.sqrt(sum / buf.length);
       this.o.onLevel?.(rms);
       const now = performance.now();
-      // Sensibilidade por contexto:
-      //  • FALANDO (playing): eco da própria voz pode vazar → barge-in só com fala
-      //    ALTA e sustentada (~230ms). Senão a resposta era cortada e nunca completava.
-      //  • PENSANDO (busy): limiar alto, ruído não vira turno falso.
-      //  • OUVINDO: limiar base normal.
-      const busy = this.dispatchRunning || this.dispatchQueue.length > 0;
-      const base = Math.max(0.035, this.noiseFloor * 2.8);
-      const threshold = this.playing ? Math.max(0.18, this.noiseFloor * 6)
-        : busy ? Math.max(0.13, this.noiseFloor * 5)
-        : base;
-      const onset = this.playing ? 14 : busy ? 8 : this.ONSET_FRAMES; // ~230 / 130 / 65ms
+      // Pensando (ocupado) → limiar um pouco maior; ouvindo → base.
+      const busy = this.replyRunning || this.turns.length > 0;
+      const base = Math.max(0.045, this.noiseFloor * 3);
+      const threshold = busy ? Math.max(0.06, this.noiseFloor * 3.5) : base;
+      const onset = busy ? 7 : this.ONSET_FRAMES;
       if (now - this._vadLogAt > 700) {
         this._vadLogAt = now;
         console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} busy=${busy}`);
       }
       if (rms > threshold) {
-        // Só conta como fala após N frames seguidos acima do limiar (debounce).
         this._above++;
-        if (!this.speechActive && this._above >= onset) {
-          this.speechActive = true;
-          this._onSpeechStart();
-        }
+        if (!this.speechActive && this._above >= onset) { this.speechActive = true; this._refreshState(); }
         if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
       } else {
         this._above = 0;
-        // Piso de ruído só acompanha o ambiente quando NÃO há fala nem playback
-        // (senão a voz do próprio assistente inflaria o piso).
-        if (!this.speechActive && !this.playing) this.noiseFloor = this.noiseFloor * 0.9 + rms * 0.1;
+        if (!this.speechActive) this.noiseFloor = this.noiseFloor * 0.9 + rms * 0.1;
         if (this.speechActive && !this.silenceTimer) {
           this.silenceTimer = setTimeout(() => {
             this.silenceTimer = null;
@@ -255,14 +246,6 @@ export class VoiceController {
     this.rafId = requestAnimationFrame(tick);
   }
 
-  // Usuário começou a falar → BARGE-IN: corta a fala atual e limpa a fila de TTS.
-  private _onSpeechStart(): void {
-    if (this.playing || this.audioQueue.length > 0) this._stopPlayback();
-    this._refreshState();
-  }
-
-  // Fecha o enunciado (sempre após silêncio → re-armar no onstop não perde fala),
-  // re-arma a captura e despacha o áudio por trás (não bloqueia a escuta).
   private _finalizeUtterance(): void {
     if (this.cancelled) return;
     if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
@@ -271,41 +254,50 @@ export class VoiceController {
     const rec = this.recorder;
     const chunks = this.curChunks;
     this.recorder = null;
-    this.speechActive = false; // não re-dispara enquanto fecha
+    this.speechActive = false;
     if (!rec) { this._armRecorder(); return; }
     const finish = () => {
       const blob = chunks.length ? new Blob(chunks, { type: rec.mimeType || 'audio/webm' }) : null;
-      this._armRecorder(); // volta a capturar
+      this._armRecorder();
       this._refreshState();
       console.log(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms blob=${blob?.size ?? 0}`);
-      if (this.cancelled || !blob || !hadSpeech) return; // ruído/sem fala → ignora
-      this.dispatchQueue.push({ blob, dur });
-      this._refreshState();
-      if (!this.dispatchRunning) void this._runDispatch();
+      if (this.cancelled || !blob || !hadSpeech) return;
+      void this._ingest(blob, dur);
     };
     try { rec.onstop = finish; rec.stop(); } catch { finish(); }
   }
 
-  // ─── Despacho serial (por trás) ─────────────────────────────────────────────
-  private async _runDispatch(): Promise<void> {
-    this.dispatchRunning = true;
+  // Transcreve (paralelo) e empilha o turno na fila visível + worker serial.
+  private async _ingest(blob: Blob, dur: number): Promise<void> {
+    let text = '';
+    try { text = (await this.o.transcribe(blob, dur)).trim(); } catch (e) { this.o.onError?.(e as Error); }
+    console.log(`[voz] transcrito: "${text}"`);
+    if (this.cancelled || !text || this.o.isNoise?.(text)) return;
+    this.o.onTranscript?.(text);
+    const id = `t${++this.turnSeq}`;
+    this.turns.push({ id, text, status: 'queued' });
+    this._emitTurns();
     this._refreshState();
-    while (this.dispatchQueue.length > 0 && !this.cancelled) {
-      const { blob, dur } = this.dispatchQueue.shift()!;
-      try {
-        const text = (await this.o.transcribe(blob, dur)).trim();
-        console.log(`[voz] transcrito: "${text}"`);
-        if (this.cancelled) break;
-        if (!text || this.o.isNoise?.(text)) continue;
-        this.o.onTranscript?.(text);
-        await this._handleReply(text);
-      } catch (e) { this.o.onError?.(e as Error); }
+    this.replyQueue.push({ id, text });
+    if (!this.replyRunning) void this._runReplies();
+  }
+
+  private async _runReplies(): Promise<void> {
+    this.replyRunning = true;
+    this._refreshState();
+    while (this.replyQueue.length > 0 && !this.cancelled) {
+      const { id, text } = this.replyQueue.shift()!;
+      const turn = this.turns.find((t) => t.id === id);
+      if (turn) { turn.status = 'processing'; this._emitTurns(); }
+      try { await this._handleReply(text); } catch (e) { this.o.onError?.(e as Error); }
+      this.turns = this.turns.filter((t) => t.id !== id);
+      this._emitTurns();
     }
-    this.dispatchRunning = false;
+    this.replyRunning = false;
     this._refreshState();
   }
 
-  // Resposta: ack curto (paralelo) + resposta pesada → frases → fila de TTS.
+  // ack curto (paralelo) + resposta pesada → frases → fila de TTS (em ordem).
   private async _handleReply(text: string): Promise<void> {
     const replyPromise = this.o.sendAndAwait(text);
     if (this.o.quickAck) {
@@ -324,9 +316,10 @@ export class VoiceController {
     if (remaining.trim().length >= 3) all.push(remaining.trim());
     console.log(`[voz] resposta: ${reply.length} chars, ${all.length} frase(s) p/ TTS`);
     for (const s of all) this._enqueue(s);
+    // espera o TTS deste turno escoar antes de processar o próximo (fala em ordem).
+    await this._waitQueue();
   }
 
-  // ─── TTS (fila) ─────────────────────────────────────────────────────────────
   private _enqueue(sentence: string): void {
     const p = this.o.tts(sentence)
       .then((b) => { console.log(`[voz] tts "${sentence.slice(0, 24)}…" → ${b?.size ?? 0} bytes`); return b; })
@@ -337,6 +330,8 @@ export class VoiceController {
 
   private async _drainQueue(): Promise<void> {
     this.queueRunning = true;
+    this.playing = true;
+    this._refreshState();
     while (this.audioQueue.length > 0 && !this.cancelled) {
       const blob = await this.audioQueue.shift()!;
       if (!blob || this.cancelled) continue;
@@ -344,18 +339,18 @@ export class VoiceController {
     }
     this.queueRunning = false;
     this.playing = false;
+    this._resetRecorder(); // descarta o eco captado durante a fala
     this._refreshState();
   }
 
-  // Corta o playback atual e esvazia a fila de TTS (barge-in / stop).
-  private _stopPlayback(): void {
-    this.audioQueue = [];
-    const a = this.curAudio;
-    this.curAudio = null;
-    this.playing = false;
-    if (a) { try { a.pause(); a.currentTime = 0; } catch { /* noop */ } }
-    const r = this.playResolve; this.playResolve = null;
-    r?.();
+  private _waitQueue(): Promise<void> {
+    return new Promise((res) => {
+      const check = () => {
+        if (this.cancelled || (this.audioQueue.length === 0 && !this.queueRunning)) res();
+        else setTimeout(check, 120);
+      };
+      check();
+    });
   }
 
   private _play(blob: Blob): Promise<void> {
@@ -364,13 +359,12 @@ export class VoiceController {
       const audio = this.persistentAudio ?? new Audio();
       audio.src = url;
       audio.muted = false;
-      this.curAudio = audio;
       this.playing = true;
       this._refreshState();
       console.log(`[voz] tocando áudio (${blob.size} bytes)`);
       let done = false;
       const finish = () => { if (done) return; done = true; URL.revokeObjectURL(url); this.playResolve = null; resolve(); };
-      this.playResolve = finish; // barge-in/stop resolve na hora
+      this.playResolve = finish;
       audio.onended = finish;
       audio.onerror = finish;
       audio.play().catch((e) => { console.log(`[voz] play bloqueado: ${(e as Error).message}`); this.o.onError?.(new Error('Áudio bloqueado pelo navegador. Clique na esfera de novo.')); finish(); });
