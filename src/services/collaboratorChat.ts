@@ -8,7 +8,7 @@
 import { supabase } from '@/lib/supabase';
 
 export type ChatRole = 'user' | 'assistant';
-export type ChatStatus = 'pending' | 'processing' | 'done' | 'error';
+export type ChatStatus = 'pending' | 'processing' | 'done' | 'error' | 'cancelled';
 export type ChatChannel = 'thribus' | 'telegram' | 'talki';
 
 export interface Attachment {
@@ -117,6 +117,17 @@ export async function sendMessage(
     .single();
   if (error) throw error;
   return toMsg(data as Row);
+}
+
+/** Botão "Parar": marca a msg do usuário como cancelada → a ponte mata o claude. */
+export async function cancelMessage(messageId: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('collaborator_messages')
+    .update({ status: 'cancelled' })
+    .eq('id', messageId)
+    .in('status', ['pending', 'processing']);
+  if (error) throw error;
 }
 
 /** Realtime do thread do usuário. Chama onChange a cada insert/update. */

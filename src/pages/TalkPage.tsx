@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
-  Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip,
+  Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -15,7 +15,7 @@ import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { Markdown } from '@/components/shared/Markdown';
 import { ThinkingActivity, MessageSteps } from '@/components/shared/ThinkingActivity';
-import { listMessages, sendMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
+import { listMessages, sendMessage, cancelMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import { createDemand } from '@/services/demands';
 import { RoutineModal } from '@/components/routines/RoutineModal';
@@ -337,6 +337,13 @@ export function TalkPage() {
   waitingRef.current = waiting;
   // mensagem do usuário em processamento → chave dos passos "por trás"
   const lastUserMsgId = waiting ? messages[messages.length - 1].id : null;
+
+  // Botão "Parar": marca a msg como cancelada (a ponte mata o claude) + UI otimista.
+  async function cancelTurn(msgId: string) {
+    setMessages((m) => m.map((x) => (x.id === msgId ? { ...x, status: 'cancelled' } : x)));
+    try { await cancelMessage(msgId); }
+    catch (e) { useAppStore.getState().addToast('Falha ao parar: ' + (e as Error).message, 'red'); }
+  }
 
   // Agrupa sessões por pasta + hierarquia de pastas (só as ATIVAS — arquivadas
   // ficam numa seção à parte no rodapé). Fixadas (pin) sobem pro topo.
@@ -986,13 +993,23 @@ export function TalkPage() {
                 <Mic size={17} />
               </button>
             )}
-            <button
-              onClick={() => send()}
-              disabled={sending || uploading > 0 || (!input.trim() && attachments.length === 0)}
-              className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors"
-            >
-              {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
-            </button>
+            {waiting && lastUserMsgId ? (
+              <button
+                onClick={() => cancelTurn(lastUserMsgId)}
+                title="Parar a resposta"
+                className="w-10 h-10 rounded-xl bg-semantic-red/15 text-semantic-red flex items-center justify-center shrink-0 hover:bg-semantic-red/25 transition-colors animate-pulse"
+              >
+                <Square size={15} className="fill-current" />
+              </button>
+            ) : (
+              <button
+                onClick={() => send()}
+                disabled={sending || uploading > 0 || (!input.trim() && attachments.length === 0)}
+                className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors"
+              >
+                {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -296,6 +296,7 @@ function runClaude(prompt, opts = {}) {
       }
     }
     const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env });
+    if (opts.onSpawn) { try { opts.onSpawn(child); } catch { /* noop */ } }
     let buf = '';
     let err = '';
     let result = null;
@@ -403,58 +404,79 @@ async function processMessage(msg) {
   const voice = msg.is_voice ? { model: VOICE_MODEL, effort: VOICE_EFFORT } : {};
   const opts = { model: BRAIN.model, effort: BRAIN.effort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent };
 
-  let r = null;
-  if (resumeId) {
-    // retoma a sessão: manda SÓ a mensagem nova (persona/histórico já estão lá)
+  // Botão "Parar" do chat: o front marca a msg como 'cancelled'. Um poller detecta
+  // e MATA o claude; aí não escrevemos resposta e a msg fica como 'cancelled'.
+  const ctl = { child: null, cancelled: false };
+  opts.onSpawn = (c) => { ctl.child = c; };
+  const pollCancel = setInterval(async () => {
     try {
-      r = await runClaude(content, { ...opts, resumeSessionId: resumeId });
-    } catch (e) {
-      console.error(`[resume falhou, recomeçando sessão] ${e.message}`);
-      r = null;
+      const { data } = await sb.from('collaborator_messages').select('status').eq('id', msg.id).maybeSingle();
+      if (data?.status === 'cancelled') { ctl.cancelled = true; try { ctl.child?.kill('SIGKILL'); } catch { /* noop */ } }
+    } catch { /* noop */ }
+  }, 1500);
+
+  try {
+    let r = null;
+    if (resumeId) {
+      // retoma a sessão: manda SÓ a mensagem nova (persona/histórico já estão lá)
+      try {
+        r = await runClaude(content, { ...opts, resumeSessionId: resumeId });
+      } catch (e) {
+        if (ctl.cancelled) throw e;
+        console.error(`[resume falhou, recomeçando sessão] ${e.message}`);
+        r = null;
+      }
     }
+    if (!r) {
+      if (ctl.cancelled) throw new Error('cancelado');
+      // inicia (ou reinicia) a sessão: persona + histórico RECENTE pra semear o contexto
+      const { data: history } = await sb
+        .from('collaborator_messages')
+        .select('role,content,created_at')
+        .eq('session_id', msg.session_id)
+        .in('status', ['done'])
+        .order('created_at', { ascending: false })
+        .limit(HISTORY);
+      const recent = (history ?? []).reverse(); // mais recentes, em ordem cronológica
+      r = await runClaude(buildPrompt(agent, recent, content), opts);
+    }
+    if (ctl.cancelled) throw new Error('cancelado');
+
+    const reply = r.text;
+    if (!reply) throw new Error('resposta vazia do claude');
+
+    await sb.from('collaborator_messages').insert({
+      session_id: msg.session_id,
+      agent_id: msg.agent_id,
+      user_id: msg.user_id,
+      role: 'assistant',
+      content: reply,
+      status: 'done',
+      channel: msg.channel,
+    });
+    await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', msg.id);
+
+    // grava a sessão do claude + a janela de contexto (pro painel mostrar X/1M).
+    // Usa o uso da última mensagem do assistant (janela real do turno); só cai no
+    // uso cumulativo do 'result' se a última mensagem não trouxe usage.
+    if (msg.session_id && r.sessionId) {
+      const ctx = r.contextTokens ?? (r.usage ? r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.outputTokens : null);
+      const patch = { claude_session_id: r.sessionId };
+      if (ctx != null) patch.context_tokens = ctx;
+      await sb.from('chat_sessions').update(patch).eq('id', msg.session_id);
+    }
+
+    await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, sessionId: msg.session_id, usage: r.usage });
+    console.log(
+      `[ok] ${agent.name} respondeu (${reply.length} chars` +
+        `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,
+    );
+  } catch (e) {
+    if (ctl.cancelled) { console.log(`[parado] msg ${msg.id} cancelada pelo usuário`); return; }
+    throw e;
+  } finally {
+    clearInterval(pollCancel);
   }
-  if (!r) {
-    // inicia (ou reinicia) a sessão: persona + histórico RECENTE pra semear o contexto
-    const { data: history } = await sb
-      .from('collaborator_messages')
-      .select('role,content,created_at')
-      .eq('session_id', msg.session_id)
-      .in('status', ['done'])
-      .order('created_at', { ascending: false })
-      .limit(HISTORY);
-    const recent = (history ?? []).reverse(); // mais recentes, em ordem cronológica
-    r = await runClaude(buildPrompt(agent, recent, content), opts);
-  }
-
-  const reply = r.text;
-  if (!reply) throw new Error('resposta vazia do claude');
-
-  await sb.from('collaborator_messages').insert({
-    session_id: msg.session_id,
-    agent_id: msg.agent_id,
-    user_id: msg.user_id,
-    role: 'assistant',
-    content: reply,
-    status: 'done',
-    channel: msg.channel,
-  });
-  await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', msg.id);
-
-  // grava a sessão do claude + a janela de contexto (pro painel mostrar X/1M).
-  // Usa o uso da última mensagem do assistant (janela real do turno); só cai no
-  // uso cumulativo do 'result' se a última mensagem não trouxe usage.
-  if (msg.session_id && r.sessionId) {
-    const ctx = r.contextTokens ?? (r.usage ? r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.outputTokens : null);
-    const patch = { claude_session_id: r.sessionId };
-    if (ctx != null) patch.context_tokens = ctx;
-    await sb.from('chat_sessions').update(patch).eq('id', msg.session_id);
-  }
-
-  await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, sessionId: msg.session_id, usage: r.usage });
-  console.log(
-    `[ok] ${agent.name} respondeu (${reply.length} chars` +
-      `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,
-  );
 }
 
 async function loadTeamIds() {
