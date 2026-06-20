@@ -44,10 +44,18 @@ Deno.serve(async (req) => {
       return new Response(await r.arrayBuffer(), { headers: { ...cors, 'Content-Type': 'audio/mpeg' } });
     }
     if (cfg.provider === 'openai') {
+      const model = cfg.model || 'gpt-4o-mini-tts';
+      const body: Record<string, unknown> = { model, voice: cfg.voice_id || 'onyx', input: text };
+      // gpt-4o-mini-tts aceita 'instructions' (tom/estilo) — deixa a fala expressiva.
+      // tts-1/tts-1-hd ignoram, então só mandamos nos modelos que suportam.
+      if (/mini|gpt-4o/.test(model)) {
+        body.instructions = cfg.instructions ||
+          'Voz: confiante, calorosa e otimista — como um COO brasileiro afiado e próximo. Ritmo natural de conversa, articulação clara, assertiva mas amigável, nada robótica. Fale português do Brasil.';
+      }
       const r = await fetch('https://api.openai.com/v1/audio/speech', {
         method: 'POST',
         headers: { Authorization: `Bearer ${cfg.api_key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: cfg.model || 'tts-1', voice: cfg.voice_id || 'nova', input: text }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) return json({ error: `openai ${r.status}: ${(await r.text()).slice(0, 200)}` }, 400);
       return new Response(await r.arrayBuffer(), { headers: { ...cors, 'Content-Type': 'audio/mpeg' } });
