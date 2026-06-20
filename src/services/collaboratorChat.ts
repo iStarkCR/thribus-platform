@@ -103,13 +103,14 @@ export async function sendMessage(
   userId: string,
   content: string,
   attachments?: Attachment[],
+  isVoice = false,
 ): Promise<ChatMessage> {
   if (!supabase) throw new Error('Supabase não configurado');
   const { data, error } = await supabase
     .from('collaborator_messages')
     .insert({
       session_id: sessionId, agent_id: agentId, user_id: userId, role: 'user',
-      content, status: 'pending', channel: 'thribus',
+      content, status: 'pending', channel: 'thribus', is_voice: isVoice,
       attachments: attachments && attachments.length ? attachments : null,
     })
     .select('*')

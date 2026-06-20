@@ -130,7 +130,7 @@ export function useOrbConversation() {
 
   // Envia o texto e RESOLVE com a resposta do daemon (via realtime). Recria a
   // sessão se ela sumiu (FK). Usado pelo modo voz e pelo chat de texto.
-  const sendAndAwait = useCallback(async (textArg: string): Promise<string> => {
+  const sendAndAwait = useCallback(async (textArg: string, isVoice = false): Promise<string> => {
     const text = textArg.trim();
     if (!text || !userId) return '';
     let sid = await ensureSession(userId);
@@ -138,13 +138,13 @@ export function useOrbConversation() {
     setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid as string, agentId: BUKOWISKI_ID, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: [], createdAt: '' }]);
     try {
       try {
-        await sendMessage(sid, BUKOWISKI_ID, userId, text);
+        await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
       } catch (e) {
         if (!/foreign key|violates|constraint/i.test((e as Error).message)) throw e;
         setSessionId(null); sessionRef.current = null;
         sid = await ensureSession(userId);
         if (!sid) throw e;
-        await sendMessage(sid, BUKOWISKI_ID, userId, text);
+        await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
       }
       await touchSession(sid);
     } catch (e) {
@@ -165,7 +165,7 @@ export function useOrbConversation() {
     const ctrl = new VoiceController({
       transcribe: async (blob) => (await transcribeBlob(BUKOWISKI_ID, blob)) ?? '',
       tts: (txt) => ttsBlob(BUKOWISKI_ID, txt),
-      sendAndAwait,
+      sendAndAwait: (t) => sendAndAwait(t, true), // voz → modelo leve na ponte
       isNoise,
       onState: (s) => setState(mapState(s)),
       onTranscript: (t) => { if (isStopPhrase(t)) stopVoice(); },

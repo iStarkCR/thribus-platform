@@ -40,6 +40,9 @@ const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 // tabela cortex_brain_config (scope='global'). Recarregada a cada ~15s no loop.
 const DEFAULT_MODEL = process.env.BRIDGE_MODEL || 'opus'; // alias do CLI — resolve sozinho pro modelo atual
 let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0 };
+// Modo voz: modelo leve/rápido (conversa falada), independente do Brain global.
+const VOICE_MODEL = process.env.BRIDGE_VOICE_MODEL || 'sonnet';
+const VOICE_EFFORT = process.env.BRIDGE_VOICE_EFFORT || 'low';
 let brainLoadedAt = 0;
 // --effort só vale pra opus/fable (o CLI ignora em sonnet/haiku). Cobre tanto o
 // alias ('opus') quanto IDs fixos ('claude-opus-4-7').
@@ -390,7 +393,10 @@ async function processMessage(msg) {
     if (e.kind === 'tool_result') { recordRunEventResult(msg.id, e.toolUseId, e.result); return; }
     recordRunEvent({ userId: msg.user_id, scope: 'chat', refId: msg.id, seq: evSeq++, label: e.label, detail: e.detail, input: e.input, toolUseId: e.toolUseId });
   };
-  const opts = { model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent };
+  // Modo voz → modelo leve/rápido (conversa falada). A execução normal (texto/
+  // painel/demandas) segue no modelo forte do cortex_brain_config global.
+  const voice = msg.is_voice ? { model: VOICE_MODEL, effort: VOICE_EFFORT } : {};
+  const opts = { model: BRAIN.model, effort: BRAIN.effort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent };
 
   let r = null;
   if (resumeId) {
