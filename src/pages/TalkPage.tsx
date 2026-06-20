@@ -630,7 +630,7 @@ export function TalkPage() {
   return (
     <div className="-m-6 h-screen grid grid-cols-[300px_1fr] overflow-hidden">
       {/* Sessões + pastas */}
-      <div className="border-r border-default flex flex-col bg-surface-1 min-h-0">
+      <div className="glass-panel border-r border-default flex flex-col bg-surface-1 min-h-0">
         <div className="p-3.5 border-b border-default space-y-2.5">
           <button
             onClick={() => newSession(null)}
@@ -711,7 +711,7 @@ export function TalkPage() {
 
       {/* Thread */}
       <div className="flex flex-col bg-surface-0 min-w-0 min-h-0">
-        <div className="h-16 px-6 flex items-center justify-between gap-3 border-b border-default shrink-0">
+        <div className="glass-panel h-16 px-6 flex items-center justify-between gap-3 border-b border-default shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => navigate('/settings')}

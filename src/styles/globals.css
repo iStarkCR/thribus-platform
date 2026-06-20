@@ -159,33 +159,48 @@
    * Material translúcido nos painéis do shell + aurora sutil ao fundo (estilo
    * Apple "Liquid Glass"). NÃO afeta o orbe nem as esferas (componentes à parte).
    * `.glass-panel` é inerte sem a classe `glass` no html — liga/desliga limpo. */
-  html.glass body { background-color: #060a06; }
+  @keyframes glassAurora {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to   { transform: translate3d(0, -1.8%, 0) scale(1.07); }
+  }
+  html.glass #root { position: relative; z-index: 1; }
   html.glass body::before {
     content: '';
     position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    background:
-      radial-gradient(46% 38% at 14% 8%,  rgba(140,196,122,0.13), transparent 62%),
-      radial-gradient(42% 36% at 90% 14%, rgba(96,165,250,0.07),  transparent 60%),
-      radial-gradient(58% 50% at 82% 96%, rgba(107,143,94,0.18),  transparent 64%),
-      radial-gradient(40% 34% at 24% 92%, rgba(168,212,150,0.09), transparent 60%);
-    animation: glassAurora 26s ease-in-out infinite alternate;
+    animation: glassAurora 24s ease-in-out infinite alternate;
   }
-  @keyframes glassAurora {
-    from { transform: translate3d(0, 0, 0) scale(1); }
-    to   { transform: translate3d(0, -1.5%, 0) scale(1.06); }
-  }
-  html.glass #root { position: relative; z-index: 1; }
 
-  html.glass .glass-panel {
-    background: rgba(16, 24, 16, 0.55) !important;
-    backdrop-filter: blur(22px) saturate(135%);
-    -webkit-backdrop-filter: blur(22px) saturate(135%);
-    border-color: rgba(237, 232, 220, 0.12) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 12px 34px rgba(0, 0, 0, 0.28);
+  /* DARK + glass */
+  html.glass body { background-color: #050805; }
+  html.glass body::before {
+    background:
+      radial-gradient(48% 40% at 12% 6%,  rgba(140,196,122,0.20), transparent 62%),
+      radial-gradient(44% 38% at 92% 12%, rgba(96,165,250,0.12),  transparent 60%),
+      radial-gradient(60% 52% at 84% 98%, rgba(107,143,94,0.28),  transparent 64%),
+      radial-gradient(42% 36% at 22% 94%, rgba(168,212,150,0.14), transparent 60%);
   }
-  html.glass .glass-soft {
-    background: rgba(20, 30, 20, 0.42) !important;
-    backdrop-filter: blur(16px) saturate(130%);
-    -webkit-backdrop-filter: blur(16px) saturate(130%);
+  html.glass .glass-panel {
+    background: rgba(15, 23, 15, 0.46) !important;
+    backdrop-filter: blur(26px) saturate(150%);
+    -webkit-backdrop-filter: blur(26px) saturate(150%);
+    border-color: rgba(237, 232, 220, 0.16) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 16px 44px rgba(0, 0, 0, 0.32);
+  }
+
+  /* LIGHT + glass — vidro fosco claro (Liquid Glass "dia") */
+  html.glass.light body { background-color: #e9efe4; }
+  html.glass.light body::before {
+    background:
+      radial-gradient(48% 40% at 12% 6%,  rgba(107,143,94,0.30), transparent 62%),
+      radial-gradient(44% 38% at 92% 12%, rgba(96,165,250,0.16), transparent 60%),
+      radial-gradient(60% 52% at 84% 98%, rgba(140,196,122,0.38), transparent 64%),
+      radial-gradient(42% 36% at 22% 94%, rgba(168,212,150,0.26), transparent 60%);
+  }
+  html.glass.light .glass-panel {
+    background: rgba(255, 255, 255, 0.52) !important;
+    backdrop-filter: blur(26px) saturate(155%);
+    -webkit-backdrop-filter: blur(26px) saturate(155%);
+    border-color: rgba(255, 255, 255, 0.65) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 16px 44px rgba(70, 100, 60, 0.14);
   }
 }
