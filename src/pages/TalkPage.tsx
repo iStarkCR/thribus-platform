@@ -117,6 +117,7 @@ export function TalkPage() {
   const [panelMuted, setPanelMuted] = useState(false); // mic pausado no modo voz
   const [panelLevel, setPanelLevel] = useState(0); // energia do mic (esfera reativa)
   const [panelTurns, setPanelTurns] = useState<VoiceTurn[]>([]); // fila de falas
+  const [expandedTurn, setExpandedTurn] = useState<string | null>(null); // item aberto na fila
   const panelVoiceRef = useRef<VoiceController | null>(null);
   const levelRef = useRef(0);
   const lastLevelAtRef = useRef(0);
@@ -1150,18 +1151,35 @@ export function TalkPage() {
             );
           })()}
 
-          {/* Fila de falas — canto inferior esquerdo (o que está pendente/na fila) */}
+          {/* Fila de falas — canto inferior esquerdo. Clique no item pra ver o texto
+              completo. Mostra o que está processando agora e o que está na fila. */}
           {panelTurns.length > 0 && (
-            <div className="absolute bottom-8 left-7 z-10 w-[min(320px,40vw)] flex flex-col gap-1.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-creme-faint/70 mb-0.5">Fila · {panelTurns.length}</div>
-              {panelTurns.map((t) => (
-                <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-default bg-surface-1/60 backdrop-blur">
-                  {t.status === 'processing'
-                    ? <Loader2 size={12} className="text-brand-bright animate-spin shrink-0" />
-                    : <Clock size={12} className="text-creme-faint shrink-0" />}
-                  <span className="text-[12px] text-creme-mute truncate">{t.text}</span>
-                </div>
-              ))}
+            <div className="absolute bottom-8 left-7 z-10 w-[min(440px,48vw)] flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.22em] text-creme-mute">
+                <ListChecks size={15} className="text-brand-bright" />
+                Fila <span className="ml-0.5 px-2 py-0.5 rounded-full bg-brand/20 text-brand-bright text-[11px]">{panelTurns.length}</span>
+              </div>
+              {panelTurns.map((t) => {
+                const open = expandedTurn === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setExpandedTurn(open ? null : t.id)}
+                    title={open ? 'Recolher' : 'Ver completo'}
+                    className={`text-left flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl border backdrop-blur transition-colors ${t.status === 'processing' ? 'border-brand/40 bg-brand/10' : 'border-default bg-surface-1/80 hover:bg-surface-1'}`}
+                  >
+                    {t.status === 'processing'
+                      ? <Loader2 size={15} className="text-brand-bright animate-spin shrink-0 mt-0.5" />
+                      : <Clock size={15} className="text-creme-faint shrink-0 mt-0.5" />}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-creme-faint/70 mb-0.5">
+                        {t.status === 'processing' ? 'Respondendo' : 'Na fila'}
+                      </div>
+                      <span className={`text-[13.5px] text-creme leading-snug ${open ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>{t.text}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
 
