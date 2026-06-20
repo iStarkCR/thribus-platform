@@ -10,6 +10,7 @@ import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
 import { isStopPhrase, isNoise, mapVoiceState, ORB_FOLDER_NAME, type VoiceState } from '@/hooks/useOrbConversation';
 import { VoiceController, type VoiceTurn } from '@/lib/voiceMode';
+import { AudioRecorderBar } from '@/components/voice/AudioRecorderBar';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
@@ -105,6 +106,7 @@ export function TalkPage() {
   // ─── Skill de Voz ───────────────────────────────────────────────────────────
   const [voiceCfg, setVoiceCfg] = useState<VoiceConfig | null>(null);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [recording, setRecording] = useState(false); // gravador de áudio (transcrição)
   const [speakingProvider, setSpeakingProvider] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceModeRef = useRef(false);
@@ -116,6 +118,9 @@ export function TalkPage() {
   const [panelVoiceState, setPanelVoiceState] = useState<VoiceState>('idle');
   const [panelMuted, setPanelMuted] = useState(false); // mic pausado no modo voz
   const [panelLevel, setPanelLevel] = useState(0); // energia do mic (esfera reativa)
+  const [panelPlayLevel, setPanelPlayLevel] = useState(0); // energia do TTS tocando
+  const playLevelRef = useRef(0);
+  const lastPlayAtRef = useRef(0);
   const [panelTurns, setPanelTurns] = useState<VoiceTurn[]>([]); // fila de falas
   const [expandedTurn, setExpandedTurn] = useState<string | null>(null); // item aberto na fila
   const [editingTurn, setEditingTurn] = useState<string | null>(null); // item em edição
@@ -186,6 +191,12 @@ export function TalkPage() {
         const now = performance.now();
         if (now - lastLevelAtRef.current > 80) { lastLevelAtRef.current = now; setPanelLevel(levelRef.current); }
       },
+      onPlaybackLevel: (rms) => {
+        const norm = Math.min(1, rms / 0.18);
+        playLevelRef.current = playLevelRef.current * 0.6 + norm * 0.4;
+        const now = performance.now();
+        if (now - lastPlayAtRef.current > 70) { lastPlayAtRef.current = now; setPanelPlayLevel(playLevelRef.current); }
+      },
       onTurns: (turns) => setPanelTurns(turns),
       onTranscript: (t) => { if (isStopPhrase(t)) stopPanelVoice(); },
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
@@ -197,7 +208,7 @@ export function TalkPage() {
     panelVoiceRef.current?.stop();
     panelVoiceRef.current = null;
     pendingReplyRef.current = null;
-    levelRef.current = 0; setPanelLevel(0); setPanelTurns([]); setEditingTurn(null); setExpandedTurn(null);
+    levelRef.current = 0; setPanelLevel(0); playLevelRef.current = 0; setPanelPlayLevel(0); setPanelTurns([]); setEditingTurn(null); setExpandedTurn(null);
     setPanelVoiceState('idle');
     setVoiceMode(false); voiceModeRef.current = false; setVoiceModeActive(false);
   }
@@ -303,36 +314,6 @@ export function TalkPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, ttsOn]);
-
-  function onVoiceResult(text: string) {
-    if (voiceModeRef.current) {
-      // "off", "para", "chega", "tchau", "Bukowiski chega"… = desligar o modo voz.
-      if (isStopPhrase(text)) { stopVoiceMode(); return; }
-      if (waitingRef.current) return; // turn-based: espera a resposta
-      send(text);
-    } else setInput((cur) => (cur ? `${cur} ${text}` : text));
-  }
-  function startListenOnce() {
-    if (!voice.sttSupported) return;
-    // Marca o mic ocupado ANTES, pra o wake word soltar o microfone; aí inicia
-    // (pequeno atraso = o reconhecedor do orbe libera o mic e não há conflito).
-    setSttBusy(true);
-    setTimeout(() => voice.startListening(onVoiceResult), 160);
-  }
-  function micToggle() {
-    if (voice.listening) { voice.stopListening(); setSttBusy(false); }
-    else startListenOnce();
-  }
-  function stopVoiceMode() {
-    setVoiceMode(false);
-    voiceModeRef.current = false;
-    setVoiceModeActive(false);
-    setSttBusy(false);
-    voice.stopListening();
-    voice.cancelSpeak();
-    audioRef.current?.pause();
-    setSpeakingProvider(false);
-  }
 
   const active = sessions.find((s) => s.id === activeId) ?? null;
   const waiting =
@@ -908,6 +889,13 @@ export function TalkPage() {
             className="hidden"
             onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
           />
+          {recording ? (
+            <AudioRecorderBar
+              agentId={agentId ?? ''}
+              onResult={(t) => { setRecording(false); if (t) setInput((cur) => (cur ? `${cur} ${t}` : t)); }}
+              onCancel={() => setRecording(false)}
+            />
+          ) : (
           <div className="relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
             {slashOpen && (
               <div className="absolute bottom-full mb-2 left-0 right-0 z-[61] rounded-xl border border-default bg-surface-1 shadow-2xl p-1.5 max-h-72 overflow-y-auto">
@@ -989,15 +977,13 @@ export function TalkPage() {
                 {ttsOn ? <Volume2 size={17} /> : <VolumeX size={17} />}
               </button>
             )}
-            {voice.sttSupported && (
-              <button
-                onClick={micToggle}
-                title={voice.listening ? 'Parar' : 'Falar (transcrever)'}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${voice.listening ? 'bg-semantic-red/15 text-semantic-red animate-pulse' : 'text-creme-faint hover:text-creme hover:bg-surface-hover'}`}
-              >
-                <Mic size={17} />
-              </button>
-            )}
+            <button
+              onClick={() => setRecording(true)}
+              title="Gravar áudio (transcrever)"
+              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors text-creme-faint hover:text-creme hover:bg-surface-hover"
+            >
+              <Mic size={17} />
+            </button>
             {waiting && lastUserMsgId ? (
               <button
                 onClick={() => cancelTurn(lastUserMsgId)}
@@ -1016,6 +1002,7 @@ export function TalkPage() {
               </button>
             )}
           </div>
+          )}
         </div>
       </div>
 
@@ -1131,13 +1118,13 @@ export function TalkPage() {
             const hue = panelVoiceState === 'thinking' ? -62 : panelVoiceState === 'speaking' ? 95 : 0;
             const color = panelVoiceState === 'thinking' ? '244 194 103' : panelVoiceState === 'speaking' ? '127 176 245' : '124 217 154';
             const label = panelVoiceState === 'speaking' ? 'Respondendo' : panelVoiceState === 'thinking' ? 'Pensando' : panelVoiceState === 'talking' ? 'Você falando' : 'Ouvindo';
-            const intensity = panelVoiceState === 'speaking' ? 0.95 : panelVoiceState === 'thinking' ? 0.5 : 0.4 + panelLevel * 0.55;
             const talking = panelVoiceState === 'talking';
             const responding = panelVoiceState === 'speaking';
             const reacting = talking || responding;
-            // Você falando → escala com o nível do mic. Ele respondendo → respira ritmado.
-            const sphereScale = talking ? 1 + panelLevel * 0.16 : 1;
-            const sphereAnim = responding ? 'voiceBreathe 1.5s ease-in-out infinite' : undefined;
+            // Você falando → reage ao mic. Ele respondendo → reage ao áudio REAL do TTS.
+            const intensity = responding ? 0.6 + panelPlayLevel * 0.4 : panelVoiceState === 'thinking' ? 0.5 : 0.4 + panelLevel * 0.55;
+            const sphereScale = talking ? 1 + panelLevel * 0.16 : responding ? 1 + panelPlayLevel * 0.22 : 1;
+            const sphereAnim = undefined;
             return (
               <div className="relative z-10 flex flex-col items-center gap-8">
                 <style>{`@keyframes orbSpin{to{transform:rotate(360deg)}}@keyframes voiceBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}@keyframes voiceRipple{0%{transform:scale(0.9);opacity:.55}100%{transform:scale(1.7);opacity:0}}`}</style>

@@ -16,6 +16,7 @@ export type VoiceTurn = { id: string; text: string; status: 'queued' | 'processi
 export interface VoiceControllerOpts {
   onState?: (s: VoiceState) => void;
   onLevel?: (rms: number) => void;          // energia do mic (entrada)
+  onPlaybackLevel?: (rms: number) => void;  // energia do TTS tocando (saída)
   onTranscript?: (t: string) => void;       // o que o usuário falou
   onReply?: (t: string) => void;            // resposta do assistente
   onTurns?: (turns: VoiceTurn[]) => void;   // fila de turnos (pendente/processando)
@@ -92,6 +93,8 @@ export class VoiceController {
   private queueRunning = false;
   private playing = false;
   private playResolve: (() => void) | null = null;
+  private playbackAnalyser: AnalyserNode | null = null;
+  private playbackRaf = 0;
 
   // VAD adaptativo (média móvel do ruído).
   private noiseFloor = 0.025;
@@ -147,9 +150,19 @@ export class VoiceController {
       source.connect(this.analyser);
 
       const a = new Audio();
+      this.persistentAudio = a;
+      // Analisador do PLAYBACK: roteia o áudio do TTS por um analyser pra esfera
+      // pulsar com a voz dele de verdade. createMediaElementSource só pode 1x.
+      try {
+        const src = this.audioCtx.createMediaElementSource(a);
+        this.playbackAnalyser = this.audioCtx.createAnalyser();
+        this.playbackAnalyser.fftSize = 256;
+        this.playbackAnalyser.smoothingTimeConstant = 0.6;
+        src.connect(this.playbackAnalyser);
+        this.playbackAnalyser.connect(this.audioCtx.destination);
+      } catch { /* sem meter — áudio ainda toca normal */ }
       a.src = SILENCE_1S;
       a.play().catch(() => { /* noop */ });
-      this.persistentAudio = a;
 
       this._armRecorder();
       this._setState('listening');
@@ -164,6 +177,7 @@ export class VoiceController {
     this.cancelled = true;
     this._setState('idle');
     if (this.rafId) cancelAnimationFrame(this.rafId);
+    if (this.playbackRaf) { cancelAnimationFrame(this.playbackRaf); this.playbackRaf = 0; }
     if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
     try { this.recorder?.state !== 'inactive' && this.recorder?.stop(); } catch { /* noop */ }
     this.recorder = null;
@@ -351,10 +365,26 @@ export class VoiceController {
     if (!this.queueRunning) void this._drainQueue();
   }
 
+  // Mede a energia do TTS tocando e emite (esfera reage à voz dele).
+  private _startPlaybackMeter(): void {
+    if (!this.playbackAnalyser || this.playbackRaf) return;
+    const buf = new Uint8Array(this.playbackAnalyser.fftSize);
+    const tick = () => {
+      if (this.cancelled || !this.playing || !this.playbackAnalyser) { this.playbackRaf = 0; this.o.onPlaybackLevel?.(0); return; }
+      this.playbackAnalyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      this.o.onPlaybackLevel?.(Math.sqrt(sum / buf.length));
+      this.playbackRaf = requestAnimationFrame(tick);
+    };
+    this.playbackRaf = requestAnimationFrame(tick);
+  }
+
   private async _drainQueue(): Promise<void> {
     this.queueRunning = true;
     this.playing = true;
     this._refreshState();
+    this._startPlaybackMeter();
     while (this.audioQueue.length > 0 && !this.cancelled) {
       const blob = await this.audioQueue.shift()!;
       if (!blob || this.cancelled) continue;
