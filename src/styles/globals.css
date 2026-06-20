@@ -170,21 +170,32 @@
     animation: glassAurora 24s ease-in-out infinite alternate;
   }
 
-  /* DARK + glass */
-  html.glass body { background-color: #050805; }
-  html.glass body::before {
-    background:
-      radial-gradient(48% 40% at 12% 6%,  rgba(140,196,122,0.20), transparent 62%),
-      radial-gradient(44% 38% at 92% 12%, rgba(96,165,250,0.12),  transparent 60%),
-      radial-gradient(60% 52% at 84% 98%, rgba(107,143,94,0.28),  transparent 64%),
-      radial-gradient(42% 36% at 22% 94%, rgba(168,212,150,0.14), transparent 60%);
+  /* DARK + glass — paleta RENOVADA: charcoal neutro (não mais verde-escuro
+   * carregado); o Sage entra só como brilho/accent. Sobrescreve os tokens de
+   * superfície → renova o app inteiro, não só os painéis de vidro. */
+  html.glass:not(.light) {
+    --surface-0: 10 12 11;     /* #0a0c0b — base neutra quase-preta */
+    --surface-1: 18 21 20;     /* #121514 */
+    --surface-2: 25 30 28;     /* #191e1c */
+    --surface-3: 34 40 37;     /* #222825 */
+    --surface-4: 44 51 47;     /* #2c332f */
+    --surface-hover: 31 37 34; /* #1f2522 */
+    --border-default-alpha: 0.10;
+    --border-hover-alpha: 0.22;
   }
-  html.glass .glass-panel {
-    background: rgba(15, 23, 15, 0.46) !important;
-    backdrop-filter: blur(26px) saturate(150%);
-    -webkit-backdrop-filter: blur(26px) saturate(150%);
-    border-color: rgba(237, 232, 220, 0.16) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 16px 44px rgba(0, 0, 0, 0.32);
+  html.glass:not(.light) body { background-color: #08090a; }
+  html.glass:not(.light) body::before {
+    background:
+      radial-gradient(48% 42% at 10% 4%,  rgba(140,196,122,0.13), transparent 60%),
+      radial-gradient(46% 40% at 94% 8%,  rgba(120,178,236,0.10), transparent 60%),
+      radial-gradient(58% 54% at 88% 99%, rgba(107,143,94,0.14),  transparent 62%);
+  }
+  html.glass:not(.light) .glass-panel {
+    background: rgba(22, 26, 25, 0.55) !important;
+    backdrop-filter: blur(28px) saturate(135%);
+    -webkit-backdrop-filter: blur(28px) saturate(135%);
+    border-color: rgba(255, 255, 255, 0.09) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 18px 50px rgba(0, 0, 0, 0.42);
   }
 
   /* LIGHT + glass — vidro fosco claro (Liquid Glass "dia") */
