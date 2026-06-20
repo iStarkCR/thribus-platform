@@ -11,7 +11,7 @@
  */
 
 export type VoiceState = 'idle' | 'listening' | 'speaking' | 'processing' | 'playing';
-export type VoiceTurn = { id: string; text: string; status: 'queued' | 'processing' };
+export type VoiceTurn = { id: string; text: string; status: 'queued' | 'processing' | 'done' };
 
 export interface VoiceControllerOpts {
   onState?: (s: VoiceState) => void;
@@ -170,7 +170,7 @@ export class VoiceController {
     if (this.cancelled) return;
     if (this.speechActive) this._setState('speaking');
     else if (this.playing) this._setState('playing');
-    else if (this.replyRunning || this.turns.length > 0) this._setState('processing');
+    else if (this.replyRunning || this.replyQueue.length > 0) this._setState('processing');
     else this._setState('listening');
   }
 
@@ -218,7 +218,7 @@ export class VoiceController {
       this.o.onLevel?.(rms);
       const now = performance.now();
       // Pensando (ocupado) → limiar um pouco maior; ouvindo → base.
-      const busy = this.replyRunning || this.turns.length > 0;
+      const busy = this.replyRunning || this.replyQueue.length > 0;
       const base = Math.max(0.045, this.noiseFloor * 3);
       const threshold = busy ? Math.max(0.06, this.noiseFloor * 3.5) : base;
       const onset = busy ? 7 : this.ONSET_FRAMES;
@@ -290,7 +290,10 @@ export class VoiceController {
       const turn = this.turns.find((t) => t.id === id);
       if (turn) { turn.status = 'processing'; this._emitTurns(); }
       try { await this._handleReply(text); } catch (e) { this.o.onError?.(e as Error); }
-      this.turns = this.turns.filter((t) => t.id !== id);
+      // Mantém o turno como histórico ('done'); guarda os últimos 12.
+      const t2 = this.turns.find((t) => t.id === id);
+      if (t2) t2.status = 'done';
+      if (this.turns.length > 12) this.turns = this.turns.slice(-12);
       this._emitTurns();
     }
     this.replyRunning = false;
