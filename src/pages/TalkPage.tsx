@@ -1137,7 +1137,7 @@ export function TalkPage() {
                     className="absolute inset-0 rounded-full overflow-hidden transition-[filter] duration-500"
                     style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', filter: hue ? `hue-rotate(${hue}deg)` : undefined }}
                   >
-                    <NeuralSphere className="absolute inset-0" intensity={intensity} />
+                    <NeuralSphere className="absolute inset-0" intensity={intensity} interactionMultiplier={0} parallaxMultiplier={0} ambient={false} />
                   </div>
                   <div className="absolute -inset-6 rounded-full pointer-events-none transition-all duration-500" style={{ background: `radial-gradient(circle, rgba(${color}/0.22) 0%, transparent 66%)` }} />
                   <div className="absolute -inset-[7%] rounded-full border border-dashed pointer-events-none" style={{ borderColor: `rgba(${color}/0.3)`, animation: 'orbSpin 18s linear infinite' }} />
@@ -1166,16 +1166,17 @@ export function TalkPage() {
                     key={t.id}
                     onClick={() => setExpandedTurn(open ? null : t.id)}
                     title={open ? 'Recolher' : 'Ver completo'}
-                    className={`text-left flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl border backdrop-blur transition-colors ${t.status === 'processing' ? 'border-brand/40 bg-brand/10' : 'border-default bg-surface-1/80 hover:bg-surface-1'}`}
+                    className={`text-left flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl border backdrop-blur-xl transition-colors ${t.status === 'processing' ? 'border-brand/50 bg-brand/15' : 'border-default bg-[#0c1410]/90 hover:bg-[#0c1410]'}`}
                   >
                     {t.status === 'processing'
                       ? <Loader2 size={15} className="text-brand-bright animate-spin shrink-0 mt-0.5" />
                       : <Clock size={15} className="text-creme-faint shrink-0 mt-0.5" />}
                     <div className="min-w-0 flex-1">
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-creme-faint/70 mb-0.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-bright/80 mb-1">
                         {t.status === 'processing' ? 'Respondendo' : 'Na fila'}
                       </div>
-                      <span className={`text-[13.5px] text-creme leading-snug ${open ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>{t.text}</span>
+                      <span className={`block text-[14px] text-creme leading-relaxed ${open ? 'whitespace-pre-wrap' : 'truncate'}`}>{t.text}</span>
+                      <div className="text-[10px] text-creme-faint/60 mt-1">{open ? 'tocar pra recolher' : 'tocar pra ver tudo'}</div>
                     </div>
                   </button>
                 );

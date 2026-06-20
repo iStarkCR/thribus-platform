@@ -76,11 +76,20 @@ export async function ttsBlob(agentId: string, text: string): Promise<Blob | nul
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
   const { data: s } = await supabase.auth.getSession();
   const token = s?.session?.access_token ?? anonKey;
-  const r = await fetch(`${url}/functions/v1/tts`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, apikey: anonKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agentId, text }),
-  });
+  // Timeout: um fetch de áudio pendurado congelaria a fila de TTS (fica "respondendo").
+  const ac = new AbortController();
+  const to = setTimeout(() => ac.abort(), 20000);
+  let r: Response;
+  try {
+    r = await fetch(`${url}/functions/v1/tts`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, apikey: anonKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, text }),
+      signal: ac.signal,
+    });
+  } finally {
+    clearTimeout(to);
+  }
   if (!r.ok) throw new Error(`tts HTTP ${r.status}`);
   const blob = await r.blob();
   return blob.size > 0 && blob.type.includes('audio') ? blob : null;
