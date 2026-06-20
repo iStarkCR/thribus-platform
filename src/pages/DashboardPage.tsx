@@ -114,13 +114,13 @@ export function DashboardPage() {
           const Icon = m.icon;
           const isNeg = typeof m.trend === 'number' && m.trend < 0;
           return (
-            <div key={m.label} className="bg-surface-2 border border-default rounded-[10px] p-5 hover:border-hover transition-all">
-              <div className="flex items-start justify-between mb-3.5">
-                <div className={clsx('w-[34px] h-[34px] rounded-lg flex items-center justify-center', m.style)}>
+            <div key={m.label} className="group rounded-2xl border border-default bg-surface-2 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-hover hover:shadow-[0_20px_44px_-22px_rgba(0,0,0,0.65)]">
+              <div className="flex items-start justify-between mb-4">
+                <div className={clsx('w-9 h-9 rounded-xl flex items-center justify-center transition-transform duration-200 group-hover:scale-105', m.style)}>
                   <Icon size={16} />
                 </div>
                 <span className={clsx(
-                  'text-[13px] font-mono font-medium px-1.5 py-0.5 rounded-full',
+                  'text-[12px] font-mono font-semibold px-2 py-0.5 rounded-full',
                   m.label === 'Escalamentos Hoje'
                     ? (isNeg ? 'bg-semantic-green/10 text-semantic-green' : 'bg-semantic-red/10 text-semantic-red')
                     : (isNeg ? 'bg-semantic-red/10 text-semantic-red' : 'bg-semantic-green/10 text-semantic-green'),
@@ -128,8 +128,8 @@ export function DashboardPage() {
                   {isNeg ? '' : '+'}{m.trend}{typeof m.trend === 'number' && m.label !== 'Colaboradores Ativos' ? '%' : ''}
                 </span>
               </div>
-              <div className="text-[28px] font-extrabold text-creme tracking-tight leading-none mb-1">{m.value}</div>
-              <div className="text-[13.5px] text-creme-mute font-medium">{m.label}</div>
+              <div className="text-[30px] font-extrabold text-creme tracking-tight leading-none mb-2">{m.value}</div>
+              <div className="text-[11px] text-creme-mute font-semibold uppercase tracking-[0.09em]">{m.label}</div>
             </div>
           );
         })}

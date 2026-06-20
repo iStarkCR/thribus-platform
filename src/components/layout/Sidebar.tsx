@@ -74,17 +74,17 @@ export function Sidebar() {
                   onClick={() => navigate(item.path)}
                   title={collapsed ? item.label : undefined}
                   className={clsx(
-                    'w-full flex items-center py-2 rounded-lg text-[15px] font-medium transition-all duration-150 relative min-w-0',
+                    'w-full flex items-center py-[7px] rounded-[10px] text-[13.5px] font-medium transition-all duration-150 relative min-w-0',
                     collapsed ? 'justify-center px-0' : 'gap-2.5 px-2.5',
                     isActive
-                      ? 'bg-brand/10 text-brand-bright'
-                      : 'text-creme-mute hover:bg-surface-hover hover:text-creme-dim',
+                      ? 'bg-brand/[0.13] text-creme'
+                      : 'text-creme-mute hover:bg-surface-hover/70 hover:text-creme-dim',
                   )}
                 >
                   {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2.5px] h-4 bg-brand rounded-r" />
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-brand-bright rounded-r-full" />
                   )}
-                  <Icon size={16} className={clsx('shrink-0', isActive ? 'opacity-100' : 'opacity-50')} />
+                  <Icon size={16} className={clsx('shrink-0', isActive ? 'opacity-100 text-brand-bright' : 'opacity-50')} />
                   {!collapsed && <span className="truncate min-w-0 text-left">{item.label}</span>}
                   {!collapsed && item.badge && (
                     <span className="ml-auto shrink-0 text-[12px] font-semibold font-mono bg-brand/10 text-brand px-1.5 py-px rounded-full">
