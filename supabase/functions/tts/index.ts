@@ -13,6 +13,14 @@ const cors = {
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } });
 
+// Pronúncia: reescreve nomes próprios foneticamente (PT-BR) pro TTS não errar.
+// Ex.: "Bukowiski" (w com som de v) → "Bukoviski"; "Thribus" → "Tríbus".
+function phonetic(text: string): string {
+  return text
+    .replace(/Bukowiski/gi, 'Bukoviski')
+    .replace(/Thribus/gi, 'Tríbus');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
@@ -38,14 +46,14 @@ Deno.serve(async (req) => {
       const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
         method: 'POST',
         headers: { 'xi-api-key': cfg.api_key, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
-        body: JSON.stringify({ text, model_id: cfg.model || 'eleven_multilingual_v2', voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
+        body: JSON.stringify({ text: phonetic(text), model_id: cfg.model || 'eleven_multilingual_v2', voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
       });
       if (!r.ok) return json({ error: `elevenlabs ${r.status}: ${(await r.text()).slice(0, 200)}` }, 400);
       return new Response(await r.arrayBuffer(), { headers: { ...cors, 'Content-Type': 'audio/mpeg' } });
     }
     if (cfg.provider === 'openai') {
       const model = cfg.model || 'gpt-4o-mini-tts';
-      const body: Record<string, unknown> = { model, voice: cfg.voice_id || 'onyx', input: text };
+      const body: Record<string, unknown> = { model, voice: cfg.voice_id || 'onyx', input: phonetic(text) };
       // gpt-4o-mini-tts aceita 'instructions' (tom/estilo) — deixa a fala expressiva.
       // tts-1/tts-1-hd ignoram, então só mandamos nos modelos que suportam.
       if (/mini|gpt-4o/.test(model)) {
