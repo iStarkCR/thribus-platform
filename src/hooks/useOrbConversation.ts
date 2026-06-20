@@ -3,7 +3,7 @@ import { useSession } from '@/hooks/useSession';
 import { useAppStore } from '@/hooks/useAppStore';
 import { listMessages, sendMessage, subscribeChat, type ChatMessage } from '@/services/collaboratorChat';
 import { listSessions, createSession, touchSession, listFolders, createFolder } from '@/services/chatSessions';
-import { ttsBlob, transcribeBlob } from '@/services/voiceSkill';
+import { ttsBlob, transcribeBlob, quickAck } from '@/services/voiceSkill';
 import { VoiceController, type VoiceState as RawVoiceState } from '@/lib/voiceMode';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
@@ -166,6 +166,7 @@ export function useOrbConversation() {
       transcribe: async (blob) => (await transcribeBlob(BUKOWISKI_ID, blob)) ?? '',
       tts: (txt) => ttsBlob(BUKOWISKI_ID, txt),
       sendAndAwait: (t) => sendAndAwait(t, true), // voz → modelo leve na ponte
+      quickAck: (t) => quickAck(BUKOWISKI_ID, t),
       isNoise,
       onState: (s) => setState(mapVoiceState(s)),
       onTranscript: (t) => { if (isStopPhrase(t)) stopVoice(); },

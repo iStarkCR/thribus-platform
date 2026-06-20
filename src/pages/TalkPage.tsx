@@ -30,7 +30,7 @@ import {
 const FOLDER_COLORS = ['#6B8F5E', '#3b82f6', '#8b5cf6', '#ef4444', '#f59e0b', '#14b8a6', '#ec4899', '#64748b'];
 import { AgentInfoModal } from '@/components/agents/AgentInfoModal';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
-import { getVoiceConfig, ttsBlob, transcribeBlob, type VoiceConfig } from '@/services/voiceSkill';
+import { getVoiceConfig, ttsBlob, transcribeBlob, quickAck, type VoiceConfig } from '@/services/voiceSkill';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -162,6 +162,7 @@ export function TalkPage() {
       transcribe: async (b) => (await transcribeBlob(aid, b)) ?? '',
       tts: (t) => ttsBlob(aid, t),
       sendAndAwait: panelSendAndAwait,
+      quickAck: (t) => quickAck(aid, t),
       isNoise,
       onState: (s) => setPanelVoiceState(mapVoiceState(s)),
       onTranscript: (t) => { if (isStopPhrase(t)) stopPanelVoice(); },

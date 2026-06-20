@@ -24,6 +24,8 @@ export interface VoiceControllerOpts {
   tts: (text: string) => Promise<Blob | null>;
   /** Manda a fala pro chat e resolve com a resposta (completa). */
   sendAndAwait: (text: string) => Promise<string>;
+  /** Ack curto e contextual falado ANTES da resposta pesada (gap de "pensando"). */
+  quickAck?: (text: string) => Promise<string>;
   /** Frase é "lixo" do Whisper (alucinação de silêncio)? */
   isNoise?: (t: string) => boolean;
 }
@@ -234,8 +236,17 @@ export class VoiceController {
 
   // ─── Resposta: chat → frases → fila de TTS ─────────────────────────────────
   private async _handleReply(text: string): Promise<void> {
+    // Dispara a resposta pesada e, EM PARALELO, um ack curto. O ack chega antes
+    // (~1s) e é falado já — enquanto a resposta real (7-11s) ainda processa.
+    const replyPromise = this.o.sendAndAwait(text);
+    if (this.o.quickAck) {
+      try {
+        const ack = await this.o.quickAck(text);
+        if (ack && !this.cancelled) { console.log(`[voz] ack: "${ack}"`); this._enqueue(ack); }
+      } catch { /* sem ack — segue pro reply */ }
+    }
     let reply = '';
-    try { reply = await this.o.sendAndAwait(text); } catch (e) { this.o.onError?.(e as Error); }
+    try { reply = await replyPromise; } catch (e) { this.o.onError?.(e as Error); }
     if (this.cancelled) return;
     this.o.onReply?.(reply);
     const clean = cleanForSpeech(reply);

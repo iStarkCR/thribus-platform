@@ -86,6 +86,18 @@ export async function ttsBlob(agentId: string, text: string): Promise<Blob | nul
   return blob.size > 0 && blob.type.includes('audio') ? blob : null;
 }
 
+/** Ack curto e contextual ("já vou ver isso") falado antes da resposta pesada. */
+export async function quickAck(agentId: string, text: string): Promise<string> {
+  if (!supabase) return '';
+  try {
+    const { data, error } = await supabase.functions.invoke('voice-ack', { body: { agentId, text } });
+    if (error) return '';
+    return (data as { ack?: string })?.ack?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
+
 /** Transcreve áudio via Whisper (OpenAI). Retorna texto ou null. */
 export async function transcribeBlob(agentId: string, audio: Blob): Promise<string | null> {
   if (!supabase) return null;
