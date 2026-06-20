@@ -27,6 +27,11 @@
     --brand-bright: 140 196 122; /* #8cc47a */
     --brand-glow:   168 212 150; /* #a8d496 */
 
+    /* Gold — accent premium (detalhes dourados) */
+    --gold:        198 164 90;  /* #c6a45a */
+    --gold-bright: 226 198 132; /* #e2c684 */
+    --gold-dim:    150 120 58;  /* #96783a */
+
     /* Creme — texto e foreground */
     --creme:       237 232 220; /* #EDE8DC — texto primário */
     --creme-dim:   196 191 178; /* #c4bfb2 — texto secundário */
@@ -59,11 +64,16 @@
     --surface-4: 212 216 207;   /* #d4d8cf — card highest */
     --surface-hover: 227 230 221; /* #e3e6dd — hover state */
 
-    /* Brand — verde mais escuro pra contraste em fundo claro */
-    --brand-dim:    58 85 48;    /* #3a5530 */
-    --brand:        74 107 63;   /* #4a6b3f */
-    --brand-bright: 107 143 94;  /* #6B8F5E (era o DEFAULT do dark) */
-    --brand-glow:   140 196 122; /* #8cc47a */
+    /* Brand — verde mais CLARO/fresco no modo claro (era escuro demais) */
+    --brand-dim:    74 107 63;   /* #4a6b3f */
+    --brand:        103 150 78;  /* #67964e — sage fresco */
+    --brand-bright: 130 178 104; /* #82b268 */
+    --brand-glow:   162 208 138; /* #a2d08a */
+
+    /* Gold — accent premium (um pouco mais saturado pra contraste no claro) */
+    --gold:        176 138 56;  /* #b08a38 */
+    --gold-bright: 198 160 78;  /* #c6a04e */
+    --gold-dim:    140 106 40;  /* #8c6a28 */
 
     /* Creme — texto escuro pra fundo claro (semântica preservada) */
     --creme:       26 31 26;    /* #1a1f1a — texto primário */
@@ -199,13 +209,13 @@
   }
 
   /* LIGHT + glass — vidro fosco claro (Liquid Glass "dia") */
-  html.glass.light body { background-color: #e9efe4; }
+  html.glass.light body { background-color: #eef4ea; }
   html.glass.light body::before {
     background:
-      radial-gradient(48% 40% at 12% 6%,  rgba(107,143,94,0.30), transparent 62%),
-      radial-gradient(44% 38% at 92% 12%, rgba(96,165,250,0.16), transparent 60%),
-      radial-gradient(60% 52% at 84% 98%, rgba(140,196,122,0.38), transparent 64%),
-      radial-gradient(42% 36% at 22% 94%, rgba(168,212,150,0.26), transparent 60%);
+      radial-gradient(48% 40% at 12% 6%,  rgba(150,200,130,0.30), transparent 62%),
+      radial-gradient(44% 38% at 92% 12%, rgba(120,180,235,0.13), transparent 60%),
+      radial-gradient(60% 52% at 84% 98%, rgba(168,212,150,0.34), transparent 64%),
+      radial-gradient(40% 34% at 48% 46%, rgba(226,198,132,0.12), transparent 58%);
   }
   html.glass.light .glass-panel {
     background: rgba(255, 255, 255, 0.52) !important;

@@ -114,7 +114,8 @@ export function DashboardPage() {
           const Icon = m.icon;
           const isNeg = typeof m.trend === 'number' && m.trend < 0;
           return (
-            <div key={m.label} className="group rounded-2xl border border-default bg-surface-2 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-hover hover:shadow-[0_20px_44px_-22px_rgba(0,0,0,0.65)]">
+            <div key={m.label} className="group relative overflow-hidden rounded-2xl border border-default bg-surface-2 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-hover hover:shadow-[0_20px_44px_-22px_rgba(0,0,0,0.65)]">
+              <span className="pointer-events-none absolute top-0 left-5 right-5 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
               <div className="flex items-start justify-between mb-4">
                 <div className={clsx('w-9 h-9 rounded-xl flex items-center justify-center transition-transform duration-200 group-hover:scale-105', m.style)}>
                   <Icon size={16} />

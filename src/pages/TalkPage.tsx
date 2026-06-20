@@ -723,7 +723,7 @@ export function TalkPage() {
             <div className="min-w-0">
               <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2">
                 {agent.name}
-                {agent.isSupervisor && <Crown size={15} className="text-semantic-amber" />}
+                {agent.isSupervisor && <Crown size={15} className="text-gold-bright" />}
               </div>
               <div className="text-[12.5px] text-creme-faint truncate">
                 {agent.sector} · {agent.status}{active ? ` · ${active.title}` : ''}
@@ -770,7 +770,7 @@ export function TalkPage() {
                     >
                       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[11px] font-bold text-white shrink-0">{c.name[0]}</div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[13px] text-creme flex items-center gap-1 truncate">{c.name}{c.isSupervisor && <Crown size={10} className="text-semantic-amber" />}</div>
+                        <div className="text-[13px] text-creme flex items-center gap-1 truncate">{c.name}{c.isSupervisor && <Crown size={10} className="text-gold-bright" />}</div>
                         <div className="text-[10.5px] text-creme-faint truncate">{c.sector}</div>
                       </div>
                       {c.id === agent.id && <Check size={13} className="text-brand shrink-0" />}
@@ -935,7 +935,7 @@ export function TalkPage() {
                         <div className="mt-1 mb-1 max-h-48 overflow-y-auto rounded-lg border border-default bg-surface-2 p-1">
                           {collaborators.map((c) => (
                             <button key={c.id} onClick={() => toDemand(c.id)} className="w-full text-left px-2.5 py-1.5 rounded-md text-[12.5px] text-creme-mute hover:bg-surface-hover hover:text-creme flex items-center gap-2">
-                              {c.id === 'bukowiski-thribus' && <Crown size={12} className="text-brand-bright shrink-0" />}
+                              {c.id === 'bukowiski-thribus' && <Crown size={12} className="text-gold-bright shrink-0" />}
                               <span className="truncate">{c.name}</span>
                             </button>
                           ))}

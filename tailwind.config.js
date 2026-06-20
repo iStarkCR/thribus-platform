@@ -35,6 +35,11 @@ export default {
           mute:    'rgb(var(--creme-mute) / <alpha-value>)',
           faint:   'rgb(var(--creme-faint) / <alpha-value>)',
         },
+        gold: {
+          DEFAULT: 'rgb(var(--gold) / <alpha-value>)',
+          bright:  'rgb(var(--gold-bright) / <alpha-value>)',
+          dim:     'rgb(var(--gold-dim) / <alpha-value>)',
+        },
         semantic: {
           green: 'rgb(var(--semantic-green) / <alpha-value>)',
           amber: 'rgb(var(--semantic-amber) / <alpha-value>)',

@@ -57,7 +57,7 @@ export function AgentCard({ agent, showFullInfo, onClick, onConfig }: AgentCardP
               {agent.name}{showFullInfo ? ` — ${agent.client}` : ''}
               {agent.isSupervisor && (
                 <>
-                  <Crown size={13} className="text-semantic-amber shrink-0" />
+                  <Crown size={13} className="text-gold-bright shrink-0" />
                   <span className="text-[10px] font-bold uppercase tracking-wider bg-semantic-amber/15 text-semantic-amber px-1.5 py-px rounded-full shrink-0">
                     Supervisor
                   </span>
