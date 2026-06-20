@@ -114,7 +114,10 @@ export function TalkPage() {
   // Motor de voz do PAINEL (VoiceController) — atrelado à sessão ATIVA: a fala vira
   // mensagem (is_voice) NESTA conversa, e a resposta é falada. Separado do orbe.
   const [panelVoiceState, setPanelVoiceState] = useState<VoiceState>('idle');
+  const [panelLevel, setPanelLevel] = useState(0); // energia do mic (esfera reativa)
   const panelVoiceRef = useRef<VoiceController | null>(null);
+  const levelRef = useRef(0);
+  const lastLevelAtRef = useRef(0);
   const pendingReplyRef = useRef<((s: string) => void) | null>(null);
   const activeIdRef = useRef<string | null>(null);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
@@ -165,6 +168,13 @@ export function TalkPage() {
       quickAck: (t) => quickAck(aid, t),
       isNoise,
       onState: (s) => setPanelVoiceState(mapVoiceState(s)),
+      onLevel: (rms) => {
+        // Esfera reativa à voz (estilo CORTEX): suaviza e atualiza throttled (~12fps).
+        const norm = Math.min(1, rms / 0.25);
+        levelRef.current = levelRef.current * 0.7 + norm * 0.3;
+        const now = performance.now();
+        if (now - lastLevelAtRef.current > 80) { lastLevelAtRef.current = now; setPanelLevel(levelRef.current); }
+      },
       onTranscript: (t) => { if (isStopPhrase(t)) stopPanelVoice(); },
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
     });
@@ -175,6 +185,7 @@ export function TalkPage() {
     panelVoiceRef.current?.stop();
     panelVoiceRef.current = null;
     pendingReplyRef.current = null;
+    levelRef.current = 0; setPanelLevel(0);
     setPanelVoiceState('idle');
     setVoiceMode(false); voiceModeRef.current = false; setVoiceModeActive(false);
   }
@@ -1052,9 +1063,16 @@ export function TalkPage() {
       {voiceMode && (
         <div
           className="fixed inset-0 z-[65] flex flex-col items-center justify-center overflow-hidden"
-          style={{ background: 'radial-gradient(ellipse at center, #162a1c 0%, #050806 72%)' }}
+          style={{ background: 'radial-gradient(ellipse at center, #142e1f 0%, #040805 76%)' }}
         >
           <style>{`@keyframes orbDot{0%,100%{opacity:.2;transform:scaleY(1)}50%{opacity:1;transform:scaleY(2.4)}}`}</style>
+
+          {/* Rede de fundo — esfera grande bem esmaecida (igual ao orbe) */}
+          <div className="absolute inset-0 opacity-[0.18] pointer-events-none">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 aspect-square w-[140vmin]">
+              <NeuralSphere className="absolute inset-0" intensity={0.2} speedMultiplier={0.6} interactionMultiplier={0} parallaxMultiplier={0} ambient={false} connectScale={1} />
+            </div>
+          </div>
 
           {/* Topo: rótulo + fechar */}
           <div className="absolute top-0 inset-x-0 h-16 px-7 flex items-center justify-between">
@@ -1068,14 +1086,14 @@ export function TalkPage() {
             </button>
           </div>
 
-          {/* Esfera central + status */}
-          <div className="flex flex-col items-center gap-7">
+          {/* Esfera central + status — reage à voz (mic level) estilo CORTEX */}
+          <div className="relative z-10 flex flex-col items-center gap-7">
             <div className="relative aspect-square w-[min(60vmin,540px)]">
               <div
                 className="absolute inset-0 rounded-full overflow-hidden"
                 style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
               >
-                <NeuralSphere className="absolute inset-0" intensity={panelVoiceState === 'speaking' ? 0.95 : panelVoiceState === 'talking' ? 0.85 : panelVoiceState === 'listening' ? 0.6 : 0.4} />
+                <NeuralSphere className="absolute inset-0" intensity={panelVoiceState === 'speaking' ? 0.95 : panelVoiceState === 'thinking' ? 0.5 : 0.4 + panelLevel * 0.55} />
               </div>
               <div className="pointer-events-none absolute -inset-[7%] rounded-full ring-1 ring-brand/[0.07]" />
               <div className="pointer-events-none absolute -inset-[16%] rounded-full ring-1 ring-brand/[0.035]" />

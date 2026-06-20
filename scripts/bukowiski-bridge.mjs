@@ -386,7 +386,12 @@ async function processMessage(msg) {
 
   // anexos (imagem/PDF/vídeo) → baixa pro Mac e referencia no prompt
   const files = await downloadAttachments(msg.attachments);
-  const content = msg.content + attachNote(files);
+  // Modo voz: o usuário está FALANDO e a resposta será LIDA em voz alta (TTS).
+  // Avisa o agente pra responder pra ser ouvido — e NUNCA dizer que "não fala".
+  const voiceNote = msg.is_voice
+    ? '\n\n[MODO VOZ — o usuário está falando com você e ESTA resposta será convertida em fala (TTS, voz OpenAI). Responda naturalmente pra ser OUVIDO: frases curtas, pontuação clara, PT-BR, sem markdown/código/listas. Você TEM voz — NUNCA diga que não pode falar/ler em voz alta; só responda normalmente que o sistema fala por você. Seja conciso.]'
+    : '';
+  const content = msg.content + attachNote(files) + voiceNote;
 
   let evSeq = 0;
   const onEvent = (e) => {
