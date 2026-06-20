@@ -4,7 +4,6 @@ import { useAppStore } from '@/hooks/useAppStore';
 import { useWakeWordListener } from '@/hooks/useWakeWordListener';
 import { useOrbConversation } from '@/hooks/useOrbConversation';
 import { OrbChat } from '@/components/voice/OrbChat';
-import { OrbVoiceOverlay } from '@/components/voice/OrbVoiceOverlay';
 
 const ORB_SIZE = 88;
 const MARGIN = 18;
@@ -44,8 +43,6 @@ export function FloatingOrb() {
   const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
   const voiceModeActive = useAppStore((s) => s.voiceModeActive);
   const sttBusy = useAppStore((s) => s.sttBusy);
-  const voiceAutostart = useAppStore((s) => s.voiceAutostart);
-  const consumeVoiceAutostart = useAppStore((s) => s.consumeVoiceAutostart);
 
   const conv = useOrbConversation();
 
@@ -54,20 +51,6 @@ export function FloatingOrb() {
   const [hovered, setHovered] = useState(false);
   const [wakeFlash, setWakeFlash] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  // Modo voz tela cheia: SÓ quando o botão "Modo voz" do TalkPage pede. Clique no
-  // orbe e wake word conversam inline (status na própria esfera), sem overlay.
-  const [fullscreen, setFullscreen] = useState(false);
-
-  // Botão "Modo voz" do TalkPage pede o modo imersivo → liga o motor único e abre
-  // o overlay de tela cheia. Um motor só, sessão própria.
-  useEffect(() => {
-    if (voiceAutostart && !conv.voiceActive) {
-      consumeVoiceAutostart();
-      setFullscreen(true);
-      conv.startVoice();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceAutostart]);
   const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number; shift: boolean; right: boolean } | null>(null);
 
   // Mantém o orbe dentro da viewport ao redimensionar.
@@ -84,7 +67,6 @@ export function FloatingOrb() {
   const onWake = useCallback(() => {
     setWakeFlash(true);
     setTimeout(() => setWakeFlash(false), 2200);
-    setFullscreen(false);
     startVoiceRef.current();
   }, []);
 
@@ -122,7 +104,6 @@ export function FloatingOrb() {
       // Clique normal → MODO VOZ inline na própria orbe (toggle), igual ao CORTEX.
       // Sem tela cheia: o status aparece na esfera (Ouvindo/Pensando/Respondendo).
       setChatOpen(false);
-      setFullscreen(false);
       if (conv.voiceActive) conv.stopVoice(); else conv.startVoice();
     }
   };
@@ -206,14 +187,10 @@ export function FloatingOrb() {
         )}
       </button>
 
+      {/* O orbe é à parte: voz SEMPRE inline (status na esfera) e chat próprio.
+          O modo voz em tela cheia é do TalkPage, atrelado à conversa aberta. */}
       {chatOpen && (
         <OrbChat orb={{ x: pos.x, y: pos.y, size: ORB_SIZE }} onClose={() => setChatOpen(false)} conv={conv} />
-      )}
-
-      {/* Modo voz em tela cheia — MOTOR ÚNICO (VoiceController), acionado SÓ pelo
-          botão "Modo voz" do TalkPage. Clique no orbe e wake word ficam inline. */}
-      {conv.voiceActive && fullscreen && (
-        <OrbVoiceOverlay conv={conv} onClose={() => { conv.stopVoice(); setFullscreen(false); }} />
       )}
     </>
   );

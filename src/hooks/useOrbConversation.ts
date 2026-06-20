@@ -27,7 +27,7 @@ export function isStopPhrase(text: string): boolean {
 }
 
 // Alucinações do Whisper sobre silêncio.
-function isNoise(t: string): boolean {
+export function isNoise(t: string): boolean {
   const s = t.toLowerCase().trim();
   if (s.length < 2) return true;
   return /amara\.org|legendas?\s+(pela|by)|subtitles?\s+by|obrigad[oa] por (assistir|ver)|^muito obrigad|♪|\[(música|musica|aplausos|risos)\]/i.test(s);
@@ -35,7 +35,7 @@ function isNoise(t: string): boolean {
 
 export type VoiceState = 'idle' | 'listening' | 'talking' | 'thinking' | 'speaking';
 // 'speaking' do motor = usuário falando (VAD detectou voz); 'playing' = TTS tocando.
-const mapState = (s: RawVoiceState): VoiceState =>
+export const mapVoiceState = (s: RawVoiceState): VoiceState =>
   s === 'processing' ? 'thinking'
   : s === 'playing' ? 'speaking'
   : s === 'speaking' ? 'talking'
@@ -167,7 +167,7 @@ export function useOrbConversation() {
       tts: (txt) => ttsBlob(BUKOWISKI_ID, txt),
       sendAndAwait: (t) => sendAndAwait(t, true), // voz → modelo leve na ponte
       isNoise,
-      onState: (s) => setState(mapState(s)),
+      onState: (s) => setState(mapVoiceState(s)),
       onTranscript: (t) => { if (isStopPhrase(t)) stopVoice(); },
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
     });

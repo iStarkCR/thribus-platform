@@ -8,7 +8,8 @@ import {
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
-import { isStopPhrase, ORB_FOLDER_NAME } from '@/hooks/useOrbConversation';
+import { isStopPhrase, isNoise, mapVoiceState, ORB_FOLDER_NAME, type VoiceState } from '@/hooks/useOrbConversation';
+import { VoiceController } from '@/lib/voiceMode';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
@@ -29,7 +30,7 @@ import {
 const FOLDER_COLORS = ['#6B8F5E', '#3b82f6', '#8b5cf6', '#ef4444', '#f59e0b', '#14b8a6', '#ec4899', '#64748b'];
 import { AgentInfoModal } from '@/components/agents/AgentInfoModal';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
-import { getVoiceConfig, ttsBlob, type VoiceConfig } from '@/services/voiceSkill';
+import { getVoiceConfig, ttsBlob, transcribeBlob, type VoiceConfig } from '@/services/voiceSkill';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -40,7 +41,6 @@ const BUKOWISKI_ID = 'bukowiski-thribus';
  */
 export function TalkPage() {
   const agents = useAppStore((s) => s.agents);
-  const requestVoiceMode = useAppStore((s) => s.requestVoiceMode);
   const setVoiceModeActive = useAppStore((s) => s.setVoiceModeActive);
   const setSttBusy = useAppStore((s) => s.setSttBusy);
   const { user } = useSession();
@@ -111,6 +111,12 @@ export function TalkPage() {
   const wasListeningRef = useRef(false);
   const waitingRef = useRef(false); // já há mensagem do usuário aguardando resposta
   const voiceCfgRef = useRef<VoiceConfig | null>(null);
+  // Motor de voz do PAINEL (VoiceController) — atrelado à sessão ATIVA: a fala vira
+  // mensagem (is_voice) NESTA conversa, e a resposta é falada. Separado do orbe.
+  const [panelVoiceState, setPanelVoiceState] = useState<VoiceState>('idle');
+  const panelVoiceRef = useRef<VoiceController | null>(null);
+  const pendingReplyRef = useRef<((s: string) => void) | null>(null);
+  const activeIdRef = useRef<string | null>(null);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
   // Quando a transcrição (push-to-talk) termina e não está no modo voz, libera o
   // wake word (sttBusy=false). Só dispara na transição ouvindo→parou, não no início.
@@ -119,11 +125,70 @@ export function TalkPage() {
     else if (wasListeningRef.current && !voiceMode) { wasListeningRef.current = false; setSttBusy(false); }
   }, [voice.listening, voiceMode, setSttBusy]);
   useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
-  // O modo voz é gerenciado pelo FloatingOrb (motor único). O TalkPage só pede.
+  // ─── Modo voz do painel (VoiceController na sessão ativa) ────────────────────
+  // Manda o texto falado p/ a conversa ATIVA (is_voice) e resolve com a resposta
+  // do daemon via realtime. Cria sessão se não houver nenhuma aberta.
+  const panelSendAndAwait = useCallback(async (text: string): Promise<string> => {
+    if (!agent || !userId) return '';
+    let sid = activeIdRef.current;
+    if (!sid) {
+      const s = await createSession(agent.id, userId, {}).catch(() => null);
+      if (!s) return '';
+      sid = s.id;
+      activeIdRef.current = sid;
+      setActiveId(sid);
+      setSessions((prev) => [s, ...prev]);
+    }
+    try {
+      await sendMessage(sid, agent.id, userId, text, undefined, true);
+      await touchSession(sid);
+    } catch (e) {
+      useAppStore.getState().addToast('Falha ao enviar: ' + (e as Error).message, 'red');
+      return '';
+    }
+    return await new Promise<string>((resolve) => {
+      pendingReplyRef.current = resolve;
+      setTimeout(() => { if (pendingReplyRef.current === resolve) { pendingReplyRef.current = null; resolve(''); } }, 240000);
+    });
+  }, [agent, userId]);
 
-  // Limpa o flag global de modo voz ao sair da página.
-  useEffect(() => () => setVoiceModeActive(false), [setVoiceModeActive]);
+  function startPanelVoice() {
+    if (panelVoiceRef.current || !agent) return;
+    setVoiceMode(true); voiceModeRef.current = true; setVoiceModeActive(true);
+    const aid = agent.id;
+    const ctrl = new VoiceController({
+      transcribe: async (b) => (await transcribeBlob(aid, b)) ?? '',
+      tts: (t) => ttsBlob(aid, t),
+      sendAndAwait: panelSendAndAwait,
+      isNoise,
+      onState: (s) => setPanelVoiceState(mapVoiceState(s)),
+      onTranscript: (t) => { if (isStopPhrase(t)) stopPanelVoice(); },
+      onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
+    });
+    panelVoiceRef.current = ctrl;
+    ctrl.start();
+  }
+  function stopPanelVoice() {
+    panelVoiceRef.current?.stop();
+    panelVoiceRef.current = null;
+    pendingReplyRef.current = null;
+    setPanelVoiceState('idle');
+    setVoiceMode(false); voiceModeRef.current = false; setVoiceModeActive(false);
+  }
+
+  // Resolve a resposta pendente do modo voz quando a msg assistant 'done' chega.
+  useEffect(() => {
+    if (!pendingReplyRef.current || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last.role === 'assistant' && last.status === 'done') {
+      const r = pendingReplyRef.current; pendingReplyRef.current = null; r(last.content);
+    }
+  }, [messages]);
+
+  // Limpa o flag global de modo voz + para o motor ao sair da página.
+  useEffect(() => () => { panelVoiceRef.current?.stop(); panelVoiceRef.current = null; setVoiceModeActive(false); }, [setVoiceModeActive]);
 
   useEffect(() => {
     if (!agentId) return;
@@ -209,9 +274,8 @@ export function TalkPage() {
     const last = messages[messages.length - 1];
     if (last.role === 'assistant' && last.status === 'done' && last.id !== spokenRef.current) {
       spokenRef.current = last.id;
-      if (ttsOn || voiceModeRef.current) {
-        speakReply(last.content, () => { if (voiceModeRef.current) startListenOnce(); });
-      }
+      // No modo voz o VoiceController já fala a resposta — aqui só o TTS de texto.
+      if (ttsOn && !voiceModeRef.current) speakReply(last.content);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, ttsOn]);
@@ -542,7 +606,7 @@ export function TalkPage() {
     { id: 'plano', label: planMode ? 'Desligar modo plano' : 'Modo plano', hint: 'planeja antes de executar', icon: <Lightbulb size={15} />, keywords: ['plano', 'plan', 'planejar'], run: () => setPlanMode((p) => !p) },
     { id: 'anexar', label: 'Anexar arquivo', hint: 'img · PDF · vídeo', icon: <Paperclip size={15} />, keywords: ['anexar', 'arquivo', 'file', 'upload', 'attach'], run: () => fileInputRef.current?.click() },
     { id: 'agendar', label: 'Agendar rotina', hint: 'repetir no tempo', icon: <Clock size={15} />, keywords: ['agendar', 'rotina', 'schedule', 'cron'], run: () => setRoutineOpen(true) },
-    { id: 'voz', label: 'Modo voz', hint: 'conversar falando', icon: <AudioLines size={15} />, keywords: ['voz', 'voice', 'falar', 'audio'], run: () => requestVoiceMode() },
+    { id: 'voz', label: 'Modo voz', hint: 'conversar falando', icon: <AudioLines size={15} />, keywords: ['voz', 'voice', 'falar', 'audio'], run: () => startPanelVoice() },
   ];
   const slashQuery = input.startsWith('/') && !input.includes(' ') && !input.includes('\n') ? input.slice(1).toLowerCase() : null;
   const slashMatches = slashQuery === null ? [] : slashCommands.filter(
@@ -667,8 +731,8 @@ export function TalkPage() {
 
             {/* Modo voz — ícone na barra */}
             <button
-              onClick={() => requestVoiceMode()}
-              title="Modo voz — conversa falando (motor do orbe)"
+              onClick={() => startPanelVoice()}
+              title="Modo voz — conversa falando nesta conversa"
               className="w-9 h-9 flex items-center justify-center rounded-xl border bg-surface-2 border-default text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
             >
               <Headphones size={16} />
@@ -995,7 +1059,7 @@ export function TalkPage() {
           <div className="absolute top-0 inset-x-0 h-16 px-7 flex items-center justify-between">
             <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint">Modo voz</div>
             <button
-              onClick={stopVoiceMode}
+              onClick={stopPanelVoice}
               title="Sair do modo voz"
               className="w-9 h-9 rounded-full border border-default bg-surface-1/60 backdrop-blur text-creme-mute hover:text-creme hover:bg-surface-hover flex items-center justify-center transition-colors"
             >
@@ -1010,13 +1074,13 @@ export function TalkPage() {
                 className="absolute inset-0 rounded-full overflow-hidden"
                 style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
               >
-                <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} />
+                <NeuralSphere className="absolute inset-0" intensity={panelVoiceState === 'speaking' ? 0.95 : panelVoiceState === 'talking' ? 0.85 : panelVoiceState === 'listening' ? 0.6 : 0.4} />
               </div>
               <div className="pointer-events-none absolute -inset-[7%] rounded-full ring-1 ring-brand/[0.07]" />
               <div className="pointer-events-none absolute -inset-[16%] rounded-full ring-1 ring-brand/[0.035]" />
             </div>
             <div className="text-[12px] font-semibold uppercase tracking-[0.3em] text-brand-bright/70">
-              {speakingProvider || voice.speaking ? 'Respondendo…' : waiting ? 'Pensando…' : voice.listening ? 'Ouvindo…' : 'Pode falar'}
+              {panelVoiceState === 'speaking' ? 'Respondendo…' : panelVoiceState === 'thinking' ? 'Pensando…' : panelVoiceState === 'talking' ? 'Você falando…' : 'Ouvindo…'}
             </div>
           </div>
 
