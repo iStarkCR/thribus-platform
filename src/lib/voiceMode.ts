@@ -92,6 +92,7 @@ export class VoiceController {
 
   // VAD adaptativo: limiar RELATIVO ao ruído de fundo (média móvel).
   private noiseFloor = 0.02;
+  private muted = false; // mic pausado pelo usuário (não escuta, sessão segue viva)
   private _above = 0; // frames seguidos acima do limiar (debounce do início da fala)
   private readonly ONSET_FRAMES = 4; // ~65ms — ignora estalo/clique/eco curto
   private readonly SILENCE_MS = 1100;
@@ -102,6 +103,19 @@ export class VoiceController {
   constructor(opts: VoiceControllerOpts) { this.o = opts; }
 
   getState(): VoiceState { return this.state; }
+
+  // Mic pausado: não escuta (nem barge-in nem nova fala) mas a sessão segue viva.
+  setMuted(b: boolean): void {
+    this.muted = b;
+    if (b) {
+      this.speechActive = false;
+      this._above = 0;
+      if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
+      try { this.recorder?.state !== 'inactive' && this.recorder?.stop(); } catch { /* noop */ }
+      this._armRecorder(); // descarta o que estava capturando
+      this._refreshState();
+    }
+  }
 
   async start(): Promise<void> {
     this.cancelled = false;
@@ -193,23 +207,27 @@ export class VoiceController {
     const buf = new Uint8Array(this.analyser.fftSize);
     const tick = () => {
       if (this.cancelled) return;
+      if (this.muted) { this.o.onLevel?.(0); this.rafId = requestAnimationFrame(tick); return; }
       this.analyser!.getByteTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
       const rms = Math.sqrt(sum / buf.length);
       this.o.onLevel?.(rms);
       const now = performance.now();
+      // Enquanto OCUPADO (pensando ou falando) o limiar é BEM mais alto e exige
+      // fala mais longa — só fala clara interrompe; ruído/eco não dispara turno.
+      const busy = this.playing || this.dispatchRunning || this.dispatchQueue.length > 0;
       const base = Math.max(0.035, this.noiseFloor * 2.8);
-      // Durante o playback exige fala BEM mais clara (anti-eco) pra cortar a resposta.
-      const threshold = this.playing ? Math.max(base, 0.12, this.noiseFloor * 5) : base;
+      const threshold = busy ? Math.max(0.13, this.noiseFloor * 5) : base;
+      const onset = busy ? 8 : this.ONSET_FRAMES; // ~130ms vs ~65ms
       if (now - this._vadLogAt > 700) {
         this._vadLogAt = now;
-        console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} play=${this.playing}`);
+        console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} busy=${busy}`);
       }
       if (rms > threshold) {
-        // Só conta como fala após ONSET_FRAMES seguidos acima do limiar (debounce).
+        // Só conta como fala após N frames seguidos acima do limiar (debounce).
         this._above++;
-        if (!this.speechActive && this._above >= this.ONSET_FRAMES) {
+        if (!this.speechActive && this._above >= onset) {
           this.speechActive = true;
           this._onSpeechStart();
         }

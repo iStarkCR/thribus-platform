@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
-  Users, Check, Settings2, Mic, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip,
+  Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -114,6 +114,7 @@ export function TalkPage() {
   // Motor de voz do PAINEL (VoiceController) — atrelado à sessão ATIVA: a fala vira
   // mensagem (is_voice) NESTA conversa, e a resposta é falada. Separado do orbe.
   const [panelVoiceState, setPanelVoiceState] = useState<VoiceState>('idle');
+  const [panelMuted, setPanelMuted] = useState(false); // mic pausado no modo voz
   const [panelLevel, setPanelLevel] = useState(0); // energia do mic (esfera reativa)
   const panelVoiceRef = useRef<VoiceController | null>(null);
   const levelRef = useRef(0);
@@ -157,9 +158,15 @@ export function TalkPage() {
     });
   }, [agent, userId]);
 
+  function togglePanelMute() {
+    const next = !panelMuted;
+    setPanelMuted(next);
+    panelVoiceRef.current?.setMuted(next);
+  }
+
   function startPanelVoice() {
     if (panelVoiceRef.current || !agent) return;
-    setVoiceMode(true); voiceModeRef.current = true; setVoiceModeActive(true);
+    setVoiceMode(true); voiceModeRef.current = true; setVoiceModeActive(true); setPanelMuted(false);
     const aid = agent.id;
     const ctrl = new VoiceController({
       transcribe: async (b) => (await transcribeBlob(aid, b)) ?? '',
@@ -1074,16 +1081,25 @@ export function TalkPage() {
             </div>
           </div>
 
-          {/* Topo: rótulo + fechar */}
+          {/* Topo: rótulo + mutar mic + fechar */}
           <div className="absolute top-0 inset-x-0 h-16 px-7 flex items-center justify-between">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint">Modo voz</div>
-            <button
-              onClick={stopPanelVoice}
-              title="Sair do modo voz"
-              className="w-9 h-9 rounded-full border border-default bg-surface-1/60 backdrop-blur text-creme-mute hover:text-creme hover:bg-surface-hover flex items-center justify-center transition-colors"
-            >
-              <X size={17} />
-            </button>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint">Modo voz{panelMuted ? ' · mic pausado' : ''}</div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={togglePanelMute}
+                title={panelMuted ? 'Religar o microfone' : 'Pausar o microfone (ele não escuta)'}
+                className={`w-9 h-9 rounded-full border backdrop-blur flex items-center justify-center transition-colors ${panelMuted ? 'border-semantic-red/50 bg-semantic-red/15 text-semantic-red' : 'border-default bg-surface-1/60 text-creme-mute hover:text-creme hover:bg-surface-hover'}`}
+              >
+                {panelMuted ? <MicOff size={17} /> : <Mic size={17} />}
+              </button>
+              <button
+                onClick={stopPanelVoice}
+                title="Encerrar o modo voz"
+                className="w-9 h-9 rounded-full border border-default bg-surface-1/60 backdrop-blur text-creme-mute hover:text-creme hover:bg-surface-hover flex items-center justify-center transition-colors"
+              >
+                <X size={17} />
+              </button>
+            </div>
           </div>
 
           {/* Esfera central + status — reage à voz (mic level) estilo CORTEX */}
@@ -1103,16 +1119,13 @@ export function TalkPage() {
             </div>
           </div>
 
-          {/* Barra de pontos (waveform decorativa) */}
-          <div className="absolute bottom-12 flex items-end gap-1.5 h-3">
-            {Array.from({ length: 28 }).map((_, i) => (
-              <span
-                key={i}
-                className="w-1 h-1 rounded-full bg-brand/45"
-                style={{ animation: `orbDot 1.3s ease-in-out ${(i % 14) * 0.07}s infinite` }}
-              />
-            ))}
-          </div>
+          {/* Encerrar — botão claro */}
+          <button
+            onClick={stopPanelVoice}
+            className="absolute bottom-10 z-10 px-5 py-2.5 rounded-full border border-default bg-surface-1/70 backdrop-blur text-[12px] font-semibold uppercase tracking-[0.2em] text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
+          >
+            Encerrar
+          </button>
         </div>
       )}
     </div>
