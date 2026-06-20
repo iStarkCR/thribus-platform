@@ -105,6 +105,26 @@ export class VoiceController {
 
   getState(): VoiceState { return this.state; }
 
+  // Edita o texto de um turno AINDA na fila (antes de ser respondido).
+  editTurn(id: string, text: string): void {
+    const turn = this.turns.find((t) => t.id === id);
+    if (!turn || turn.status !== 'queued') return;
+    turn.text = text;
+    const q = this.replyQueue.find((x) => x.id === id);
+    if (q) q.text = text;
+    this._emitTurns();
+  }
+
+  // Remove um turno AINDA na fila (não será respondido).
+  removeTurn(id: string): void {
+    const turn = this.turns.find((t) => t.id === id);
+    if (!turn || turn.status !== 'queued') return;
+    this.turns = this.turns.filter((t) => t.id !== id);
+    this.replyQueue = this.replyQueue.filter((x) => x.id !== id);
+    this._emitTurns();
+    this._refreshState();
+  }
+
   setMuted(b: boolean): void {
     this.muted = b;
     if (b) { this.speechActive = false; this._above = 0; if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; } this._resetRecorder(); }

@@ -118,6 +118,8 @@ export function TalkPage() {
   const [panelLevel, setPanelLevel] = useState(0); // energia do mic (esfera reativa)
   const [panelTurns, setPanelTurns] = useState<VoiceTurn[]>([]); // fila de falas
   const [expandedTurn, setExpandedTurn] = useState<string | null>(null); // item aberto na fila
+  const [editingTurn, setEditingTurn] = useState<string | null>(null); // item em edição
+  const [editTurnText, setEditTurnText] = useState('');
   const panelVoiceRef = useRef<VoiceController | null>(null);
   const levelRef = useRef(0);
   const lastLevelAtRef = useRef(0);
@@ -195,7 +197,7 @@ export function TalkPage() {
     panelVoiceRef.current?.stop();
     panelVoiceRef.current = null;
     pendingReplyRef.current = null;
-    levelRef.current = 0; setPanelLevel(0); setPanelTurns([]);
+    levelRef.current = 0; setPanelLevel(0); setPanelTurns([]); setEditingTurn(null); setExpandedTurn(null);
     setPanelVoiceState('idle');
     setVoiceMode(false); voiceModeRef.current = false; setVoiceModeActive(false);
   }
@@ -1163,28 +1165,53 @@ export function TalkPage() {
               </div>
               <div className="flex flex-col gap-2 max-h-[52vh] overflow-y-auto pr-1">
                 {panelTurns.map((t) => {
-                  const open = expandedTurn === t.id;
                   const done = t.status === 'done';
+                  const queued = t.status === 'queued';
+                  const editing = editingTurn === t.id;
+                  // Etapa NA FILA em edição → textarea + salvar/remover.
+                  if (queued && editing) {
+                    return (
+                      <div key={t.id} className="flex flex-col gap-2 px-3.5 py-3 rounded-xl border border-brand-bright/60 bg-[#16241a]">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-bright">Editar etapa</div>
+                        <textarea
+                          value={editTurnText}
+                          onChange={(e) => setEditTurnText(e.target.value)}
+                          rows={3}
+                          autoFocus
+                          className="w-full resize-none rounded-lg bg-black/60 border border-default px-3 py-2 text-[14px] text-white leading-relaxed focus:outline-none focus:border-brand-bright"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => { panelVoiceRef.current?.editTurn(t.id, editTurnText.trim()); setEditingTurn(null); }} disabled={!editTurnText.trim()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-white text-[12px] font-semibold disabled:opacity-40 hover:bg-brand-bright transition-colors"><Check size={13} /> Salvar</button>
+                          <button onClick={() => setEditingTurn(null)} className="px-3 py-1.5 rounded-lg border border-default text-creme-mute text-[12px] hover:text-creme transition-colors">Cancelar</button>
+                          <button onClick={() => { panelVoiceRef.current?.removeTurn(t.id); setEditingTurn(null); }} title="Remover da fila" className="ml-auto w-8 h-8 rounded-lg border border-semantic-red/40 text-semantic-red flex items-center justify-center hover:bg-semantic-red/15 transition-colors"><Trash2 size={14} /></button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  const open = expandedTurn === t.id;
                   return (
-                    <button
+                    <div
                       key={t.id}
-                      onClick={() => setExpandedTurn(open ? null : t.id)}
-                      title={open ? 'Recolher' : 'Ver completo'}
-                      className={`text-left flex items-start gap-2.5 px-3.5 py-3 rounded-xl border transition-colors ${t.status === 'processing' ? 'border-brand-bright/60 bg-[#16241a]' : done ? 'border-white/10 bg-black/70 hover:bg-black/80' : 'border-brand/30 bg-black/80 hover:bg-black/90'}`}
+                      className={`flex items-start gap-2.5 px-3.5 py-3 rounded-xl border transition-colors ${t.status === 'processing' ? 'border-brand-bright/60 bg-[#16241a]' : done ? 'border-white/10 bg-black/70' : 'border-brand/30 bg-black/80'}`}
                     >
                       {t.status === 'processing'
                         ? <Loader2 size={16} className="text-brand-bright animate-spin shrink-0 mt-0.5" />
                         : done
                           ? <Check size={16} className="text-brand-bright shrink-0 mt-0.5" />
                           : <Clock size={16} className="text-brand-bright shrink-0 mt-0.5" />}
-                      <div className="min-w-0 flex-1">
+                      <button onClick={() => setExpandedTurn(open ? null : t.id)} className="min-w-0 flex-1 text-left">
                         <div className={`text-[10px] font-bold uppercase tracking-[0.18em] mb-1 ${done ? 'text-white/45' : 'text-brand-bright'}`}>
                           {t.status === 'processing' ? 'Respondendo' : done ? 'Feito' : 'Na fila'}
                         </div>
                         <span className={`block text-[14px] leading-relaxed ${done ? 'text-white/60' : 'text-white'} ${open ? 'whitespace-pre-wrap' : 'truncate'}`}>{t.text}</span>
                         <div className="text-[10px] text-white/40 mt-1">{open ? 'tocar pra recolher' : 'tocar pra ver tudo'}</div>
-                      </div>
-                    </button>
+                      </button>
+                      {queued && (
+                        <button onClick={() => { setEditingTurn(t.id); setEditTurnText(t.text); }} title="Editar etapa" className="shrink-0 w-8 h-8 rounded-lg border border-brand/40 text-brand-bright flex items-center justify-center hover:bg-brand/15 transition-colors">
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
