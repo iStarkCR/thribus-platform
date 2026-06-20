@@ -1157,9 +1157,9 @@ export function TalkPage() {
             const pend = panelTurns.filter((t) => t.status !== 'done').length;
             return (
             <div className="absolute bottom-8 left-7 z-10 w-[min(440px,48vw)] flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.22em] text-creme-mute">
+              <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.22em] text-white/85">
                 <ListChecks size={15} className="text-brand-bright" />
-                Fila {pend > 0 && <span className="ml-0.5 px-2 py-0.5 rounded-full bg-brand/20 text-brand-bright text-[11px]">{pend} pendente{pend > 1 ? 's' : ''}</span>}
+                Fila {pend > 0 && <span className="ml-0.5 px-2 py-0.5 rounded-full bg-brand text-white text-[11px]">{pend} pendente{pend > 1 ? 's' : ''}</span>}
               </div>
               <div className="flex flex-col gap-2 max-h-[52vh] overflow-y-auto pr-1">
                 {panelTurns.map((t) => {
@@ -1170,19 +1170,19 @@ export function TalkPage() {
                       key={t.id}
                       onClick={() => setExpandedTurn(open ? null : t.id)}
                       title={open ? 'Recolher' : 'Ver completo'}
-                      className={`text-left flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl border backdrop-blur-xl transition-colors ${t.status === 'processing' ? 'border-brand/50 bg-brand/15' : done ? 'border-default/60 bg-[#0c1410]/60 hover:bg-[#0c1410]/80 opacity-75' : 'border-default bg-[#0c1410]/90 hover:bg-[#0c1410]'}`}
+                      className={`text-left flex items-start gap-2.5 px-3.5 py-3 rounded-xl border transition-colors ${t.status === 'processing' ? 'border-brand-bright/60 bg-[#16241a]' : done ? 'border-white/10 bg-black/70 hover:bg-black/80' : 'border-brand/30 bg-black/80 hover:bg-black/90'}`}
                     >
                       {t.status === 'processing'
-                        ? <Loader2 size={15} className="text-brand-bright animate-spin shrink-0 mt-0.5" />
+                        ? <Loader2 size={16} className="text-brand-bright animate-spin shrink-0 mt-0.5" />
                         : done
-                          ? <Check size={15} className="text-brand shrink-0 mt-0.5" />
-                          : <Clock size={15} className="text-creme-faint shrink-0 mt-0.5" />}
+                          ? <Check size={16} className="text-brand-bright shrink-0 mt-0.5" />
+                          : <Clock size={16} className="text-brand-bright shrink-0 mt-0.5" />}
                       <div className="min-w-0 flex-1">
-                        <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] mb-1 ${done ? 'text-creme-faint/60' : 'text-brand-bright/80'}`}>
+                        <div className={`text-[10px] font-bold uppercase tracking-[0.18em] mb-1 ${done ? 'text-white/45' : 'text-brand-bright'}`}>
                           {t.status === 'processing' ? 'Respondendo' : done ? 'Feito' : 'Na fila'}
                         </div>
-                        <span className={`block text-[14px] leading-relaxed ${done ? 'text-creme-mute' : 'text-creme'} ${open ? 'whitespace-pre-wrap' : 'truncate'}`}>{t.text}</span>
-                        <div className="text-[10px] text-creme-faint/60 mt-1">{open ? 'tocar pra recolher' : 'tocar pra ver tudo'}</div>
+                        <span className={`block text-[14px] leading-relaxed ${done ? 'text-white/60' : 'text-white'} ${open ? 'whitespace-pre-wrap' : 'truncate'}`}>{t.text}</span>
+                        <div className="text-[10px] text-white/40 mt-1">{open ? 'tocar pra recolher' : 'tocar pra ver tudo'}</div>
                       </div>
                     </button>
                   );
