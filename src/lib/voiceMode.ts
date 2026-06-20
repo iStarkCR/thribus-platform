@@ -202,17 +202,24 @@ export class VoiceController {
     const dur = performance.now() - this.recordStart;
     const rec = this.recorder;
     this.recorder = null;
-    const chunks = this.chunks;
-    this.chunks = [];
 
-    const stopped = new Promise<void>((res) => { if (rec && rec.state !== 'inactive') { rec.onstop = () => res(); rec.stop(); } else res(); });
-    await stopped;
-    console.log(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms chunks=${chunks.length}`);
-    if (this.cancelled || chunks.length === 0 || !hadSpeech) { if (!this.cancelled) this._beginListening(); return; }
+    // O recorder roda SEM timeslice → o áudio só é entregue (ondataavailable) no
+    // stop(). Por isso lemos this.chunks DENTRO do onstop, depois que chegou.
+    // Capturar/zerar this.chunks antes do stop perdia todo o áudio.
+    const blob = await new Promise<Blob | null>((res) => {
+      if (!rec || rec.state === 'inactive') { res(null); return; }
+      rec.onstop = () => {
+        const b = this.chunks.length ? new Blob(this.chunks, { type: rec.mimeType || 'audio/webm' }) : null;
+        this.chunks = [];
+        res(b);
+      };
+      try { rec.stop(); } catch { res(null); }
+    });
+    console.log(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms blob=${blob?.size ?? 0}`);
+    if (this.cancelled || !blob || !hadSpeech) { if (!this.cancelled) this._beginListening(); return; }
 
     this._setState('processing');
     try {
-      const blob = new Blob(chunks, { type: rec?.mimeType || 'audio/webm' });
       const text = (await this.o.transcribe(blob, dur)).trim();
       console.log(`[voz] transcrito: "${text}"`);
       if (this.cancelled) return;
