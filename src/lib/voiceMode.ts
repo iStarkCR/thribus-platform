@@ -214,12 +214,17 @@ export class VoiceController {
       const rms = Math.sqrt(sum / buf.length);
       this.o.onLevel?.(rms);
       const now = performance.now();
-      // Enquanto OCUPADO (pensando ou falando) o limiar é BEM mais alto e exige
-      // fala mais longa — só fala clara interrompe; ruído/eco não dispara turno.
-      const busy = this.playing || this.dispatchRunning || this.dispatchQueue.length > 0;
+      // Sensibilidade por contexto:
+      //  • FALANDO (playing): eco da própria voz pode vazar → barge-in só com fala
+      //    ALTA e sustentada (~230ms). Senão a resposta era cortada e nunca completava.
+      //  • PENSANDO (busy): limiar alto, ruído não vira turno falso.
+      //  • OUVINDO: limiar base normal.
+      const busy = this.dispatchRunning || this.dispatchQueue.length > 0;
       const base = Math.max(0.035, this.noiseFloor * 2.8);
-      const threshold = busy ? Math.max(0.13, this.noiseFloor * 5) : base;
-      const onset = busy ? 8 : this.ONSET_FRAMES; // ~130ms vs ~65ms
+      const threshold = this.playing ? Math.max(0.18, this.noiseFloor * 6)
+        : busy ? Math.max(0.13, this.noiseFloor * 5)
+        : base;
+      const onset = this.playing ? 14 : busy ? 8 : this.ONSET_FRAMES; // ~230 / 130 / 65ms
       if (now - this._vadLogAt > 700) {
         this._vadLogAt = now;
         console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} busy=${busy}`);
