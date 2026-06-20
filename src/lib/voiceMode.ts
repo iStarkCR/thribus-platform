@@ -1,12 +1,15 @@
 /**
- * Motor de modo voz contínuo — portado do VoiceModeController do CORTEX.
+ * Motor de modo voz CONTÍNUO e NÃO-BLOQUEANTE (full-duplex leve).
  *
- * Abre o microfone UMA vez e o mantém aberto o modo voz inteiro (sem ligar/
- * desligar por turno → sem conflito de mic, sem perder o início da fala). Um
- * AnalyserNode mede a energia (RMS) pra detectar fala/silêncio. Ao fim da fala,
- * transcreve (Whisper), manda pro chat, quebra a resposta em frases e toca o
- * TTS numa fila — começando a falar antes da resposta inteira chegar. Depois
- * volta a ouvir (loop). O áudio é destravado no gesto do start() (autoplay).
+ * - Mic aberto o tempo todo; o VAD nunca pausa (ouve durante o "pensando" e
+ *   enquanto o assistente fala).
+ * - BARGE-IN: se você começa a falar enquanto ele responde, a fala dele é
+ *   cortada na hora e sua nova fala assume.
+ * - NÃO-BLOQUEANTE: cada fala finalizada é DESPACHADA numa fila por trás
+ *   (transcreve → ack → resposta → TTS). O loop de escuta não espera a resposta,
+ *   então você pode continuar falando / pedir uma execução e seguir conversando.
+ * - Anti-eco: durante o playback o limiar de fala sobe (só corta com fala clara)
+ *   e o piso de ruído não é atualizado (não conta a voz dele).
  */
 
 export type VoiceState = 'idle' | 'listening' | 'speaking' | 'processing' | 'playing';
@@ -14,7 +17,6 @@ export type VoiceState = 'idle' | 'listening' | 'speaking' | 'processing' | 'pla
 export interface VoiceControllerOpts {
   onState?: (s: VoiceState) => void;
   onLevel?: (rms: number) => void;          // energia do mic (entrada)
-  onPlaybackLevel?: (rms: number) => void;  // energia do TTS (saída)
   onTranscript?: (t: string) => void;       // o que o usuário falou
   onReply?: (t: string) => void;            // resposta do assistente
   onError?: (e: Error) => void;
@@ -67,25 +69,31 @@ export class VoiceController {
   private stream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
-  private recorder: MediaRecorder | null = null;
-  private chunks: BlobPart[] = [];
   private persistentAudio: HTMLAudioElement | null = null;
 
+  // captura contínua (um recorder por enunciado, re-armado sem gap)
+  private recorder: MediaRecorder | null = null;
+  private curChunks: BlobPart[] = [];
   private rafId = 0;
   private silenceTimer: ReturnType<typeof setTimeout> | null = null;
   private speechActive = false;
   private recordStart = 0;
 
-  // fila de TTS (toca em sequência, gera em paralelo)
+  // fila de DESPACHO (transcreve→responde) — serial, roda por trás
+  private dispatchQueue: { blob: Blob; dur: number }[] = [];
+  private dispatchRunning = false;
+
+  // fila de TTS (toca em sequência) + estado de playback (pra barge-in)
   private audioQueue: Promise<Blob | null>[] = [];
   private queueRunning = false;
+  private playing = false;
+  private curAudio: HTMLAudioElement | null = null;
+  private playResolve: (() => void) | null = null;
 
-  // VAD adaptativo: o limiar de fala é RELATIVO ao ruído de fundo, medido
-  // continuamente. Limiar fixo não funciona entre micros/ganhos diferentes —
-  // num setup a fala não cruzava o valor e travava em "ouvindo" pra sempre.
+  // VAD adaptativo: limiar RELATIVO ao ruído de fundo (média móvel).
   private noiseFloor = 0.015;
-  private readonly SILENCE_MS = 1200;
-  private readonly MIN_SPEECH_MS = 400;
+  private readonly SILENCE_MS = 1100;
+  private readonly MIN_SPEECH_MS = 350;
   private readonly MAX_UTTERANCE_MS = 30000;
   private _vadLogAt = 0;
 
@@ -114,7 +122,9 @@ export class VoiceController {
       a.play().catch(() => { /* noop */ });
       this.persistentAudio = a;
 
-      this._beginListening();
+      this._armRecorder();
+      this._setState('listening');
+      this._monitorVAD();
     } catch (e) {
       this.o.onError?.(e as Error);
       this.stop();
@@ -128,9 +138,14 @@ export class VoiceController {
     if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
     try { this.recorder?.state !== 'inactive' && this.recorder?.stop(); } catch { /* noop */ }
     this.recorder = null;
+    this.dispatchQueue = [];
+    this.dispatchRunning = false;
     this.audioQueue = [];
     this.queueRunning = false;
+    this.playing = false;
+    this.playResolve?.(); this.playResolve = null;
     if (this.persistentAudio) { try { this.persistentAudio.pause(); } catch { /* noop */ } }
+    this.curAudio = null;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
     if (this.audioCtx && this.audioCtx.state !== 'closed') this.audioCtx.close().catch(() => { /* noop */ });
@@ -143,45 +158,62 @@ export class VoiceController {
     this.o.onState?.(s);
   }
 
-  // ─── Escuta: grava + monitora energia ──────────────────────────────────────
-  private _beginListening(): void {
+  // Estado de UI derivado: falando > tocando > pensando > ouvindo.
+  private _refreshState(): void {
+    if (this.cancelled) return;
+    if (this.speechActive) this._setState('speaking');
+    else if (this.playing) this._setState('playing');
+    else if (this.dispatchRunning || this.dispatchQueue.length > 0) this._setState('processing');
+    else this._setState('listening');
+  }
+
+  // ─── Captura contínua ───────────────────────────────────────────────────────
+  // Cada recorder tem o SEU array de chunks (closure) — re-armar não rouba o áudio
+  // do anterior (o ondataavailable do sem-timeslice só dispara no stop()).
+  private _armRecorder(): void {
     if (this.cancelled || !this.stream) return;
-    this.chunks = [];
-    this.speechActive = false;
-    this.recordStart = performance.now();
+    const chunks: BlobPart[] = [];
     try {
       const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
-      this.recorder = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
-      this.recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) this.chunks.push(e.data); };
-      this.recorder.start();
+      const rec = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+      rec.start();
+      this.recorder = rec;
+      this.curChunks = chunks;
     } catch (e) { this.o.onError?.(e as Error); return; }
-    this._setState('listening');
-    this._monitorVAD();
+    this.recordStart = performance.now();
+    this.speechActive = false;
+    if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
   }
 
   private _monitorVAD(): void {
     if (!this.analyser) return;
     const buf = new Uint8Array(this.analyser.fftSize);
     const tick = () => {
-      if (this.cancelled || (this.state !== 'listening' && this.state !== 'speaking')) return;
+      if (this.cancelled) return;
       this.analyser!.getByteTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
       const rms = Math.sqrt(sum / buf.length);
       this.o.onLevel?.(rms);
       const now = performance.now();
-      // Limiar relativo ao ruído de fundo: fala é bem mais alta que o piso.
-      const threshold = Math.max(0.02, this.noiseFloor * 2.2);
-      if (now - this._vadLogAt > 600) {
+      const base = Math.max(0.02, this.noiseFloor * 2.2);
+      // Durante o playback exige fala mais clara (anti-eco) pra cortar a resposta.
+      const threshold = this.playing ? Math.max(base, 0.07, this.noiseFloor * 4) : base;
+      if (now - this._vadLogAt > 700) {
         this._vadLogAt = now;
-        console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive}`);
+        console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} play=${this.playing}`);
       }
       if (rms > threshold) {
-        if (!this.speechActive) { this.speechActive = true; this._setState('speaking'); }
+        if (!this.speechActive) {
+          this.speechActive = true;
+          this._onSpeechStart();
+        }
         if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
       } else {
-        // Sem fala: o piso de ruído acompanha o ambiente (média móvel).
-        if (!this.speechActive) this.noiseFloor = this.noiseFloor * 0.9 + rms * 0.1;
+        // Piso de ruído só acompanha o ambiente quando NÃO há fala nem playback
+        // (senão a voz do próprio assistente inflaria o piso).
+        if (!this.speechActive && !this.playing) this.noiseFloor = this.noiseFloor * 0.9 + rms * 0.1;
         if (this.speechActive && !this.silenceTimer) {
           this.silenceTimer = setTimeout(() => {
             this.silenceTimer = null;
@@ -189,61 +221,70 @@ export class VoiceController {
           }, this.SILENCE_MS);
         }
       }
-      // Teto só finaliza se houve fala — senão re-ouve no _finalizeUtterance.
-      if (now - this.recordStart > this.MAX_UTTERANCE_MS && this.speechActive) { this._finalizeUtterance(); return; }
+      if (this.speechActive && now - this.recordStart > this.MAX_UTTERANCE_MS) this._finalizeUtterance();
       this.rafId = requestAnimationFrame(tick);
     };
     this.rafId = requestAnimationFrame(tick);
   }
 
-  private async _finalizeUtterance(): Promise<void> {
-    if (this.cancelled) return;
-    if (this.rafId) cancelAnimationFrame(this.rafId);
-    if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
-    const hadSpeech = this.speechActive; // só transcreve se detectou fala de verdade
-    const dur = performance.now() - this.recordStart;
-    const rec = this.recorder;
-    this.recorder = null;
-
-    // O recorder roda SEM timeslice → o áudio só é entregue (ondataavailable) no
-    // stop(). Por isso lemos this.chunks DENTRO do onstop, depois que chegou.
-    // Capturar/zerar this.chunks antes do stop perdia todo o áudio.
-    const blob = await new Promise<Blob | null>((res) => {
-      if (!rec || rec.state === 'inactive') { res(null); return; }
-      rec.onstop = () => {
-        const b = this.chunks.length ? new Blob(this.chunks, { type: rec.mimeType || 'audio/webm' }) : null;
-        this.chunks = [];
-        res(b);
-      };
-      try { rec.stop(); } catch { res(null); }
-    });
-    console.log(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms blob=${blob?.size ?? 0}`);
-    if (this.cancelled || !blob || !hadSpeech) { if (!this.cancelled) this._beginListening(); return; }
-
-    this._setState('processing');
-    try {
-      const text = (await this.o.transcribe(blob, dur)).trim();
-      console.log(`[voz] transcrito: "${text}"`);
-      if (this.cancelled) return;
-      if (!text || this.o.isNoise?.(text)) { this._beginListening(); return; } // sem fala de verdade → re-ouve
-      this.o.onTranscript?.(text);
-      await this._handleReply(text);
-    } catch (e) {
-      this.o.onError?.(e as Error);
-      if (!this.cancelled) this._beginListening();
-    }
+  // Usuário começou a falar → BARGE-IN: corta a fala atual e limpa a fila de TTS.
+  private _onSpeechStart(): void {
+    if (this.playing || this.audioQueue.length > 0) this._stopPlayback();
+    this._refreshState();
   }
 
-  // ─── Resposta: chat → frases → fila de TTS ─────────────────────────────────
+  // Fecha o enunciado (sempre após silêncio → re-armar no onstop não perde fala),
+  // re-arma a captura e despacha o áudio por trás (não bloqueia a escuta).
+  private _finalizeUtterance(): void {
+    if (this.cancelled) return;
+    if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
+    const hadSpeech = this.speechActive;
+    const dur = performance.now() - this.recordStart;
+    const rec = this.recorder;
+    const chunks = this.curChunks;
+    this.recorder = null;
+    this.speechActive = false; // não re-dispara enquanto fecha
+    if (!rec) { this._armRecorder(); return; }
+    const finish = () => {
+      const blob = chunks.length ? new Blob(chunks, { type: rec.mimeType || 'audio/webm' }) : null;
+      this._armRecorder(); // volta a capturar
+      this._refreshState();
+      console.log(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms blob=${blob?.size ?? 0}`);
+      if (this.cancelled || !blob || !hadSpeech) return; // ruído/sem fala → ignora
+      this.dispatchQueue.push({ blob, dur });
+      this._refreshState();
+      if (!this.dispatchRunning) void this._runDispatch();
+    };
+    try { rec.onstop = finish; rec.stop(); } catch { finish(); }
+  }
+
+  // ─── Despacho serial (por trás) ─────────────────────────────────────────────
+  private async _runDispatch(): Promise<void> {
+    this.dispatchRunning = true;
+    this._refreshState();
+    while (this.dispatchQueue.length > 0 && !this.cancelled) {
+      const { blob, dur } = this.dispatchQueue.shift()!;
+      try {
+        const text = (await this.o.transcribe(blob, dur)).trim();
+        console.log(`[voz] transcrito: "${text}"`);
+        if (this.cancelled) break;
+        if (!text || this.o.isNoise?.(text)) continue;
+        this.o.onTranscript?.(text);
+        await this._handleReply(text);
+      } catch (e) { this.o.onError?.(e as Error); }
+    }
+    this.dispatchRunning = false;
+    this._refreshState();
+  }
+
+  // Resposta: ack curto (paralelo) + resposta pesada → frases → fila de TTS.
   private async _handleReply(text: string): Promise<void> {
-    // Dispara a resposta pesada e, EM PARALELO, um ack curto. O ack chega antes
-    // (~1s) e é falado já — enquanto a resposta real (7-11s) ainda processa.
     const replyPromise = this.o.sendAndAwait(text);
     if (this.o.quickAck) {
       try {
         const ack = await this.o.quickAck(text);
         if (ack && !this.cancelled) { console.log(`[voz] ack: "${ack}"`); this._enqueue(ack); }
-      } catch { /* sem ack — segue pro reply */ }
+      } catch { /* sem ack */ }
     }
     let reply = '';
     try { reply = await replyPromise; } catch (e) { this.o.onError?.(e as Error); }
@@ -255,16 +296,15 @@ export class VoiceController {
     if (remaining.trim().length >= 3) all.push(remaining.trim());
     console.log(`[voz] resposta: ${reply.length} chars, ${all.length} frase(s) p/ TTS`);
     for (const s of all) this._enqueue(s);
-    await this._waitQueue();
-    if (!this.cancelled) this._beginListening();
   }
 
+  // ─── TTS (fila) ─────────────────────────────────────────────────────────────
   private _enqueue(sentence: string): void {
     const p = this.o.tts(sentence)
       .then((b) => { console.log(`[voz] tts "${sentence.slice(0, 24)}…" → ${b?.size ?? 0} bytes`); return b; })
       .catch((e) => { console.log(`[voz] tts ERRO: ${(e as Error).message}`); return null; });
     this.audioQueue.push(p);
-    if (!this.queueRunning) this._drainQueue();
+    if (!this.queueRunning) void this._drainQueue();
   }
 
   private async _drainQueue(): Promise<void> {
@@ -275,16 +315,19 @@ export class VoiceController {
       await this._play(blob);
     }
     this.queueRunning = false;
+    this.playing = false;
+    this._refreshState();
   }
 
-  private _waitQueue(): Promise<void> {
-    return new Promise((res) => {
-      const check = () => {
-        if (this.cancelled || (this.audioQueue.length === 0 && !this.queueRunning)) res();
-        else setTimeout(check, 120);
-      };
-      check();
-    });
+  // Corta o playback atual e esvazia a fila de TTS (barge-in / stop).
+  private _stopPlayback(): void {
+    this.audioQueue = [];
+    const a = this.curAudio;
+    this.curAudio = null;
+    this.playing = false;
+    if (a) { try { a.pause(); a.currentTime = 0; } catch { /* noop */ } }
+    const r = this.playResolve; this.playResolve = null;
+    r?.();
   }
 
   private _play(blob: Blob): Promise<void> {
@@ -293,12 +336,16 @@ export class VoiceController {
       const audio = this.persistentAudio ?? new Audio();
       audio.src = url;
       audio.muted = false;
-      this._setState('playing');
+      this.curAudio = audio;
+      this.playing = true;
+      this._refreshState();
       console.log(`[voz] tocando áudio (${blob.size} bytes)`);
-      const done = () => { URL.revokeObjectURL(url); resolve(); };
-      audio.onended = done;
-      audio.onerror = done;
-      audio.play().catch((e) => { console.log(`[voz] play bloqueado: ${(e as Error).message}`); this.o.onError?.(new Error('Áudio bloqueado pelo navegador. Clique na esfera de novo.')); done(); });
+      let done = false;
+      const finish = () => { if (done) return; done = true; URL.revokeObjectURL(url); this.playResolve = null; resolve(); };
+      this.playResolve = finish; // barge-in/stop resolve na hora
+      audio.onended = finish;
+      audio.onerror = finish;
+      audio.play().catch((e) => { console.log(`[voz] play bloqueado: ${(e as Error).message}`); this.o.onError?.(new Error('Áudio bloqueado pelo navegador. Clique na esfera de novo.')); finish(); });
     });
   }
 }
