@@ -825,6 +825,14 @@ export function TalkPage() {
                   ))}
                 </div>
 
+                {/* Modo de fala — ele FALA o briefing do dia (liga o TTS e pede falado) */}
+                <button
+                  onClick={() => { setTtsOn(true); send('Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'); }}
+                  className="mb-5 flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[13px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
+                >
+                  <Volume2 size={15} className="shrink-0" /> Ouvir briefing do dia
+                </button>
+
                 {/* Composer no MEIO (igual à referência) */}
                 <div className="w-full">
                   {recording ? (
