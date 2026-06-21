@@ -865,40 +865,40 @@ export function TalkPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* Tela inicial (orbe) — volta pro orbe de qualquer conversa */}
-            <button
-              onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setChatMode(false); setHistOpen(false); }}
-              title="Tela inicial — o orbe"
-              className="w-9 h-9 flex items-center justify-center rounded-xl border border-default bg-surface-2 text-creme-mute hover:text-brand-bright hover:bg-surface-hover transition-colors"
-            >
-              <Sparkles size={16} />
-            </button>
-
-            {/* Uso por sessão — histórico de tokens/custo/contexto */}
-            <button
-              onClick={() => setUsageOpen(true)}
-              title="Uso por sessão — tokens, custo e contexto de cada conversa"
-              className="w-9 h-9 flex items-center justify-center rounded-xl border border-default bg-surface-2 text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
-            >
-              <BarChart3 size={16} />
-            </button>
-
-            {/* Modo voz — ícone na barra */}
-            <button
-              onClick={() => startPanelVoice()}
-              title="Modo voz — conversa falando nesta conversa"
-              className="w-9 h-9 flex items-center justify-center rounded-xl border bg-surface-2 border-default text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
-            >
-              <Headphones size={16} />
-            </button>
+            {/* Toolbar segmentada de vidro — orbe · uso · voz */}
+            <div className="flex items-center gap-0.5 p-1 rounded-2xl glass-panel bg-surface-2/80 border border-default shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_24px_-16px_rgba(0,0,0,0.55)]">
+              <button
+                onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setChatMode(false); setHistOpen(false); }}
+                title="Tela inicial — o orbe"
+                className="w-8 h-8 flex items-center justify-center rounded-xl text-creme-mute hover:text-brand-bright hover:bg-brand/10 active:scale-90 transition-all"
+              >
+                <Sparkles size={16} />
+              </button>
+              <button
+                onClick={() => setUsageOpen(true)}
+                title="Uso por sessão — tokens, custo e contexto de cada conversa"
+                className="w-8 h-8 flex items-center justify-center rounded-xl text-creme-mute hover:text-creme hover:bg-surface-hover active:scale-90 transition-all"
+              >
+                <BarChart3 size={16} />
+              </button>
+              <button
+                onClick={() => startPanelVoice()}
+                title="Modo voz — conversa falando nesta conversa"
+                className="w-8 h-8 flex items-center justify-center rounded-xl text-creme-mute hover:text-brand-bright hover:bg-brand/10 active:scale-90 transition-all"
+              >
+                <Headphones size={16} />
+              </button>
+            </div>
 
             {/* Trocar colaborador */}
             <div className="relative">
             <button
               onClick={() => setSwitcherOpen((o) => !o)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-2 border border-default text-[13px] font-semibold text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
+              className="flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-2xl glass-panel bg-surface-2/80 border border-default text-[13px] font-semibold text-creme-dim hover:text-creme hover:border-brand/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_24px_-16px_rgba(0,0,0,0.55)] transition-colors"
             >
-              <Users size={15} /> Colaboradores <ChevronDown size={13} className="opacity-60" />
+              <span className="w-7 h-7 rounded-xl bg-brand/12 flex items-center justify-center shrink-0"><Users size={15} className="text-brand-bright" /></span>
+              Colaboradores
+              <ChevronDown size={14} className={`text-creme-faint transition-transform ${switcherOpen ? 'rotate-180' : ''}`} />
             </button>
             {switcherOpen && (
               <>
