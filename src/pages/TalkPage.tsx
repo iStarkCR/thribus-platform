@@ -956,30 +956,25 @@ export function TalkPage() {
                   </button>
                 )}
 
-                {/* Começo rápido — 3 chips numa LINHA SÓ */}
-                <div className="flex items-center justify-center gap-2.5 flex-wrap mb-5">
-                  {[
-                    { icon: BarChart3, label: 'Caixa de hoje', send: 'Como tá o caixa hoje?' },
-                    { icon: Cog, label: 'Status da infra', send: 'Status da infra' },
-                    { icon: ListChecks, label: 'Demandas', send: 'Demandas em aberto' },
-                  ].map((s) => (
-                    <button
-                      key={s.label}
-                      onClick={() => send(s.send)}
-                      className="flex items-center gap-2 pl-3 pr-3.5 py-2.5 rounded-2xl bg-surface-2/80 border border-default hover:border-brand/50 hover:bg-surface-hover text-[14px] font-semibold text-creme-dim hover:text-creme transition-all shadow-[0_10px_28px_-18px_rgba(0,0,0,0.7)]"
-                    >
-                      <s.icon size={16} className="text-brand-bright shrink-0" /> {s.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Modo de fala — ele FALA o briefing do dia (liga o TTS e pede falado) */}
-                <button
-                  onClick={() => { setTtsOn(true); send('Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'); }}
-                  className="mb-5 flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[14px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
-                >
-                  <Volume2 size={15} className="shrink-0" /> Ouvir briefing do dia
-                </button>
+                {/* Começo rápido — chips do COO (caixa/infra/demandas) SÓ pro Bukowiski (supervisor).
+                    Pros outros colaboradores não faz sentido — fica só a barra. */}
+                {agent.isSupervisor && (
+                  <div className="flex items-center justify-center gap-2.5 flex-wrap mb-5">
+                    {[
+                      { icon: BarChart3, label: 'Caixa de hoje', send: 'Como tá o caixa hoje?' },
+                      { icon: Cog, label: 'Status da infra', send: 'Status da infra' },
+                      { icon: ListChecks, label: 'Demandas', send: 'Demandas em aberto' },
+                    ].map((s) => (
+                      <button
+                        key={s.label}
+                        onClick={() => send(s.send)}
+                        className="flex items-center gap-2 pl-3 pr-3.5 py-2.5 rounded-2xl bg-surface-2/80 border border-default hover:border-brand/50 hover:bg-surface-hover text-[14px] font-semibold text-creme-dim hover:text-creme transition-all shadow-[0_10px_28px_-18px_rgba(0,0,0,0.7)]"
+                      >
+                        <s.icon size={16} className="text-brand-bright shrink-0" /> {s.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Composer no MEIO (igual à referência) — onde estava */}
                 <div className="w-full">
@@ -992,7 +987,7 @@ export function TalkPage() {
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                         rows={1}
-                        placeholder="Mensagem para o Bukowiski…"
+                        placeholder={`Mensagem para ${agent.name}…`}
                         className="flex-1 resize-none bg-transparent py-1 text-[15px] text-creme placeholder-creme-faint focus:outline-none max-h-32"
                       />
                       <button onClick={() => startPanelVoice()} title="Modo voz" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Headphones size={17} /></button>
@@ -1001,6 +996,16 @@ export function TalkPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Modo de fala — briefing falado, ABAIXO da barra. Texto adaptado ao colaborador. */}
+                <button
+                  onClick={() => { setTtsOn(true); send(agent.isSupervisor
+                    ? 'Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'
+                    : 'Me dá um briefing falado e curtinho de como está a sua área agora: o que precisa de atenção, pendências e próximos passos. Fala natural, como se estivesse me contando ao vivo.'); }}
+                  className="mt-5 flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[14px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
+                >
+                  <Volume2 size={15} className="shrink-0" /> Ouvir briefing do dia
+                </button>
 
                 {/* Histórico: lista clicável (dropdown) + retomar última. Você escolhe ir pro chat. */}
                 {(() => {
