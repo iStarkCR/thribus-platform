@@ -75,6 +75,26 @@ function buildShell({ count, radius, radialVar, angularJitter = 0 }: { count: nu
   return { positions, originals, velocities };
 }
 
+// Textura de "ponto redondo" (gradiente radial). Sem ela o PointsMaterial
+// renderiza QUADRADOS — com ela os pontos e os pulsos ficam redondos/suaves.
+function makeDotTexture(): THREE.Texture {
+  const s = 64;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const ctx = cv.getContext('2d')!;
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0.92)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2);
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(cv);
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function makePointsAndLines(shell: Shell, opts: { count: number; pointSize: number; pointOpacity: number; lineOpacity: number }, color: THREE.Color) {
   const { count, pointSize, pointOpacity, lineOpacity } = opts;
 
@@ -143,9 +163,11 @@ export function NeuralSphere({
     scene.add(parallaxGroup);
 
     const baseColor = readPrimaryColor();
+    const dotTex = makeDotTexture(); // pontos/pulsos redondos (não quadrados)
 
     const outerShell = buildShell({ count: OUTER_COUNT, radius: OUTER_RADIUS, radialVar: OUTER_RADIAL_VARIATION, angularJitter: OUTER_ANGULAR_JITTER });
     const outer = makePointsAndLines(outerShell, { count: OUTER_COUNT, pointSize: OUTER_POINT_SIZE, pointOpacity: OUTER_POINT_OPACITY, lineOpacity: OUTER_LINE_OPACITY }, baseColor);
+    outer.pointsMaterial.map = dotTex;
     outerGroup.add(outer.points, outer.lines);
 
     // ─── Pulsos sinápticos — "neurônios" viajando pelas linhas do córtex ──────
@@ -180,7 +202,7 @@ export function NeuralSphere({
     const travArr = new Float32Array(TRAV_TOTAL * 3);
     const travCol = new Float32Array(TRAV_TOTAL * 3);
     const sagePulse = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
-    const goldPulse = new THREE.Color('#f2d27a');
+    const goldPulse = new THREE.Color('#e6a92e');
     const tmpC = new THREE.Color();
     for (let k = 0; k < TRAV_COUNT; k++) {
       const c = (k % 5) < 2 ? goldPulse : sagePulse; // ~40% dourados
@@ -194,7 +216,7 @@ export function NeuralSphere({
     const travGeo = new THREE.BufferGeometry();
     travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
     travGeo.setAttribute('color', new THREE.BufferAttribute(travCol, 3));
-    const travMat = new THREE.PointsMaterial({ size: 0.11, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    const travMat = new THREE.PointsMaterial({ size: 0.13, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending });
     const travPoints = new THREE.Points(travGeo, travMat);
     outerGroup.add(travPoints);
     const easeTrav = (x: number) => x * x * (3 - 2 * x);
@@ -204,7 +226,7 @@ export function NeuralSphere({
     const FLASH_TIME = 0.42;
     const nodeFlash = new Float32Array(OUTER_COUNT);
     const nodeFlashGold = new Uint8Array(OUTER_COUNT);
-    const flashGold = new THREE.Color('#f2d27a');
+    const flashGold = new THREE.Color('#e6a92e');
     const flashBlue = new THREE.Color('#5fa8ff');
     const outerPtCol = new Float32Array(OUTER_COUNT * 3);
     outer.pointsGeometry.setAttribute('color', new THREE.BufferAttribute(outerPtCol, 3));
@@ -216,6 +238,7 @@ export function NeuralSphere({
     const innerShell = buildShell({ count: INNER_COUNT, radius: INNER_RADIUS, radialVar: INNER_RADIAL_VARIATION, angularJitter: 0.05 });
     const innerColor = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.18);
     const inner = makePointsAndLines(innerShell, { count: INNER_COUNT, pointSize: INNER_POINT_SIZE, pointOpacity: INNER_POINT_OPACITY, lineOpacity: INNER_LINE_OPACITY }, innerColor);
+    inner.pointsMaterial.map = dotTex;
     innerGroup.add(inner.points, inner.lines);
 
     const mouse = { x: 0, y: 0, active: false };
@@ -451,6 +474,7 @@ export function NeuralSphere({
       inner.pointsMaterial.dispose();
       inner.linesGeometry.dispose();
       inner.lineMaterial.dispose();
+      dotTex.dispose();
       renderer.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
