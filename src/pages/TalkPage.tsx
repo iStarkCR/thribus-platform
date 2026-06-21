@@ -803,8 +803,8 @@ export function TalkPage() {
               />
 
               <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.34em] text-brand-bright/80 mb-3">{greeting}</div>
-                <div className="text-[clamp(42px,6.5vw,68px)] font-extrabold tracking-tight text-creme leading-none mb-3.5">{firstName}</div>
+                <div className="greet-anim text-[clamp(40px,6.4vw,62px)] font-extrabold uppercase tracking-tight leading-[0.95] mb-2">{greeting}</div>
+                <div className="text-[clamp(24px,3.4vw,36px)] font-bold tracking-tight text-creme leading-none mb-3.5">{firstName}</div>
                 <div className="text-[14.5px] text-creme-mute mb-7">Como posso te ajudar?</div>
 
                 {/* Chips de começo rápido */}

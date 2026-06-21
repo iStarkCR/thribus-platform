@@ -225,3 +225,19 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 16px 44px rgba(70, 100, 60, 0.14);
   }
 }
+
+/* ─── Greeting animado (BOM DIA) — entrada subindo + brilho passando ────────── */
+@keyframes greetReveal { from { opacity: 0; transform: translateY(0.4em); } to { opacity: 1; transform: none; } }
+@keyframes greetShine  { from { background-position: 230% 0; } to { background-position: -130% 0; } }
+.greet-anim {
+  background: linear-gradient(100deg, #EDE8DC 32%, #ffffff 46%, #e2c684 52%, #EDE8DC 66%);
+  background-size: 240% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  animation: greetReveal 0.7s ease both, greetShine 4s linear 0.7s infinite;
+}
+html.light .greet-anim {
+  background: linear-gradient(100deg, #3a5530 30%, #6b8f5e 46%, #b08a38 52%, #3a5530 68%);
+  background-size: 240% 100%;
+  -webkit-background-clip: text; background-clip: text;
+}
