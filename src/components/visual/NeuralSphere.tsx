@@ -164,10 +164,15 @@ export function NeuralSphere({
 
     const baseColor = readPrimaryColor();
     const dotTex = makeDotTexture(); // pontos/pulsos redondos (não quadrados)
+    // White mode: blending aditivo SOME no branco (cor + branco = branco) → usa
+    // blending normal e cores mais firmes; e reforça opacidade de linhas/pulsos.
+    const isLight = document.documentElement.classList.contains('light');
+    const opBoost = isLight ? 1.55 : 1;
 
     const outerShell = buildShell({ count: OUTER_COUNT, radius: OUTER_RADIUS, radialVar: OUTER_RADIAL_VARIATION, angularJitter: OUTER_ANGULAR_JITTER });
     const outer = makePointsAndLines(outerShell, { count: OUTER_COUNT, pointSize: OUTER_POINT_SIZE, pointOpacity: OUTER_POINT_OPACITY, lineOpacity: OUTER_LINE_OPACITY }, baseColor);
     outer.pointsMaterial.map = dotTex;
+    outer.pointsMaterial.needsUpdate = true; // recompila com a textura (USE_MAP)
     outerGroup.add(outer.points, outer.lines);
 
     // ─── Pulsos sinápticos — "neurônios" viajando pelas linhas do córtex ──────
@@ -201,7 +206,7 @@ export function NeuralSphere({
     const TRAV_TOTAL = TRAV_COUNT * SEGS;
     const travArr = new Float32Array(TRAV_TOTAL * 3);
     const travCol = new Float32Array(TRAV_TOTAL * 3);
-    const sagePulse = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
+    const sagePulse = isLight ? baseColor.clone() : baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
     const goldPulse = new THREE.Color('#e6a92e');
     const tmpC = new THREE.Color();
     for (let k = 0; k < TRAV_COUNT; k++) {
@@ -216,7 +221,7 @@ export function NeuralSphere({
     const travGeo = new THREE.BufferGeometry();
     travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
     travGeo.setAttribute('color', new THREE.BufferAttribute(travCol, 3));
-    const travMat = new THREE.PointsMaterial({ size: 0.13, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    const travMat = new THREE.PointsMaterial({ size: 0.13, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
     const travPoints = new THREE.Points(travGeo, travMat);
     outerGroup.add(travPoints);
     const easeTrav = (x: number) => x * x * (3 - 2 * x);
@@ -239,6 +244,7 @@ export function NeuralSphere({
     const innerColor = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.18);
     const inner = makePointsAndLines(innerShell, { count: INNER_COUNT, pointSize: INNER_POINT_SIZE, pointOpacity: INNER_POINT_OPACITY, lineOpacity: INNER_LINE_OPACITY }, innerColor);
     inner.pointsMaterial.map = dotTex;
+    inner.pointsMaterial.needsUpdate = true;
     innerGroup.add(inner.points, inner.lines);
 
     const mouse = { x: 0, y: 0, active: false };
@@ -406,7 +412,7 @@ export function NeuralSphere({
         }
       }
       travGeo.attributes.position.needsUpdate = true;
-      travMat.opacity = 0.6 + I * 0.4;
+      travMat.opacity = (isLight ? 0.9 : 0.6) + I * 0.4; // normal blending no claro pede mais corpo
 
       // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;
@@ -435,9 +441,9 @@ export function NeuralSphere({
       parallaxGroup.scale.setScalar(breath);
 
       const innerPulse = 0.86 + Math.sin(t * 1.3) * 0.08 + I * 0.22;
-      inner.pointsMaterial.opacity = Math.min(1, INNER_POINT_OPACITY * innerPulse);
-      inner.lineMaterial.opacity = Math.min(1, INNER_LINE_OPACITY * (innerPulse + I * 0.5));
-      outer.lineMaterial.opacity = Math.min(1, OUTER_LINE_OPACITY * (1 + I * 1.2));
+      inner.pointsMaterial.opacity = Math.min(1, INNER_POINT_OPACITY * innerPulse * opBoost);
+      inner.lineMaterial.opacity = Math.min(1, INNER_LINE_OPACITY * (innerPulse + I * 0.5) * opBoost);
+      outer.lineMaterial.opacity = Math.min(1, OUTER_LINE_OPACITY * (1 + I * 1.2) * opBoost);
 
       const speedBoost = 1 + I * 1.6;
       const wobbleAmp = I * 0.1;
