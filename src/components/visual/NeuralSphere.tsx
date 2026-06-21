@@ -173,10 +173,28 @@ export function NeuralSphere({
       travSpeed[k] = 0.5 + Math.random() * 0.9;
     };
     for (let k = 0; k < TRAV_COUNT; k++) { pickEdge(k); travT[k] = Math.random(); }
-    const travArr = new Float32Array(TRAV_COUNT * 3);
+    // Cada pulso = cabeça + rastro de cometa (TAIL). ~40% são DOURADOS, resto Sage.
+    const TAIL = 4;
+    const SEGS = TAIL + 1;
+    const TRAV_TOTAL = TRAV_COUNT * SEGS;
+    const travArr = new Float32Array(TRAV_TOTAL * 3);
+    const travCol = new Float32Array(TRAV_TOTAL * 3);
+    const sagePulse = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
+    const goldPulse = new THREE.Color('#f2d27a');
+    const tmpC = new THREE.Color();
+    for (let k = 0; k < TRAV_COUNT; k++) {
+      const c = (k % 5) < 2 ? goldPulse : sagePulse; // ~40% dourados
+      for (let s = 0; s < SEGS; s++) {
+        const fade = 1 - s / SEGS; // cabeça brilha, rastro escurece
+        tmpC.copy(c).multiplyScalar(fade * fade);
+        const idx = (k * SEGS + s) * 3;
+        travCol[idx] = tmpC.r; travCol[idx + 1] = tmpC.g; travCol[idx + 2] = tmpC.b;
+      }
+    }
     const travGeo = new THREE.BufferGeometry();
     travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
-    const travMat = new THREE.PointsMaterial({ color: baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.45), size: 0.12, transparent: true, opacity: 0.9, sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    travGeo.setAttribute('color', new THREE.BufferAttribute(travCol, 3));
+    const travMat = new THREE.PointsMaterial({ size: 0.11, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending });
     const travPoints = new THREE.Points(travGeo, travMat);
     outerGroup.add(travPoints);
     const easeTrav = (x: number) => x * x * (3 - 2 * x);
@@ -327,20 +345,25 @@ export function NeuralSphere({
       updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now, waveBoost, OUTER_RADIUS);
       updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now, waveBoost, null);
 
-      // Pulsos viajando pelas linhas (lerp entre nó A→B; ao chegar, parte do B).
+      // Pulsos viajando pelas linhas (lerp nó A→B; ao chegar, parte do B). Cada um
+      // arrasta um rastro de cometa (TAIL segmentos atrás da cabeça).
       const travDt = 0.016 * (1 + I * 0.8); // mais rápido quando ativo (voz)
       for (let k = 0; k < TRAV_COUNT; k++) {
         travT[k] += travSpeed[k] * travDt;
         if (travT[k] >= 1) { travT[k] -= 1; pickEdge(k, travB[k]); }
         const a = outerShell.positions[travA[k]];
         const b = outerShell.positions[travB[k]];
-        const e = easeTrav(travT[k]);
-        travArr[k * 3] = a.x + (b.x - a.x) * e;
-        travArr[k * 3 + 1] = a.y + (b.y - a.y) * e;
-        travArr[k * 3 + 2] = a.z + (b.z - a.z) * e;
+        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+        for (let s = 0; s < SEGS; s++) {
+          const e = easeTrav(Math.max(0, travT[k] - s * 0.07));
+          const idx = (k * SEGS + s) * 3;
+          travArr[idx] = a.x + dx * e;
+          travArr[idx + 1] = a.y + dy * e;
+          travArr[idx + 2] = a.z + dz * e;
+        }
       }
       travGeo.attributes.position.needsUpdate = true;
-      travMat.opacity = 0.55 + I * 0.4;
+      travMat.opacity = 0.6 + I * 0.4;
 
       // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;
