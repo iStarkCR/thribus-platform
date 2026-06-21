@@ -40,7 +40,7 @@ function renderInline(text: string): ReactNode[] {
     } else if (m[5]) {
       out.push(<strong key={key++} className="font-semibold text-creme">{m[6]}</strong>);
     } else if (m[7]) {
-      out.push(<code key={key++} className="font-mono text-[0.9em] bg-surface-3 px-1 py-0.5 rounded">{m[8]}</code>);
+      out.push(<code key={key++} className="font-mono text-[0.88em] bg-surface-3 text-brand-bright px-1.5 py-0.5 rounded-md">{m[8]}</code>);
     }
     last = INLINE.lastIndex;
   }
@@ -105,22 +105,22 @@ export function Markdown({ text, className }: { text: string; className?: string
       const cols = Math.max(header.length, ...rows.map((r) => r.length), 1);
       const idxs = Array.from({ length: cols }, (_, k) => k);
       blocks.push(
-        <div key={key++} className="my-2 overflow-x-auto rounded-lg border border-default">
-          <table className="w-full text-[12.5px] border-collapse">
+        <div key={key++} className="my-3 overflow-x-auto rounded-xl border border-default shadow-[0_8px_24px_-16px_rgba(0,0,0,0.5)]">
+          <table className="w-full text-[13px] border-collapse">
             <thead>
-              <tr className="bg-surface-2">
+              <tr className="bg-surface-3">
                 {idxs.map((ci) => (
-                  <th key={ci} className="text-left font-bold text-creme px-2.5 py-1.5 border-b border-default whitespace-nowrap">{renderInline(header[ci] ?? '')}</th>
+                  <th key={ci} className="text-left font-semibold text-[10.5px] uppercase tracking-[0.07em] text-creme-mute px-3.5 py-2.5 border-b border-default whitespace-nowrap">{renderInline(header[ci] ?? '')}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((r, ri) => (
-                <tr key={ri} className={ri % 2 ? 'bg-surface-1/50' : ''}>
+                <tr key={ri} className="border-b border-default/40 last:border-0 hover:bg-surface-hover/50 transition-colors">
                   {idxs.map((ci) => {
                     const cell = r[ci] ?? '';
                     return (
-                      <td key={ci} className={`px-2.5 py-1.5 border-b border-default/50 text-creme-dim align-top ${numeric(cell) ? 'text-right font-mono tabular-nums whitespace-nowrap' : ''}`}>
+                      <td key={ci} className={`px-3.5 py-2 align-top ${numeric(cell) ? 'text-right font-mono tabular-nums whitespace-nowrap text-creme font-medium' : 'text-creme-dim'}`}>
                         {renderInline(cell)}
                       </td>
                     );
@@ -178,7 +178,7 @@ export function Markdown({ text, className }: { text: string; className?: string
     }
 
     // ── linha em branco ──────────────────────────────────────────────────
-    if (line.trim() === '') { blocks.push(<div key={key++} className="h-2" />); i++; continue; }
+    if (line.trim() === '') { blocks.push(<div key={key++} className="h-2.5" />); i++; continue; }
 
     // ── parágrafo ────────────────────────────────────────────────────────
     const para: string[] = [];

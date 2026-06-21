@@ -809,11 +809,11 @@ export function TalkPage() {
               </div>
             </div>
           ) : (
-            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 py-5 space-y-4">
+            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 py-6 space-y-5">
               {messages.map((m, mi) =>
                 m.role === 'user' ? (
                   <div key={m.id} className="flex justify-end">
-                    <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[15px] leading-[1.7]">
+                    <div className="max-w-[74%] px-[18px] py-3 rounded-[20px] rounded-br-md bg-brand text-white text-[15px] leading-[1.72] shadow-[0_12px_28px_-16px_rgba(0,0,0,0.55)]">
                       {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
                       {m.content && <span className="whitespace-pre-wrap">{m.content}</span>}
                       {m.status === 'error' && (
@@ -831,13 +831,13 @@ export function TalkPage() {
                     </div>
                   </div>
                 ) : (
-                  <div key={m.id} className="flex gap-2.5 max-w-[90%]">
-                    <div className="w-7 h-7 rounded-full bg-brand/15 text-brand-bright flex items-center justify-center text-[12px] font-bold shrink-0 mt-0.5">
+                  <div key={m.id} className="flex gap-3 max-w-[88%]">
+                    <div className="w-8 h-8 rounded-xl bg-brand/15 text-brand-bright flex items-center justify-center text-[13px] font-bold shrink-0 mt-0.5 ring-1 ring-brand/20">
                       {agent.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[11px] font-semibold text-creme-mute mb-1">{agent.name}</div>
-                      <div className="px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme text-[15px] leading-[1.7]">
+                      <div className="text-[11px] font-semibold text-creme-mute mb-1.5 tracking-wide">{agent.name}</div>
+                      <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[15px] leading-[1.72] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
                         <Markdown text={m.content} />
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
