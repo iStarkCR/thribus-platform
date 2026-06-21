@@ -723,7 +723,7 @@ export function TalkPage() {
 
       {/* Thread */}
       <div className="flex flex-col bg-surface-0 min-w-0 min-h-0">
-        <div className="glass-panel h-16 px-6 flex items-center justify-between gap-3 border-b border-default shrink-0">
+        <div className="glass-panel relative z-30 h-16 px-6 flex items-center justify-between gap-3 border-b border-default shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => navigate('/settings')}
@@ -813,15 +813,15 @@ export function TalkPage() {
                 style={{ background: 'radial-gradient(60% 52% at 50% 50%, rgb(var(--surface-0) / 0.88) 0%, rgb(var(--surface-0) / 0.5) 48%, transparent 74%)' }}
               />
 
-              {/* BOM DIA — grande, FORA da esfera (no topo), entra DIGITANDO + brilho */}
-              <div className="absolute top-[5.5vh] inset-x-0 z-20 text-center px-6 pointer-events-none">
-                <div className="greet-anim inline-block text-[clamp(34px,5.4vw,56px)] font-extrabold uppercase tracking-tight leading-none">
-                  <Typewriter once phrases={[greeting]} speed={95} />
+              {/* Saudação "Bom dia, Charles" (pela hora) — FORA da esfera, no topo,
+                  entra DIGITANDO + brilho, como se estivesse te cumprimentando. */}
+              <div className="absolute top-[6vh] inset-x-0 z-20 text-center px-6 pointer-events-none">
+                <div className="greet-anim inline-block text-[clamp(30px,4.8vw,52px)] font-extrabold tracking-tight leading-none">
+                  <Typewriter once phrases={[`${greeting}, ${firstName}`]} speed={85} />
                 </div>
               </div>
 
               <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
-                <div className="text-[clamp(26px,3.6vw,38px)] font-bold tracking-tight text-creme leading-none mb-3.5">{firstName}</div>
                 <div className="text-[14.5px] text-creme-mute mb-7 min-h-[1.4em]">
                   <Typewriter phrases={['Como posso te ajudar?', 'Bora pra cima?', 'O que vamos resolver hoje?', 'Tô aqui pro que precisar.', 'Manda ver, Charles.']} />
                 </div>
