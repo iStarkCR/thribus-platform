@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
-  ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History,
+  ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -789,18 +789,27 @@ export function TalkPage() {
             >
               {agent.name[0]}
             </button>
-            <div className="min-w-0">
-              <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2">
+            <button onClick={() => { setActiveId(null); setMessages([]); }} title="Voltar pra tela inicial (orbe)" className="min-w-0 text-left">
+              <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2 hover:text-brand-bright transition-colors">
                 {agent.name}
                 {agent.isSupervisor && <Crown size={15} className="text-gold-bright" />}
               </div>
               <div className="text-[12.5px] text-creme-faint truncate">
                 {agent.sector} · {agent.status}{active ? ` · ${active.title}` : ''}
               </div>
-            </div>
+            </button>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Tela inicial (orbe) — volta pro orbe de qualquer conversa */}
+            <button
+              onClick={() => { setActiveId(null); setMessages([]); }}
+              title="Tela inicial — o orbe"
+              className="w-9 h-9 flex items-center justify-center rounded-xl border border-default bg-surface-2 text-creme-mute hover:text-brand-bright hover:bg-surface-hover transition-colors"
+            >
+              <Sparkles size={16} />
+            </button>
+
             {/* Uso por sessão — histórico de tokens/custo/contexto */}
             <button
               onClick={() => setUsageOpen(true)}
