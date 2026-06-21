@@ -805,7 +805,9 @@ export function TalkPage() {
               <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
                 <div className="greet-anim text-[clamp(40px,6.4vw,62px)] font-extrabold uppercase tracking-tight leading-[0.95] mb-2">{greeting}</div>
                 <div className="text-[clamp(24px,3.4vw,36px)] font-bold tracking-tight text-creme leading-none mb-3.5">{firstName}</div>
-                <div className="text-[14.5px] text-creme-mute mb-7">Como posso te ajudar?</div>
+                <div className="text-[14.5px] text-creme-mute mb-7 min-h-[1.4em]">
+                  <Typewriter phrases={['Como posso te ajudar?', 'Bora pra cima?', 'O que vamos resolver hoje?', 'Tô aqui pro que precisar.', 'Manda ver, Charles.']} />
+                </div>
 
                 {/* Chips de começo rápido */}
                 <div className="flex flex-wrap items-center justify-center gap-2.5 max-w-[520px] mb-5">
@@ -1283,6 +1285,26 @@ export function TalkPage() {
       )}
     </div>
   );
+}
+
+// Efeito de digitação (typewriter) — digita e apaga frases em loop, com cursor.
+function Typewriter({ phrases, className }: { phrases: string[]; className?: string }) {
+  const [txt, setTxt] = useState('');
+  const [pi, setPi] = useState(0);
+  const [del, setDel] = useState(false);
+  useEffect(() => {
+    const full = phrases[pi % phrases.length] ?? '';
+    let delay = del ? 38 : 65;
+    if (!del && txt === full) delay = 1700;       // pausa com a frase completa
+    else if (del && txt === '') delay = 320;      // pausa antes da próxima
+    const t = setTimeout(() => {
+      if (!del && txt === full) { setDel(true); return; }
+      if (del && txt === '') { setDel(false); setPi((p) => (p + 1) % phrases.length); return; }
+      setTxt(del ? full.slice(0, txt.length - 1) : full.slice(0, txt.length + 1));
+    }, delay);
+    return () => clearTimeout(t);
+  }, [txt, del, pi, phrases]);
+  return <span className={className}>{txt}<span className="tw-caret">|</span></span>;
 }
 
 function SessionItem({ session, active, depth = 0, onClick, onMenu, onDragStartItem }: { session: ChatSession; active: boolean; depth?: number; onClick: () => void; onMenu: (pos: { x: number; y: number }) => void; onDragStartItem: () => void }) {
