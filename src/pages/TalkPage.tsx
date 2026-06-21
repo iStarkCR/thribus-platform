@@ -66,6 +66,9 @@ export function TalkPage() {
   // explícita (abrir uma conversa, retomar, enviar). Entrar nunca cai direto no chat.
   const [view, setView] = useState<'orb' | 'chat'>('orb');
   const [histOpen, setHistOpen] = useState(false);
+  // Uma vez que o usuário ENTRA num chat, navegar entre chats fica direto (não volta
+  // pro orbe). Só recarregar/trocar de colaborador volta pro orbe. Default: false.
+  const [chatMode, setChatMode] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -113,8 +116,8 @@ export function TalkPage() {
   // Linha de saudação gerada por modelo leve (gpt-4o-mini) — natural + relembra
   // a última coisa feita se houver conversa anterior. null até decidir o texto.
   const [dynGreet, setDynGreet] = useState<string | null>(null);
-  const greetedRef = useRef<string | null>(null);
-  const freshGreetRef = useRef(false); // nova sessão → saudação fresca (sem relembrar)
+  // Saudação por CONTEXTO: cache keyed por conversa primada (activeId) ou '__landing__'.
+  const greetCacheRef = useRef<Record<string, string>>({});
   const spokenRef = useRef<string | null>(null);
 
   // ─── Skill de Voz ───────────────────────────────────────────────────────────
@@ -166,7 +169,7 @@ export function TalkPage() {
       sid = s.id;
       activeIdRef.current = sid;
       setActiveId(sid);
-      setView('chat');
+      setView('chat'); setChatMode(true);
       setSessions((prev) => [s, ...prev]);
     }
     try {
@@ -271,9 +274,9 @@ export function TalkPage() {
     setMessages([]);
     setView('orb');
     setHistOpen(false);
+    setChatMode(false);
     setTreeLoaded(false);
-    greetedRef.current = null;
-    freshGreetRef.current = false;
+    greetCacheRef.current = {};
     setDynGreet(null);
     loadTree();
   }, [loadTree]);
@@ -363,43 +366,42 @@ export function TalkPage() {
   }, [speakingProvider, voice.speaking, panelPlayLevel]);
   useEffect(() => () => { document.documentElement.classList.remove('chat-busy', 'chat-speaking'); }, []);
 
-  // Saudação dinâmica (modelo leve) — só na tela de boas-vindas, 1x por agente.
-  // Relembra a última coisa feita na conversa mais recente, se houver.
+  // Saudação dinâmica POR CONTEXTO — só no orbe (não no chat). Relembra a última
+  // coisa feita na conversa PRIMADA (activeId) ou, na entrada, na mais recente.
+  // Cacheada por conversa → muda quando você navega de chat e não re-chama o modelo.
   useEffect(() => {
-    if (messages.length !== 0 || !agentId || !treeLoaded) return;
-    if (greetedRef.current === agentId) return;
-    greetedRef.current = agentId;
-    const fresh = freshGreetRef.current; // nova sessão → não relembra
-    freshGreetRef.current = false;
+    if (inChat || !agentId || !treeLoaded) return;
+    const key = activeId ?? '__landing__';
+    const cached = greetCacheRef.current[key];
+    if (cached) { setDynGreet(cached); return; } // já temos pra esse contexto
+    setDynGreet(null);
     let cancelled = false;
-    const FALLBACK = fresh
-      ? `Sessão nova. O que vamos fazer${period === 'noite' ? ' à noite' : ' agora'}?`
-      : `Como vai${period === 'noite' ? ' a noite' : ' hoje'}? O que a gente resolve agora?`;
-    // Safety só se a chamada TRAVAR — senão esperamos o modelo de verdade.
+    const FALLBACK = `Como vai${period === 'noite' ? ' a noite' : ' hoje'}? O que a gente resolve agora?`;
     const fb = setTimeout(() => { if (!cancelled) setDynGreet((p) => p ?? FALLBACK); }, 6000);
     (async () => {
-      const last = fresh ? null : sessions.find((x) => !x.archivedAt);
+      // conversa-alvo: a primada (activeId) ou a mais recente (landing).
+      const target = activeId ? sessions.find((s) => s.id === activeId) : sessions.find((x) => !x.archivedAt);
       let ctx = '';
-      if (last) {
+      if (target) {
         try {
-          const msgs = await listMessages(last.id);
+          const msgs = await listMessages(target.id);
           const lastA = [...msgs].reverse().find((m) => m.role === 'assistant' && m.content.trim());
-          ctx = lastA
-            ? `Última conversa "${last.title}". Última coisa feita: ${lastA.content.replace(/\s+/g, ' ').slice(0, 280)}`
-            : `Última conversa: "${last.title}".`;
-        } catch { ctx = `Última conversa: "${last.title}".`; }
+          if (lastA) ctx = `Conversa "${target.title}". Última coisa feita: ${lastA.content.replace(/\s+/g, ' ').slice(0, 280)}`;
+          else if (msgs.length) ctx = `Conversa: "${target.title}".`;
+          // sem mensagens → ctx vazio = saudação fresca (começo do zero)
+        } catch { ctx = `Conversa: "${target.title}".`; }
       }
       let line = '';
       try { line = await greetLine(agentId, { name: firstName, period, lastContext: ctx }); } catch { /* 429/erro → fallback */ }
       if (cancelled) return;
       clearTimeout(fb);
-      // modelo respondeu (line) ganha; vazio (sem chave/429) → fallback estático
-      setDynGreet((p) => p ?? (line || FALLBACK));
+      const v = line || FALLBACK;
+      greetCacheRef.current[key] = v;
+      setDynGreet(v);
     })();
     return () => { cancelled = true; clearTimeout(fb); };
-    // greetedRef dedupe garante 1 disparo por agente mesmo com sessions/period mudando.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, messages.length, treeLoaded, sessions, firstName, period]);
+  }, [agentId, activeId, inChat, treeLoaded, period, sessions]);
 
   // Botão "Parar": marca a msg como cancelada (a ponte mata o claude) + UI otimista.
   async function cancelTurn(msgId: string) {
@@ -459,7 +461,7 @@ export function TalkPage() {
       setSessions((prev) => [copy, ...prev]);
       setMessages([]);
       setActiveId(copy.id);
-      setView('chat');
+      setView('chat'); setChatMode(true);
       useAppStore.getState().addToast('Conversa duplicada', 'green');
     } catch (e) {
       useAppStore.getState().addToast('Falha ao duplicar: ' + (e as Error).message, 'red');
@@ -491,18 +493,35 @@ export function TalkPage() {
     }
   }
 
+  // Selecionar uma conversa: no orbe (landing) prima e mostra "Abrir conversa";
+  // já em chatMode vai DIRETO pro chat (navegar entre chats não volta pro orbe).
+  function selectConversation(id: string) {
+    if (chatMode) { void enterConversation(id); return; } // já no chat → entra direto (pré-carrega, sem flash)
+    setActiveId(id);
+    setMessages([]); // landing: orbe não mostra msgs, então limpa
+    setHistOpen(false);
+    setView('orb');
+  }
+  // Entrar de fato no chat (Abrir conversa / retomar última): pré-carrega e vai pro chat.
+  async function enterConversation(id: string) {
+    activeIdRef.current = id; // síncrono → guard confiável contra cliques rápidos
+    setActiveId(id);
+    setHistOpen(false);
+    setChatMode(true);
+    try { const msgs = await listMessages(id); if (activeIdRef.current === id) setMessages(msgs); } catch { /* refetch cobre */ }
+    setView('chat');
+  }
+
   async function newSession(folderId: string | null = null) {
     if (!agentId || !userId) return;
     const s = await createSession(agentId, userId, { folderId });
     setSessions((prev) => [s, ...prev]);
     setActiveId(s.id);
     setMessages([]);
-    // Sessão zerada → tela do orbe com saudação FRESCA (sem relembrar a anterior).
+    // Sessão zerada → tela do orbe (saudação fresca sai sozinha: sessão sem mensagens).
     setView('orb');
     setHistOpen(false);
-    freshGreetRef.current = true;
-    greetedRef.current = null;
-    setDynGreet(null);
+    setChatMode(false);
   }
 
   async function newFolder(parentId: string | null = null) {
@@ -638,7 +657,7 @@ export function TalkPage() {
       ...m,
       { id: `tmp-${m.length}`, sessionId, agentId: agent.id, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: atts, createdAt: '' },
     ]);
-    setView('chat'); // só vai pro chat com sessão + mensagem já no ar (sem flash)
+    setView('chat'); setChatMode(true); // só vai pro chat com sessão + mensagem já no ar (sem flash)
 
     try {
       await sendMessage(sessionId, agent.id, userId, text, atts);
@@ -704,7 +723,7 @@ export function TalkPage() {
           <div>
             {subs.map((sf) => renderFolder(sf, depth + 1))}
             {sess.map((s) => (
-              <SessionItem key={s.id} session={s} active={s.id === activeId} depth={depth + 1} onClick={() => { setActiveId(s.id); setMessages([]); setView("orb"); setHistOpen(false); }} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+              <SessionItem key={s.id} session={s} active={s.id === activeId} depth={depth + 1} onClick={() => selectConversation(s.id)} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
             ))}
             {sess.length === 0 && subs.length === 0 && (
               <div className="text-[11px] text-creme-faint italic py-1" style={{ paddingLeft: (depth + 1) * 12 + 14 }}>vazia</div>
@@ -774,7 +793,7 @@ export function TalkPage() {
               )}
               <div className="space-y-0.5">
                 {ungrouped.map((s) => (
-                  <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => { setActiveId(s.id); setMessages([]); setView("orb"); setHistOpen(false); }} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+                  <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => selectConversation(s.id)} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
                 ))}
               </div>
             </div>
@@ -796,7 +815,7 @@ export function TalkPage() {
               {showArchived && (
                 <div className="space-y-0.5">
                   {archivedSessions.map((s) => (
-                    <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => { setActiveId(s.id); setMessages([]); setView("orb"); setHistOpen(false); }} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+                    <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => selectConversation(s.id)} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
                   ))}
                 </div>
               )}
@@ -832,7 +851,7 @@ export function TalkPage() {
             >
               {agent.name[0]}
             </button>
-            <button onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setHistOpen(false); }} title="Voltar pra tela inicial (orbe)" className="min-w-0 text-left">
+            <button onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setChatMode(false); setHistOpen(false); }} title="Voltar pra tela inicial (orbe)" className="min-w-0 text-left">
               <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2 hover:text-brand-bright transition-colors">
                 {agent.name}
                 {agent.isSupervisor && <Crown size={15} className="text-gold-bright" />}
@@ -846,7 +865,7 @@ export function TalkPage() {
           <div className="flex items-center gap-2 shrink-0">
             {/* Tela inicial (orbe) — volta pro orbe de qualquer conversa */}
             <button
-              onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setHistOpen(false); }}
+              onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setChatMode(false); setHistOpen(false); }}
               title="Tela inicial — o orbe"
               className="w-9 h-9 flex items-center justify-center rounded-xl border border-default bg-surface-2 text-creme-mute hover:text-brand-bright hover:bg-surface-hover transition-colors"
             >
@@ -944,7 +963,7 @@ export function TalkPage() {
                 {/* Conversa primada → botão pra ENTRAR (você decide ir pro chat) */}
                 {active && messages.length > 0 && (
                   <button
-                    onClick={() => setView('chat')}
+                    onClick={() => { setView('chat'); setChatMode(true); }}
                     className="w-full max-w-[460px] mb-5 flex items-center gap-3 px-4 py-3 rounded-2xl glass-panel bg-brand/12 border border-brand/35 hover:bg-brand/18 hover:border-brand/55 transition-colors shadow-[0_14px_34px_-18px_rgba(0,0,0,0.7)]"
                   >
                     <span className="w-9 h-9 rounded-xl bg-brand/15 flex items-center justify-center shrink-0"><MessageSquare size={17} className="text-brand-bright" /></span>
@@ -981,14 +1000,14 @@ export function TalkPage() {
                   {recording ? (
                     <AudioRecorderBar agentId={agentId ?? ''} onResult={(t) => { setRecording(false); if (t) setInput((c) => (c ? `${c} ${t}` : t)); }} onCancel={() => setRecording(false)} />
                   ) : (
-                    <div className="glass-panel flex items-end gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 focus-within:border-brand transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]">
+                    <div className="glass-panel flex items-center gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 focus-within:border-brand transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]">
                       <textarea
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                         rows={1}
                         placeholder={`Mensagem para ${agent.name}…`}
-                        className="flex-1 resize-none bg-transparent py-1 text-[15px] text-center text-creme placeholder-creme-faint focus:outline-none max-h-32"
+                        className="flex-1 resize-none bg-transparent py-1 text-[15px] text-creme placeholder-creme-faint focus:outline-none max-h-32"
                       />
                       <button onClick={() => startPanelVoice()} title="Modo voz" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Headphones size={17} /></button>
                       <button onClick={() => setRecording(true)} title="Gravar áudio" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Mic size={17} /></button>
@@ -1013,9 +1032,6 @@ export function TalkPage() {
                   if (visible.length === 0) return null;
                   const sorted = [...visible].sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1));
                   const last = sorted[0];
-                  // prime = seleciona a conversa e mostra o orbe (com "Abrir conversa"); enter = vai direto.
-                  const prime = (id: string) => { setActiveId(id); setMessages([]); setView('orb'); setHistOpen(false); };
-                  const enter = (id: string) => { setActiveId(id); setMessages([]); setView('chat'); setHistOpen(false); };
                   return (
                     <div className="mt-5 relative">
                       <div className="flex items-center gap-3 text-[13px] rounded-full bg-surface-1/80 backdrop-blur-md border border-default px-4 py-2 shadow-[0_10px_28px_-14px_rgba(0,0,0,0.65)]">
@@ -1024,7 +1040,7 @@ export function TalkPage() {
                           <ChevronDown size={12} className={`text-creme-faint transition-transform ${histOpen ? 'rotate-180' : ''}`} />
                         </button>
                         <span className="w-px h-3.5 bg-creme/15" />
-                        <button onClick={() => enter(last.id)} className="flex items-center gap-1.5 text-brand-bright font-semibold hover:text-brand transition-colors">
+                        <button onClick={() => enterConversation(last.id)} className="flex items-center gap-1.5 text-brand-bright font-semibold hover:text-brand transition-colors">
                           <ChevronRight size={13} /> retomar última
                         </button>
                       </div>
@@ -1034,7 +1050,7 @@ export function TalkPage() {
                           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 max-h-72 overflow-y-auto bg-surface-1 border border-default rounded-xl shadow-2xl z-[41] py-1.5 text-left">
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-creme-faint">Conversas recentes</div>
                             {sorted.map((s) => (
-                              <button key={s.id} onClick={() => prime(s.id)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors">
+                              <button key={s.id} onClick={() => selectConversation(s.id)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors">
                                 <MessageSquare size={13} className="text-creme-faint shrink-0" />
                                 <span className="flex-1 min-w-0 truncate text-[13px] text-creme-dim">{s.title}</span>
                               </button>
@@ -1305,7 +1321,7 @@ export function TalkPage() {
           folders={folders}
           activeId={activeId}
           onClose={() => setUsageOpen(false)}
-          onOpenSession={(id) => { setActiveId(id); setMessages([]); setView('chat'); }}
+          onOpenSession={(id) => { setActiveId(id); setMessages([]); setView('chat'); setChatMode(true); }}
         />
       )}
       {infoOpen && <AgentInfoModal agent={agent} onClose={() => setInfoOpen(false)} onEdit={() => setEditOpen(true)} />}
