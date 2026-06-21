@@ -635,13 +635,13 @@ export function TalkPage() {
         <div className="p-3.5 border-b border-default space-y-2.5">
           <button
             onClick={() => newSession(null)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-brand text-white text-[14px] font-semibold hover:bg-brand-bright transition-colors shadow-sm"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-white text-[14px] font-semibold transition-all bg-brand/85 hover:bg-brand backdrop-blur-md border border-brand-bright/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_26px_-10px_rgba(107,143,94,0.55)]"
           >
             <Plus size={16} /> Nova sessão
           </button>
           <button
             onClick={() => newFolder(null)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-2 border border-default text-creme-mute text-[13px] hover:bg-surface-hover transition-colors"
+            className="glass-panel w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-2 border border-default text-creme-mute text-[13px] hover:text-creme hover:bg-surface-hover transition-all"
           >
             <FolderPlus size={14} /> Nova pasta
           </button>
