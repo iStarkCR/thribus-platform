@@ -199,6 +199,20 @@ export function NeuralSphere({
     outerGroup.add(travPoints);
     const easeTrav = (x: number) => x * x * (3 - 2 * x);
 
+    // Flash dos nós: quando um pulso chega num ponto, ele pisca (dourado se o
+    // pulso é dourado, azul se é verde). Pontos passam a ter COR POR VÉRTICE.
+    const FLASH_TIME = 0.42;
+    const nodeFlash = new Float32Array(OUTER_COUNT);
+    const nodeFlashGold = new Uint8Array(OUTER_COUNT);
+    const flashGold = new THREE.Color('#f2d27a');
+    const flashBlue = new THREE.Color('#5fa8ff');
+    const outerPtCol = new Float32Array(OUTER_COUNT * 3);
+    outer.pointsGeometry.setAttribute('color', new THREE.BufferAttribute(outerPtCol, 3));
+    outer.pointsMaterial.vertexColors = true;
+    outer.pointsMaterial.color.set(0xffffff);
+    const baseNodeC = new THREE.Color();
+    const flashTmp = new THREE.Color();
+
     const innerShell = buildShell({ count: INNER_COUNT, radius: INNER_RADIUS, radialVar: INNER_RADIAL_VARIATION, angularJitter: 0.05 });
     const innerColor = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.18);
     const inner = makePointsAndLines(innerShell, { count: INNER_COUNT, pointSize: INNER_POINT_SIZE, pointOpacity: INNER_POINT_OPACITY, lineOpacity: INNER_LINE_OPACITY }, innerColor);
@@ -350,7 +364,13 @@ export function NeuralSphere({
       const travDt = 0.016 * (1 + I * 0.8); // mais rápido quando ativo (voz)
       for (let k = 0; k < TRAV_COUNT; k++) {
         travT[k] += travSpeed[k] * travDt;
-        if (travT[k] >= 1) { travT[k] -= 1; pickEdge(k, travB[k]); }
+        if (travT[k] >= 1) {
+          travT[k] -= 1;
+          const arrived = travB[k]; // nó onde o pulso chegou → pisca
+          nodeFlash[arrived] = FLASH_TIME;
+          nodeFlashGold[arrived] = (k % 5) < 2 ? 1 : 0; // dourado ou azul
+          pickEdge(k, travB[k]);
+        }
         const a = outerShell.positions[travA[k]];
         const b = outerShell.positions[travB[k]];
         const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
@@ -367,8 +387,23 @@ export function NeuralSphere({
 
       // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;
-      outer.pointsMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
       outer.lineMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
+      // Pontos do outer: cor base (drift) + flash dourado/azul ao receber um pulso.
+      baseNodeC.setHSL(h, baseHSL.s, baseHSL.l);
+      for (let n = 0; n < OUTER_COUNT; n++) {
+        let r = baseNodeC.r, g = baseNodeC.g, bl = baseNodeC.b;
+        if (nodeFlash[n] > 0) {
+          nodeFlash[n] = Math.max(0, nodeFlash[n] - travDt);
+          const amt = nodeFlash[n] / FLASH_TIME;
+          flashTmp.copy(nodeFlashGold[n] ? flashGold : flashBlue);
+          r += (flashTmp.r - r) * amt;
+          g += (flashTmp.g - g) * amt;
+          bl += (flashTmp.b - bl) * amt;
+        }
+        const ci = n * 3;
+        outerPtCol[ci] = r; outerPtCol[ci + 1] = g; outerPtCol[ci + 2] = bl;
+      }
+      outer.pointsGeometry.attributes.color.needsUpdate = true;
       inner.pointsMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
       inner.lineMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
 
