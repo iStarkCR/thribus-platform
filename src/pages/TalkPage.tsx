@@ -795,14 +795,31 @@ export function TalkPage() {
                 <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} />
               </div>
 
-              <div className="relative z-10 text-center px-6">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-brand-bright/70 mb-2">{greeting}</div>
-                <div className="text-[clamp(38px,6vw,60px)] font-bold tracking-tight text-creme leading-none mb-5">{firstName}</div>
-                <div className="text-[13.5px] text-creme-mute">
-                  {active ? `Mande a primeira mensagem para ${agent.name}.` : `Comece uma sessão com ${agent.name}.`}
+              <div className="relative z-10 text-center px-6 max-w-2xl">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.32em] text-brand-bright/70 mb-2.5">{greeting}</div>
+                <div className="text-[clamp(40px,6.2vw,64px)] font-extrabold tracking-tight text-creme leading-none mb-4">{firstName}</div>
+                <div className="text-[14.5px] text-creme-mute mb-8">
+                  {active ? `Como posso ajudar hoje?` : `Comece uma sessão com ${agent.name}.`}
                 </div>
-                {!active && (
-                  <button onClick={() => newSession(null)} className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand text-white text-[13.5px] font-semibold hover:bg-brand-bright transition-colors">
+                {active ? (
+                  <div className="flex flex-wrap items-center justify-center gap-2.5">
+                    {[
+                      { icon: BarChart3, text: 'Como tá o caixa hoje?' },
+                      { icon: Cog, text: 'Status da infra' },
+                      { icon: ListChecks, text: 'Demandas em aberto' },
+                      { icon: Lightbulb, text: 'Resumo do meu dia' },
+                    ].map((s) => (
+                      <button
+                        key={s.text}
+                        onClick={() => send(s.text)}
+                        className="group flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl bg-surface-2/70 border border-default hover:border-brand/45 hover:bg-surface-hover text-[13px] font-medium text-creme-dim hover:text-creme transition-all backdrop-blur-sm shadow-[0_8px_24px_-18px_rgba(0,0,0,0.6)]"
+                      >
+                        <s.icon size={14} className="text-brand-bright shrink-0" /> {s.text}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <button onClick={() => newSession(null)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand text-white text-[13.5px] font-semibold hover:bg-brand-bright transition-colors">
                     <Plus size={15} /> Nova sessão
                   </button>
                 )}
