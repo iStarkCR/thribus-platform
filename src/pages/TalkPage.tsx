@@ -872,14 +872,15 @@ export function TalkPage() {
                 <div className="greet-anim inline-block text-[clamp(30px,4.8vw,52px)] font-extrabold tracking-tight leading-none">
                   <Typewriter once phrases={[`${greeting}, ${firstName}`]} speed={85} />
                 </div>
+                {/* Linha dinâmica — logo após o nome, MESMO efeito de digitação + brilho */}
+                {dynGreet && (
+                  <div className="greet-anim inline-block text-[clamp(15px,2.2vw,22px)] font-semibold tracking-tight leading-snug mt-3 max-w-[560px]">
+                    <Typewriter key={dynGreet} once phrases={[dynGreet]} speed={30} />
+                  </div>
+                )}
               </div>
 
               <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
-                {/* Saudação dinâmica (modelo leve) — natural, relembra a última coisa feita */}
-                <div className="text-[17px] text-creme-dim mb-7 min-h-[1.6em] leading-snug max-w-[540px]">
-                  {dynGreet && <Typewriter key={dynGreet} once phrases={[dynGreet]} speed={28} />}
-                </div>
-
                 {/* Começo rápido — 3 chips numa LINHA SÓ */}
                 <div className="flex items-center justify-center gap-2.5 flex-wrap mb-5">
                   {[
