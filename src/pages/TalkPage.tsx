@@ -988,7 +988,7 @@ export function TalkPage() {
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                         rows={1}
                         placeholder={`Mensagem para ${agent.name}…`}
-                        className="flex-1 resize-none bg-transparent py-1 text-[15px] text-creme placeholder-creme-faint focus:outline-none max-h-32"
+                        className="flex-1 resize-none bg-transparent py-1 text-[15px] text-center text-creme placeholder-creme-faint focus:outline-none max-h-32"
                       />
                       <button onClick={() => startPanelVoice()} title="Modo voz" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Headphones size={17} /></button>
                       <button onClick={() => setRecording(true)} title="Gravar áudio" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Mic size={17} /></button>
