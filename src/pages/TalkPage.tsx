@@ -935,19 +935,21 @@ export function TalkPage() {
                   )}
                 </div>
 
-                {/* Atalhos: histórico + retomar última — pílula LEGÍVEL sobre a esfera */}
+                {/* Atalho: retomar última — a PÍLULA INTEIRA é o botão (continua de onde parou) */}
                 {(() => {
-                  const last = sessions.find((x) => !x.archivedAt);
-                  const n = sessions.filter((x) => !x.archivedAt).length;
-                  if (!last) return null;
+                  const visible = sessions.filter((x) => !x.archivedAt);
+                  if (visible.length === 0) return null;
+                  const last = visible.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a), visible[0]);
                   return (
-                    <div className="mt-5 flex items-center gap-3 text-[13px] rounded-full bg-surface-1/80 backdrop-blur-md border border-default px-4 py-2 shadow-[0_10px_28px_-14px_rgba(0,0,0,0.65)]">
-                      <span className="flex items-center gap-1.5 text-creme-mute"><Clock size={13} className="text-creme-faint" /> histórico <span className="text-creme font-bold">{n}</span></span>
+                    <button
+                      onClick={() => setActiveId(last.id)}
+                      title={`Continuar de onde parou: ${last.title}`}
+                      className="mt-5 flex items-center gap-3 text-[13px] rounded-full bg-surface-1/80 backdrop-blur-md border border-default px-4 py-2 shadow-[0_10px_28px_-14px_rgba(0,0,0,0.65)] hover:border-brand/50 hover:bg-surface-hover/70 transition-colors"
+                    >
+                      <span className="flex items-center gap-1.5 text-creme-mute"><Clock size={13} className="text-creme-faint" /> histórico <span className="text-creme font-bold">{visible.length}</span></span>
                       <span className="w-px h-3.5 bg-creme/15" />
-                      <button onClick={() => setActiveId(last.id)} className="flex items-center gap-1.5 text-brand-bright font-semibold hover:text-brand transition-colors">
-                        <ChevronRight size={13} /> retomar última
-                      </button>
-                    </div>
+                      <span className="flex items-center gap-1.5 text-brand-bright font-semibold"><ChevronRight size={13} /> retomar última</span>
+                    </button>
                   );
                 })()}
               </div>
