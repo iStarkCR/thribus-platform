@@ -178,6 +178,18 @@
     content: '';
     position: fixed; inset: 0; z-index: 0; pointer-events: none;
     animation: glassAurora 24s ease-in-out infinite alternate;
+    transition: filter 0.7s ease;
+  }
+  /* Aurora REATIVA — pulsa quando o Bukowiski pensa, ganha vida quando FALA.
+   * Classes ligadas/desligadas pelo TalkPage (chat-busy / chat-speaking). */
+  @keyframes auroraBreath { 0%, 100% { opacity: 0.82; } 50% { opacity: 1; } }
+  html.glass.chat-busy body::before {
+    animation: glassAurora 11s ease-in-out infinite alternate, auroraBreath 3.4s ease-in-out infinite;
+    filter: saturate(1.22) brightness(1.1);
+  }
+  html.glass.chat-speaking body::before {
+    animation: glassAurora 7s ease-in-out infinite alternate, auroraBreath 1.5s ease-in-out infinite;
+    filter: saturate(1.5) brightness(1.22);
   }
 
   /* DARK + glass — paleta RENOVADA: charcoal neutro (não mais verde-escuro

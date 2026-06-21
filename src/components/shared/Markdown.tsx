@@ -9,7 +9,8 @@
  * Não é um parser completo, mas cobre o que o time usa pra mostrar dados.
  */
 
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { CodeViewer } from '@/components/shared/CodeViewer';
 
 // URL aceita parênteses balanceados (ex.: .../Foo_(bar)) sem cortar no 1º ')'.
@@ -109,7 +110,76 @@ function miniChart(header: string[], rows: string[][], idxs: number[]): ReactNod
   );
 }
 
-export function Markdown({ text, className }: { text: string; className?: string }) {
+// ─── Cards ricos (bloco ```cards) e Confirmação (bloco ```confirm) ──────────
+// O time emite esses blocos quando lista entidades / pede confirmação de ação.
+const ACCENT_TOKEN: Record<string, string> = {
+  green: '--brand-bright', sage: '--brand-bright', brand: '--brand-bright',
+  gold: '--gold-bright', amber: '--semantic-amber', blue: '--semantic-blue',
+  red: '--semantic-red', violet: '--semantic-blue',
+};
+function accentVar(a?: string): string { return ACCENT_TOKEN[(a ?? '').toLowerCase()] ?? '--brand-bright'; }
+// Sem accent explícito, infere a cor pelo texto do status.
+function statusTone(s: string): string {
+  const t = s.toLowerCase();
+  if (/(pago|ok\b|ativo|conclu|receb|aprovad|online|sucesso|feito|entregue|saud)/.test(t)) return '--brand-bright';
+  if (/(pendente|aguard|atras|vence|aberto|parcial|process|andamento)/.test(t)) return '--gold-bright';
+  if (/(vencid|inadimpl|erro|falha|cancel|offline|cr[ií]tic|bloque|recus|reprov)/.test(t)) return '--semantic-red';
+  return '--semantic-blue';
+}
+
+interface CardItem { title?: string; subtitle?: string; value?: string | number; status?: string; accent?: string }
+function CardList({ items }: { items: CardItem[] }) {
+  return (
+    <div className="my-3 flex flex-col gap-2">
+      {items.map((it, i) => {
+        const acc = it.accent ? accentVar(it.accent) : it.status ? statusTone(String(it.status)) : '--brand-bright';
+        return (
+          <div key={i} className="flex items-center justify-between gap-3 rounded-xl border border-default bg-surface-1/70 px-3.5 py-2.5 transition-colors hover:bg-surface-hover/40" style={{ borderLeft: `3px solid rgb(var(${acc}))` }}>
+            <div className="min-w-0">
+              <div className="text-[14px] font-semibold text-creme truncate">{renderInline(String(it.title ?? ''))}</div>
+              {it.subtitle != null && <div className="text-[12px] text-creme-mute truncate">{renderInline(String(it.subtitle))}</div>}
+            </div>
+            <div className="text-right shrink-0">
+              {it.value != null && it.value !== '' && <div className="font-mono tabular-nums text-[14px] font-bold text-creme leading-tight">{String(it.value)}</div>}
+              {it.status != null && it.status !== '' && (
+                <span className="inline-block mt-0.5 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md" style={{ background: `rgb(var(${acc}) / 0.14)`, color: `rgb(var(${acc}))` }}>{String(it.status)}</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+interface ConfirmData { action?: string; detail?: string; danger?: boolean; confirm?: string; cancel?: string }
+function ConfirmCard({ data, onAction }: { data: ConfirmData; onAction?: (t: string) => void }) {
+  const [done, setDone] = useState<null | 'ok' | 'no'>(null);
+  const tone = data.danger ? '--semantic-red' : '--gold-bright';
+  const confirmMsg = data.confirm || `Confirmado: ${data.action}. Pode executar.`;
+  const cancelMsg = data.cancel || `Cancela isso — não execute "${data.action}".`;
+  return (
+    <div className="my-3 rounded-xl px-3.5 py-3" style={{ border: `1px solid rgb(var(${tone}) / 0.4)`, background: `linear-gradient(180deg, rgb(var(${tone}) / 0.08), transparent)` }}>
+      <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] mb-1.5" style={{ color: `rgb(var(${tone}))` }}>
+        <AlertTriangle size={13} /> vou executar — confirma?
+      </div>
+      <div className="text-[14px] text-creme mb-1 leading-snug">{renderInline(String(data.action ?? ''))}</div>
+      {data.detail != null && data.detail !== '' && <div className="text-[12.5px] text-creme-mute mb-2.5">{renderInline(String(data.detail))}</div>}
+      {done ? (
+        <div className="text-[12.5px] font-semibold" style={{ color: done === 'ok' ? 'rgb(var(--brand-bright))' : 'rgb(var(--creme-mute))' }}>
+          {done === 'ok' ? '✓ Confirmado' : '✕ Cancelado'}
+        </div>
+      ) : (
+        <div className="flex gap-2 mt-1">
+          <button onClick={() => { setDone('ok'); onAction?.(confirmMsg); }} className="px-4 py-1.5 rounded-lg text-[12.5px] font-bold transition-opacity hover:opacity-90" style={{ background: `rgb(var(${tone}))`, color: '#0a140a' }}>Confirmar</button>
+          <button onClick={() => { setDone('no'); onAction?.(cancelMsg); }} className="px-4 py-1.5 rounded-lg text-[12.5px] font-medium border border-default text-creme-mute hover:bg-surface-hover transition-colors">Cancelar</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Markdown({ text, className, onAction }: { text: string; className?: string; onAction?: (t: string) => void }) {
   const lines = text.replace(/\r/g, '').split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -124,9 +194,23 @@ export function Markdown({ text, className }: { text: string; className?: string
       let j = i + 1;
       while (j < lines.length && !isFence(lines[j])) j++;
       if (j < lines.length) {
+        const body = lines.slice(i + 1, j).join('\n');
+        const lk = lang.toLowerCase();
+        // Blocos especiais: cards ricos e confirmação de ação.
+        if (lk === 'cards' || lk === 'confirm') {
+          try {
+            const data = JSON.parse(body);
+            if (lk === 'cards') {
+              const its = Array.isArray(data) ? data : data?.items;
+              if (Array.isArray(its) && its.length) { blocks.push(<CardList key={key++} items={its} />); i = j + 1; continue; }
+            } else {
+              blocks.push(<ConfirmCard key={key++} data={data} onAction={onAction} />); i = j + 1; continue;
+            }
+          } catch { /* JSON inválido → cai pro CodeViewer abaixo */ }
+        }
         blocks.push(
           <div key={key++} className="my-2">
-            <CodeViewer content={lines.slice(i + 1, j).join('\n')} language={lang || undefined} maxHeight="22rem" />
+            <CodeViewer content={body} language={lang || undefined} maxHeight="22rem" />
           </div>,
         );
         i = j + 1;

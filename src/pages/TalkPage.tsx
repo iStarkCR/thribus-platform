@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
-  ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin,
+  ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -324,6 +324,17 @@ export function TalkPage() {
   waitingRef.current = waiting;
   // mensagem do usuário em processamento → chave dos passos "por trás"
   const lastUserMsgId = waiting ? messages[messages.length - 1].id : null;
+
+  // Aurora reativa — o fundo (tema glass) pulsa quando o Bukowiski pensa e ganha
+  // vida quando ele FALA (TTS). Limpa as classes ao desmontar.
+  useEffect(() => {
+    document.documentElement.classList.toggle('chat-busy', waiting);
+  }, [waiting]);
+  useEffect(() => {
+    const speaking = speakingProvider || voice.speaking || panelPlayLevel > 0.03;
+    document.documentElement.classList.toggle('chat-speaking', speaking);
+  }, [speakingProvider, voice.speaking, panelPlayLevel]);
+  useEffect(() => () => { document.documentElement.classList.remove('chat-busy', 'chat-speaking'); }, []);
 
   // Botão "Parar": marca a msg como cancelada (a ponte mata o claude) + UI otimista.
   async function cancelTurn(msgId: string) {
@@ -891,6 +902,20 @@ export function TalkPage() {
             </div>
           ) : (
             <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 py-6 space-y-5">
+              {/* Resumo da conversa (TL;DR) — flutua no topo em conversas longas */}
+              {messages.length >= 8 && !waiting && (
+                <div className="sticky top-0 z-20 flex justify-center pointer-events-none -mt-2 mb-1">
+                  <button
+                    onClick={() => send('Faz um TL;DR rápido da nossa conversa até aqui: principais decisões, o que você já executou, o que ficou pendente e os próximos passos. Curto, em bullets.')}
+                    title="Resumir esta conversa"
+                    className="pointer-events-auto flex items-center gap-2 pl-2.5 pr-3.5 py-1.5 rounded-full glass-panel bg-surface-2/80 border border-default text-[12px] shadow-[0_8px_24px_-14px_rgba(0,0,0,0.6)] hover:border-brand/40 transition-colors"
+                  >
+                    <History size={13} className="text-brand-bright shrink-0" />
+                    <span className="font-semibold text-creme-dim">Resumo da conversa</span>
+                    <span className="text-creme-faint">{messages.length} mensagens · TL;DR</span>
+                  </button>
+                </div>
+              )}
               {messages.map((m, mi) =>
                 m.role === 'user' ? (
                   <div key={m.id} className="flex justify-end">
@@ -919,7 +944,7 @@ export function TalkPage() {
                     <div className="min-w-0 flex-1">
                       <div className="text-[11px] font-semibold text-creme-mute mb-1.5 tracking-wide">{agent.name}</div>
                       <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[15px] leading-[1.72] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
-                        <Markdown text={m.content} />
+                        <Markdown text={m.content} onAction={(t) => send(t)} />
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
                       <MessageSteps refId={[...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null} />

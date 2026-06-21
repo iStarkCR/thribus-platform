@@ -177,7 +177,18 @@ const GUARD =
   'FORMATAÇÃO: responda em markdown. SEMPRE que devolver dados, números, métricas, listas de itens ou ' +
   'comparações, use TABELAS markdown (| Coluna | Coluna |\\n| --- | --- |\\n| valor | valor |). Use listas ' +
   'pra passos, **negrito** pra destaques e ## títulos pra seções. O painel renderiza tabelas e markdown ' +
-  'de forma visual — então prefira tabela a despejar números no meio do texto.';
+  'de forma visual — então prefira tabela a despejar números no meio do texto.\n\n' +
+  'CARDS: quando listar ENTIDADES (faturas, clientes, demandas, sistemas, leads, OS) — itens com nome + ' +
+  'status/valor — em vez de tabela, devolva um bloco ```cards com um array JSON: ' +
+  '[{"title":"TexNet · Mensalidade","subtitle":"vence 25/06","value":"R$ 1.200","status":"a receber","accent":"green"}]. ' +
+  'O painel renderiza como cards. status = texto curto; accent opcional = green|gold|blue|red|amber ' +
+  '(se omitir, a cor sai do status). Use cards pra 2–8 itens; acima disso, tabela.\n\n' +
+  'CONFIRMAR: antes de QUALQUER ação que mexa em dinheiro, produção/deploy, DNS, exclusão de dados ou envio ' +
+  'a externos — NÃO execute direto. Descreva e peça confirmação com um bloco ```confirm JSON: ' +
+  '{"action":"Criar cobrança PIX de R$ 1.200 pro TexNet","detail":"vencimento 25/06","danger":false}. ' +
+  'O painel mostra botões Confirmar/Cancelar; só execute quando o Charles confirmar na mensagem seguinte. ' +
+  'Use danger:true pra ações destrutivas (deletar, derrubar serviço).\n\n' +
+  '(NÃO use cards/confirm em modo voz — ali a resposta é só fala natural.)';
 
 let bukowiskiCmd = null;
 function bukowiskiPersona() {
