@@ -341,9 +341,9 @@ export function TalkPage() {
   }, [messages, ttsOn]);
 
   const active = sessions.find((s) => s.id === activeId) ?? null;
-  // Só mostra a CONVERSA quando o usuário foi explicitamente pra ela E há sessão ativa.
-  // Senão, o orbe é a tela — nunca um "chat fantasma" sem conversa.
-  const inChat = view === 'chat' && activeId != null;
+  // Só mostra a CONVERSA quando o usuário foi explicitamente pra ela (view='chat'),
+  // há sessão ativa E ela tem mensagens. Senão o orbe é a tela — nunca branco/fantasma.
+  const inChat = view === 'chat' && activeId != null && messages.length > 0;
   const waiting =
     messages.length > 0 &&
     messages[messages.length - 1].role === 'user' &&
@@ -704,7 +704,7 @@ export function TalkPage() {
           <div>
             {subs.map((sf) => renderFolder(sf, depth + 1))}
             {sess.map((s) => (
-              <SessionItem key={s.id} session={s} active={s.id === activeId} depth={depth + 1} onClick={() => { setActiveId(s.id); setMessages([]); setView("chat"); setHistOpen(false); }} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+              <SessionItem key={s.id} session={s} active={s.id === activeId} depth={depth + 1} onClick={() => { setActiveId(s.id); setMessages([]); setView("orb"); setHistOpen(false); }} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
             ))}
             {sess.length === 0 && subs.length === 0 && (
               <div className="text-[11px] text-creme-faint italic py-1" style={{ paddingLeft: (depth + 1) * 12 + 14 }}>vazia</div>
@@ -774,7 +774,7 @@ export function TalkPage() {
               )}
               <div className="space-y-0.5">
                 {ungrouped.map((s) => (
-                  <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => { setActiveId(s.id); setMessages([]); setView("chat"); setHistOpen(false); }} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+                  <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => { setActiveId(s.id); setMessages([]); setView("orb"); setHistOpen(false); }} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
                 ))}
               </div>
             </div>
@@ -796,7 +796,7 @@ export function TalkPage() {
               {showArchived && (
                 <div className="space-y-0.5">
                   {archivedSessions.map((s) => (
-                    <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => { setActiveId(s.id); setMessages([]); setView("chat"); setHistOpen(false); }} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+                    <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => { setActiveId(s.id); setMessages([]); setView("orb"); setHistOpen(false); }} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
                   ))}
                 </div>
               )}
@@ -941,6 +941,21 @@ export function TalkPage() {
               </div>
 
               <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
+                {/* Conversa primada → botão pra ENTRAR (você decide ir pro chat) */}
+                {active && messages.length > 0 && (
+                  <button
+                    onClick={() => setView('chat')}
+                    className="w-full max-w-[460px] mb-5 flex items-center gap-3 px-4 py-3 rounded-2xl glass-panel bg-brand/12 border border-brand/35 hover:bg-brand/18 hover:border-brand/55 transition-colors shadow-[0_14px_34px_-18px_rgba(0,0,0,0.7)]"
+                  >
+                    <span className="w-9 h-9 rounded-xl bg-brand/15 flex items-center justify-center shrink-0"><MessageSquare size={17} className="text-brand-bright" /></span>
+                    <span className="flex-1 text-left min-w-0">
+                      <span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-brand-bright/80">Continuar de onde parou</span>
+                      <span className="block text-[14.5px] font-semibold text-creme truncate">{active.title}</span>
+                    </span>
+                    <ChevronRight size={18} className="text-brand-bright shrink-0" />
+                  </button>
+                )}
+
                 {/* Começo rápido — 3 chips numa LINHA SÓ */}
                 <div className="flex items-center justify-center gap-2.5 flex-wrap mb-5">
                   {[
@@ -993,7 +1008,9 @@ export function TalkPage() {
                   if (visible.length === 0) return null;
                   const sorted = [...visible].sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1));
                   const last = sorted[0];
-                  const open = (id: string) => { setActiveId(id); setMessages([]); setView('chat'); setHistOpen(false); };
+                  // prime = seleciona a conversa e mostra o orbe (com "Abrir conversa"); enter = vai direto.
+                  const prime = (id: string) => { setActiveId(id); setMessages([]); setView('orb'); setHistOpen(false); };
+                  const enter = (id: string) => { setActiveId(id); setMessages([]); setView('chat'); setHistOpen(false); };
                   return (
                     <div className="mt-5 relative">
                       <div className="flex items-center gap-3 text-[13px] rounded-full bg-surface-1/80 backdrop-blur-md border border-default px-4 py-2 shadow-[0_10px_28px_-14px_rgba(0,0,0,0.65)]">
@@ -1002,7 +1019,7 @@ export function TalkPage() {
                           <ChevronDown size={12} className={`text-creme-faint transition-transform ${histOpen ? 'rotate-180' : ''}`} />
                         </button>
                         <span className="w-px h-3.5 bg-creme/15" />
-                        <button onClick={() => open(last.id)} className="flex items-center gap-1.5 text-brand-bright font-semibold hover:text-brand transition-colors">
+                        <button onClick={() => enter(last.id)} className="flex items-center gap-1.5 text-brand-bright font-semibold hover:text-brand transition-colors">
                           <ChevronRight size={13} /> retomar última
                         </button>
                       </div>
@@ -1012,7 +1029,7 @@ export function TalkPage() {
                           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 max-h-72 overflow-y-auto bg-surface-1 border border-default rounded-xl shadow-2xl z-[41] py-1.5 text-left">
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-creme-faint">Conversas recentes</div>
                             {sorted.map((s) => (
-                              <button key={s.id} onClick={() => open(s.id)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors">
+                              <button key={s.id} onClick={() => prime(s.id)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors">
                                 <MessageSquare size={13} className="text-creme-faint shrink-0" />
                                 <span className="flex-1 min-w-0 truncate text-[13px] text-creme-dim">{s.title}</span>
                               </button>
