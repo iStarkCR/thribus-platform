@@ -44,6 +44,11 @@
     --semantic-red:   248 113 113; /* #f87171 */
     --semantic-blue:  96 165 250;  /* #60a5fa */
 
+    /* Syntax highlight (CodeViewer) — claros, pra fundo escuro */
+    --code-str: 110 231 183; /* emerald-300 */
+    --code-num: 125 211 252; /* sky-300 */
+    --code-kw:  196 181 253; /* violet-300 */
+
     /* Borders — derivam do brand com opacidades diferentes */
     --border-default: 107 143 94;  /* base do brand → usado com alpha 0.12 */
     --border-default-alpha: 0.12;
@@ -86,6 +91,11 @@
     --semantic-amber: 217 119 6;  /* #d97706 */
     --semantic-red:   220 38 38;  /* #dc2626 */
     --semantic-blue:  37 99 235;  /* #2563eb */
+
+    /* Syntax highlight — escuros/saturados, pra fundo CLARO (legível) */
+    --code-str: 4 120 87;    /* emerald-700 */
+    --code-num: 2 132 199;   /* sky-600 */
+    --code-kw:  109 40 217;  /* violet-700 */
 
     /* Borders */
     --border-default: 74 107 63;
