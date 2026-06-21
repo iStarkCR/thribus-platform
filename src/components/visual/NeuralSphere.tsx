@@ -8,7 +8,7 @@ const OUTER_COUNT = 110;
 const OUTER_RADIUS = 2.4;
 const OUTER_RADIAL_VARIATION = 0; // raio externo fixo → silhueta sempre círculo perfeito
 const OUTER_ANGULAR_JITTER = 0.018;
-const OUTER_POINT_SIZE = 0.1;
+const OUTER_POINT_SIZE = 0.12;
 const OUTER_POINT_OPACITY = 1.0;
 const OUTER_LINE_OPACITY = 0.55;
 const OUTER_CONNECT_DISTANCE = 1.55;
@@ -16,7 +16,7 @@ const OUTER_CONNECT_DISTANCE = 1.55;
 const INNER_COUNT = 40;
 const INNER_RADIUS = 0.95;
 const INNER_RADIAL_VARIATION = 0.035;
-const INNER_POINT_SIZE = 0.07;
+const INNER_POINT_SIZE = 0.08;
 const INNER_POINT_OPACITY = 0.92;
 const INNER_LINE_OPACITY = 0.36;
 const INNER_CONNECT_DISTANCE = 0.95;
@@ -83,8 +83,9 @@ function makeDotTexture(): THREE.Texture {
   cv.width = cv.height = s;
   const ctx = cv.getContext('2d')!;
   const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  // Núcleo SÓLIDO (pontos bem aparentes) + borda macia só na ponta.
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.45, 'rgba(255,255,255,0.92)');
+  g.addColorStop(0.62, 'rgba(255,255,255,1)');
   g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.beginPath();
@@ -163,6 +164,8 @@ export function NeuralSphere({
     scene.add(parallaxGroup);
 
     const baseColor = readPrimaryColor();
+    // Sage MAIS VIVO — sobe saturação (sem virar lime) e um tico de brilho.
+    { const hsl = { h: 0, s: 0, l: 0 }; baseColor.getHSL(hsl); baseColor.setHSL(hsl.h, Math.min(1, hsl.s * 1.35), Math.min(0.68, hsl.l + 0.04)); }
     const dotTex = makeDotTexture(); // pontos/pulsos redondos (não quadrados)
     // White mode: blending aditivo SOME no branco (cor + branco = branco) → usa
     // blending normal e cores mais firmes; e reforça opacidade de linhas/pulsos.
@@ -201,13 +204,13 @@ export function NeuralSphere({
     };
     for (let k = 0; k < TRAV_COUNT; k++) { pickEdge(k); travT[k] = Math.random(); }
     // Cada pulso = cabeça + rastro de cometa (TAIL). ~40% são DOURADOS, resto Sage.
-    const TAIL = 4;
+    const TAIL = 7;
     const SEGS = TAIL + 1;
     const TRAV_TOTAL = TRAV_COUNT * SEGS;
     const travArr = new Float32Array(TRAV_TOTAL * 3);
     const travCol = new Float32Array(TRAV_TOTAL * 3);
     const sagePulse = isLight ? baseColor.clone() : baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
-    const goldPulse = new THREE.Color('#e6a92e');
+    const goldPulse = new THREE.Color('#e9c23c');
     const tmpC = new THREE.Color();
     for (let k = 0; k < TRAV_COUNT; k++) {
       const c = (k % 5) < 2 ? goldPulse : sagePulse; // ~40% dourados
@@ -231,7 +234,7 @@ export function NeuralSphere({
     const FLASH_TIME = 0.42;
     const nodeFlash = new Float32Array(OUTER_COUNT);
     const nodeFlashGold = new Uint8Array(OUTER_COUNT);
-    const flashGold = new THREE.Color('#e6a92e');
+    const flashGold = new THREE.Color('#e9c23c');
     const flashBlue = new THREE.Color('#5fa8ff');
     const outerPtCol = new Float32Array(OUTER_COUNT * 3);
     outer.pointsGeometry.setAttribute('color', new THREE.BufferAttribute(outerPtCol, 3));
