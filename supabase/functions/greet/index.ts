@@ -34,32 +34,40 @@ Deno.serve(async (req) => {
   let body: { agentId?: string; name?: string; period?: string; lastContext?: string };
   try { body = await req.json(); } catch { return json({ error: 'json inválido' }, 400); }
   const { agentId, name, period, lastContext } = body;
-  if (!agentId) return json({ error: 'agentId é obrigatório' }, 400);
+  if (!agentId || typeof agentId !== 'string' || agentId.length > 100) return json({ error: 'agentId inválido' }, 400);
 
   const admin = createClient(url, serviceKey);
   const { data: cfg } = await admin.from('agent_voice_config').select('provider,api_key').eq('agent_id', agentId).maybeSingle();
   // Sem chave OpenAI → sem saudação dinâmica (o cliente usa o fallback estático).
   if (!cfg || cfg.provider !== 'openai' || !cfg.api_key) return json({ greeting: '' }, 200);
 
+  // Sanitiza/limita os campos opcionais (defense-in-depth) antes de montar o prompt.
+  const clean = (v: unknown, n: number) => (typeof v === 'string' ? v : '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const sPeriod = clean(period, 20) || 'dia';
+  const sName = clean(name, 40) || 'Charles';
+  const sCtx = clean(lastContext, 500);
   const userMsg = [
-    `Período: ${period ?? 'dia'}.`,
-    `Nome: ${name ?? 'Charles'}.`,
-    lastContext ? lastContext : 'Sem conversa anterior — é um começo do zero.',
+    `Período: ${sPeriod}.`,
+    `Nome: ${sName}.`,
+    sCtx ? sCtx : 'Sem conversa anterior — é um começo do zero.',
   ].join(' ');
 
+  const controller = new AbortController();
+  const to = setTimeout(() => controller.abort(), 8000); // não pendura a tela se a OpenAI travar
   try {
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${cfg.api_key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        temperature: 0.8,
+        temperature: 0.8, // um pouco acima do voice-ack (0.7) — varia mais as saudações
         max_tokens: 70,
         messages: [
           { role: 'system', content: SYSTEM },
-          { role: 'user', content: String(userMsg).slice(0, 800) },
+          { role: 'user', content: userMsg.slice(0, 800) },
         ],
       }),
+      signal: controller.signal,
     });
     if (!r.ok) return json({ greeting: '' }, 200);
     const data = await r.json();
@@ -67,5 +75,7 @@ Deno.serve(async (req) => {
     return json({ greeting }, 200);
   } catch {
     return json({ greeting: '' }, 200);
+  } finally {
+    clearTimeout(to);
   }
 });

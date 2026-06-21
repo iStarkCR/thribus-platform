@@ -101,7 +101,7 @@ export function TalkPage() {
   // Hora de BRASÍLIA (America/Sao_Paulo), não a do navegador.
   const brasiliaHour = useMemo(() => {
     const s = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }).format(new Date());
-    return parseInt(s, 10) % 24;
+    return parseInt(s, 10) % 24; // % 24: alguns engines retornam "24" à meia-noite (hourCycle h24) → vira 0
   }, []);
   const greeting = brasiliaHour < 12 ? 'Bom dia' : brasiliaHour < 18 ? 'Boa tarde' : 'Boa noite';
   const period = brasiliaHour < 12 ? 'manhã' : brasiliaHour < 18 ? 'tarde' : 'noite';
@@ -374,8 +374,9 @@ export function TalkPage() {
       } catch { /* fallback assume */ }
     })();
     return () => { cancelled = true; clearTimeout(fb); };
+    // greetedRef dedupe garante 1 disparo por agente mesmo com sessions/period mudando.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, messages.length, treeLoaded]);
+  }, [agentId, messages.length, treeLoaded, sessions, firstName, period]);
 
   // Botão "Parar": marca a msg como cancelada (a ponte mata o claude) + UI otimista.
   async function cancelTurn(msgId: string) {
