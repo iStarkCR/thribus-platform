@@ -355,7 +355,9 @@ export function TalkPage() {
     if (greetedRef.current === agentId) return;
     greetedRef.current = agentId;
     let cancelled = false;
-    const fb = setTimeout(() => { if (!cancelled) setDynGreet((p) => p ?? `Como vai${period === 'noite' ? ' a noite' : ' hoje'}? O que a gente resolve agora?`); }, 1700);
+    const FALLBACK = `Como vai${period === 'noite' ? ' a noite' : ' hoje'}? O que a gente resolve agora?`;
+    // Safety só se a chamada TRAVAR — senão esperamos o modelo de verdade.
+    const fb = setTimeout(() => { if (!cancelled) setDynGreet((p) => p ?? FALLBACK); }, 6000);
     (async () => {
       const last = sessions.find((x) => !x.archivedAt);
       let ctx = '';
@@ -368,10 +370,12 @@ export function TalkPage() {
             : `Última conversa: "${last.title}".`;
         } catch { ctx = `Última conversa: "${last.title}".`; }
       }
-      try {
-        const line = await greetLine(agentId, { name: firstName, period, lastContext: ctx });
-        if (!cancelled && line) { clearTimeout(fb); setDynGreet((p) => p ?? line); }
-      } catch { /* fallback assume */ }
+      let line = '';
+      try { line = await greetLine(agentId, { name: firstName, period, lastContext: ctx }); } catch { /* 429/erro → fallback */ }
+      if (cancelled) return;
+      clearTimeout(fb);
+      // modelo respondeu (line) ganha; vazio (sem chave/429) → fallback estático
+      setDynGreet((p) => p ?? (line || FALLBACK));
     })();
     return () => { cancelled = true; clearTimeout(fb); };
     // greetedRef dedupe garante 1 disparo por agente mesmo com sessions/period mudando.
@@ -869,13 +873,17 @@ export function TalkPage() {
               {/* Saudação "Bom dia, Charles" (pela hora) — FORA da esfera, no topo,
                   entra DIGITANDO + brilho, como se estivesse te cumprimentando. */}
               <div className="absolute top-[6vh] inset-x-0 z-20 text-center px-6 pointer-events-none">
-                <div className="greet-anim inline-block text-[clamp(30px,4.8vw,52px)] font-extrabold tracking-tight leading-none">
-                  <Typewriter once phrases={[`${greeting}, ${firstName}`]} speed={85} />
+                <div>
+                  <div className="greet-anim inline-block text-[clamp(30px,4.8vw,52px)] font-extrabold tracking-tight leading-none">
+                    <Typewriter once phrases={[`${greeting}, ${firstName}`]} speed={85} />
+                  </div>
                 </div>
-                {/* Linha dinâmica — logo após o nome, MESMO efeito de digitação + brilho */}
+                {/* Linha dinâmica — EMBAIXO do nome, MESMO efeito de digitação + brilho */}
                 {dynGreet && (
-                  <div className="greet-anim inline-block text-[clamp(15px,2.2vw,22px)] font-semibold tracking-tight leading-snug mt-3 max-w-[560px]">
-                    <Typewriter key={dynGreet} once phrases={[dynGreet]} speed={30} />
+                  <div className="mt-3">
+                    <div className="greet-anim inline-block text-[clamp(15px,2.4vw,23px)] font-semibold tracking-tight leading-snug max-w-[620px]">
+                      <Typewriter key={dynGreet} once phrases={[dynGreet]} speed={30} />
+                    </div>
                   </div>
                 )}
               </div>
