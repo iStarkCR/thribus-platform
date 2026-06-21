@@ -960,21 +960,6 @@ export function TalkPage() {
               </div>
 
               <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
-                {/* Conversa primada → botão pra ENTRAR (você decide ir pro chat) */}
-                {active && messages.length > 0 && (
-                  <button
-                    onClick={() => { setView('chat'); setChatMode(true); }}
-                    className="w-full max-w-[460px] mb-5 flex items-center gap-3 px-4 py-3 rounded-2xl glass-panel bg-brand/12 border border-brand/35 hover:bg-brand/18 hover:border-brand/55 transition-colors shadow-[0_14px_34px_-18px_rgba(0,0,0,0.7)]"
-                  >
-                    <span className="w-9 h-9 rounded-xl bg-brand/15 flex items-center justify-center shrink-0"><MessageSquare size={17} className="text-brand-bright" /></span>
-                    <span className="flex-1 text-left min-w-0">
-                      <span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-brand-bright/80">Continuar de onde parou</span>
-                      <span className="block text-[14.5px] font-semibold text-creme truncate">{active.title}</span>
-                    </span>
-                    <ChevronRight size={18} className="text-brand-bright shrink-0" />
-                  </button>
-                )}
-
                 {/* Começo rápido — chips do COO (caixa/infra/demandas) SÓ pro Bukowiski (supervisor).
                     Pros outros colaboradores não faz sentido — fica só a barra. */}
                 {agent.isSupervisor && (
@@ -1040,8 +1025,8 @@ export function TalkPage() {
                           <ChevronDown size={12} className={`text-creme-faint transition-transform ${histOpen ? 'rotate-180' : ''}`} />
                         </button>
                         <span className="w-px h-3.5 bg-creme/15" />
-                        <button onClick={() => enterConversation(last.id)} className="flex items-center gap-1.5 text-brand-bright font-semibold hover:text-brand transition-colors">
-                          <ChevronRight size={13} /> retomar última
+                        <button onClick={() => enterConversation(active && messages.length > 0 ? active.id : last.id)} className="flex items-center gap-1.5 text-brand-bright font-semibold hover:text-brand transition-colors">
+                          <ChevronRight size={13} /> retornar ao chat
                         </button>
                       </div>
                       {histOpen && (
