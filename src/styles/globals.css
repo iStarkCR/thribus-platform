@@ -245,3 +245,7 @@ html.light .greet-anim {
 /* Cursor do efeito de digitação (typewriter) */
 @keyframes twBlink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
 .tw-caret { display: inline-block; margin-left: 1px; color: rgb(var(--brand-bright)); animation: twBlink 1.05s step-end infinite; font-weight: 400; }
+
+/* Indicador "digitando…" do chat (3 bolinhas pulando) */
+@keyframes chatTyping { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-4px); opacity: 1; } }
+.typing-dot { display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: rgb(var(--brand-bright)); animation: chatTyping 1.3s infinite; }

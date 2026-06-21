@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
-  Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square,
+  Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -488,6 +488,17 @@ export function TalkPage() {
   }
 
   // Vira o texto digitado numa DEMANDA (fila async), opcionalmente delegada a outro agente.
+  // Ações por mensagem (hover): copiar, ouvir, refazer, virar demanda.
+  function copyMsg(text: string) { navigator.clipboard.writeText(text); useAppStore.getState().addToast('Copiado', 'green'); }
+  function regenerate(mi: number) { const u = [...messages.slice(0, mi)].reverse().find((x) => x.role === 'user'); if (u) send(u.content); }
+  async function msgToDemand(text: string) {
+    if (!userId || !agent) return;
+    try {
+      await createDemand(userId, { title: text.slice(0, 100), description: text.length > 100 ? text : undefined, agentId: agent.id });
+      useAppStore.getState().addToast('Jogado nas Demandas', 'green');
+    } catch (e) { useAppStore.getState().addToast('Falha: ' + (e as Error).message, 'red'); }
+  }
+
   async function toDemand(targetAgentId: string) {
     const text = input.trim();
     if (!text || !userId) return;
@@ -901,7 +912,7 @@ export function TalkPage() {
                     </div>
                   </div>
                 ) : (
-                  <div key={m.id} className="flex gap-3 max-w-[88%]">
+                  <div key={m.id} className="group flex gap-3 max-w-[88%]">
                     <div className="w-8 h-8 rounded-xl bg-brand/15 text-brand-bright flex items-center justify-center text-[13px] font-bold shrink-0 mt-0.5 ring-1 ring-brand/20">
                       {agent.name.charAt(0).toUpperCase()}
                     </div>
@@ -912,9 +923,45 @@ export function TalkPage() {
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
                       <MessageSteps refId={[...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null} />
+                      {/* Ações ao passar o mouse */}
+                      {m.status === 'done' && (
+                        <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {[
+                            { icon: Copy, label: 'Copiar', on: () => copyMsg(m.content), gold: false },
+                            { icon: Volume2, label: 'Ouvir', on: () => speakReply(m.content), gold: true },
+                            { icon: RefreshCw, label: 'Refazer', on: () => regenerate(mi), gold: false },
+                            { icon: ListChecks, label: 'Virar demanda', on: () => msgToDemand(m.content), gold: false },
+                          ].map((a) => (
+                            <button key={a.label} onClick={a.on} title={a.label} className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-colors ${a.gold ? 'bg-surface-3 border-gold/30 text-gold-bright hover:bg-gold/10' : 'bg-surface-3 border-default text-creme-faint hover:text-creme hover:bg-surface-hover'}`}>
+                              <a.icon size={13} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {/* Sugestões de próximo passo (só na última resposta) */}
+                      {m.status === 'done' && mi === messages.length - 1 && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {['Detalha isso', 'Resume em 1 linha', 'Próximos passos', 'Vira relatório'].map((f) => (
+                            <button key={f} onClick={() => send(f)} className="flex items-center gap-1.5 pl-2.5 pr-3 py-1.5 rounded-xl bg-surface-3 border border-brand/25 text-creme-dim text-[12.5px] font-medium hover:border-brand/50 hover:text-creme hover:bg-surface-hover transition-all">
+                              <ArrowRight size={13} className="text-brand-bright" /> {f}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ),
+              )}
+              {waiting && (
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-brand/15 text-brand-bright flex items-center justify-center text-[13px] font-bold shrink-0 ring-1 ring-brand/20">
+                    {agent.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-surface-2 border border-default rounded-[20px] rounded-tl-md px-4 py-3.5">
+                    <span className="typing-dot" /><span className="typing-dot" style={{ animationDelay: '.16s' }} /><span className="typing-dot" style={{ animationDelay: '.32s' }} />
+                    <span className="text-[12.5px] text-creme-mute ml-1.5">{agent.name} está digitando…</span>
+                  </div>
+                </div>
               )}
               {waiting && <ThinkingActivity agentName={agent.name} refId={lastUserMsgId} />}
             </div>

@@ -67,6 +67,48 @@ const isTableSep = (l: string) => /-/.test(l) && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.te
 // número de verdade: moeda opcional, sinal, dígitos/separadores, % opcional.
 const numeric = (s: string) => { const t = s.trim(); return /\d/.test(t) && /^(US\$|R\$|\$)?\s*[+-]?[\d.,]+\s*%?$/.test(t); };
 
+// extrai o float de uma célula (trata R$ 2.749 = 2749, 400,00 = 400).
+function parseNum(s: string): number {
+  let t = s.replace(/[^\d.,-]/g, '');
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (/\.\d{3}(?:\.\d{3})*$/.test(t)) t = t.replace(/\./g, '');
+  return parseFloat(t) || 0;
+}
+
+// Mini gráfico de barras inline quando a tabela tem rótulo + coluna numérica.
+function miniChart(header: string[], rows: string[][], idxs: number[]): ReactNode {
+  if (rows.length < 2 || rows.length > 10 || idxs.length < 2) return null;
+  let numCol = -1;
+  for (let c = idxs.length - 1; c >= 1; c--) {
+    if (rows.filter((r) => numeric(r[c] ?? '')).length >= Math.ceil(rows.length * 0.7)) { numCol = c; break; }
+  }
+  if (numCol < 0) return null;
+  let labCol = -1;
+  for (let c = 0; c < idxs.length; c++) {
+    if (c !== numCol && rows.filter((r) => numeric(r[c] ?? '')).length < Math.ceil(rows.length * 0.5)) { labCol = c; break; }
+  }
+  if (labCol < 0) return null;
+  const vals = rows.map((r) => parseNum(r[numCol] ?? ''));
+  if (vals.every((v) => v === 0)) return null;
+  const max = Math.max(...vals.map((v) => Math.abs(v)), 1);
+  return (
+    <div className="mt-2 px-3.5 py-3 rounded-xl border border-default bg-surface-1/60">
+      <div className="text-[10px] uppercase tracking-[0.08em] text-creme-faint font-semibold mb-2">{header[numCol] || 'valores'}</div>
+      <div className="flex flex-col gap-1.5">
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-2.5 text-[12px]">
+            <span className="w-[34%] truncate text-creme-mute text-right shrink-0">{r[labCol]}</span>
+            <div className="flex-1 h-3 rounded-full bg-surface-3 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${Math.max(3, (Math.abs(vals[i]) / max) * 100)}%`, background: 'linear-gradient(90deg, rgb(var(--brand)), rgb(var(--brand-bright)))' }} />
+            </div>
+            <span className="w-[18%] shrink-0 text-creme font-mono tabular-nums text-right">{r[numCol]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Markdown({ text, className }: { text: string; className?: string }) {
   const lines = text.replace(/\r/g, '').split('\n');
   const blocks: ReactNode[] = [];
@@ -104,8 +146,10 @@ export function Markdown({ text, className }: { text: string; className?: string
       while (i < lines.length && isTableRow(lines[i])) { rows.push(splitRow(lines[i])); i++; }
       const cols = Math.max(header.length, ...rows.map((r) => r.length), 1);
       const idxs = Array.from({ length: cols }, (_, k) => k);
+      const chart = miniChart(header, rows, idxs);
       blocks.push(
-        <div key={key++} className="my-3 overflow-x-auto rounded-xl border border-default shadow-[0_8px_24px_-16px_rgba(0,0,0,0.5)]">
+        <div key={key++} className="my-3">
+        <div className="overflow-x-auto rounded-xl border border-default shadow-[0_8px_24px_-16px_rgba(0,0,0,0.5)]">
           <table className="w-full text-[13px] border-collapse">
             <thead>
               <tr className="bg-surface-3">
@@ -129,6 +173,8 @@ export function Markdown({ text, className }: { text: string; className?: string
               ))}
             </tbody>
           </table>
+        </div>
+        {chart}
         </div>,
       );
       continue;
