@@ -201,13 +201,13 @@ export function NeuralSphere({
     };
     for (let k = 0; k < TRAV_COUNT; k++) { pickEdge(k); travT[k] = Math.random(); }
     // Cada pulso = cabeça + rastro de cometa (TAIL). ~40% são DOURADOS, resto Sage.
-    const TAIL = 7;
+    const TAIL = 4;
     const SEGS = TAIL + 1;
     const TRAV_TOTAL = TRAV_COUNT * SEGS;
     const travArr = new Float32Array(TRAV_TOTAL * 3);
     const travCol = new Float32Array(TRAV_TOTAL * 3);
     const sagePulse = isLight ? baseColor.clone() : baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
-    const goldPulse = new THREE.Color('#e9c23c');
+    const goldPulse = new THREE.Color('#f2d27a');
     const tmpC = new THREE.Color();
     for (let k = 0; k < TRAV_COUNT; k++) {
       const c = (k % 5) < 2 ? goldPulse : sagePulse; // ~40% dourados
@@ -231,7 +231,7 @@ export function NeuralSphere({
     const FLASH_TIME = 0.42;
     const nodeFlash = new Float32Array(OUTER_COUNT);
     const nodeFlashGold = new Uint8Array(OUTER_COUNT);
-    const flashGold = new THREE.Color('#e9c23c');
+    const flashGold = new THREE.Color('#f2d27a');
     const flashBlue = new THREE.Color('#5fa8ff');
     const outerPtCol = new Float32Array(OUTER_COUNT * 3);
     outer.pointsGeometry.setAttribute('color', new THREE.BufferAttribute(outerPtCol, 3));
