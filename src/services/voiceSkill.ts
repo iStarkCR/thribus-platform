@@ -107,6 +107,18 @@ export async function quickAck(agentId: string, text: string): Promise<string> {
   }
 }
 
+/** Saudação curta e contextual da tela de boas-vindas (modelo leve). '' se falhar. */
+export async function greetLine(agentId: string, p: { name: string; period: string; lastContext?: string }): Promise<string> {
+  if (!supabase) return '';
+  try {
+    const { data, error } = await supabase.functions.invoke('greet', { body: { agentId, ...p } });
+    if (error) return '';
+    return (data as { greeting?: string })?.greeting?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
+
 /** Transcreve áudio via Whisper (OpenAI). Retorna texto ou null. */
 export async function transcribeBlob(agentId: string, audio: Blob): Promise<string | null> {
   if (!supabase) return null;

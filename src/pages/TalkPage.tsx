@@ -31,7 +31,7 @@ import {
 const FOLDER_COLORS = ['#6B8F5E', '#3b82f6', '#8b5cf6', '#ef4444', '#f59e0b', '#14b8a6', '#ec4899', '#64748b'];
 import { AgentInfoModal } from '@/components/agents/AgentInfoModal';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
-import { getVoiceConfig, ttsBlob, transcribeBlob, quickAck, type VoiceConfig } from '@/services/voiceSkill';
+import { getVoiceConfig, ttsBlob, transcribeBlob, quickAck, greetLine, type VoiceConfig } from '@/services/voiceSkill';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -59,6 +59,7 @@ export function TalkPage() {
 
   const [folders, setFolders] = useState<ChatFolder[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [treeLoaded, setTreeLoaded] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -97,10 +98,17 @@ export function TalkPage() {
   const [ttsOn, setTtsOn] = useState(false);
   const rawName = ((user?.user_metadata?.name as string | undefined) ?? user?.email?.split('@')[0] ?? 'Charles').split(' ')[0];
   const firstName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-  const greeting = useMemo(() => {
-    const h = new Date().getHours();
-    return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+  // Hora de BRASÍLIA (America/Sao_Paulo), não a do navegador.
+  const brasiliaHour = useMemo(() => {
+    const s = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }).format(new Date());
+    return parseInt(s, 10) % 24;
   }, []);
+  const greeting = brasiliaHour < 12 ? 'Bom dia' : brasiliaHour < 18 ? 'Boa tarde' : 'Boa noite';
+  const period = brasiliaHour < 12 ? 'manhã' : brasiliaHour < 18 ? 'tarde' : 'noite';
+  // Linha de saudação gerada por modelo leve (gpt-4o-mini) — natural + relembra
+  // a última coisa feita se houver conversa anterior. null até decidir o texto.
+  const [dynGreet, setDynGreet] = useState<string | null>(null);
+  const greetedRef = useRef<string | null>(null);
   const spokenRef = useRef<string | null>(null);
 
   // ─── Skill de Voz ───────────────────────────────────────────────────────────
@@ -244,6 +252,7 @@ export function TalkPage() {
     const sVisible = orbFolderId ? s.filter((x) => x.folderId !== orbFolderId) : s;
     setFolders(fVisible);
     setSessions(sVisible);
+    setTreeLoaded(true);
     // Ao entrar no chat, abre na TELA DE BOAS-VINDAS (não pula pra última conversa);
     // dá pra retomar a última pelo atalho na própria tela.
   }, [agentId, userId]);
@@ -253,6 +262,9 @@ export function TalkPage() {
     setFolders([]);
     setActiveId(null);
     setMessages([]);
+    setTreeLoaded(false);
+    greetedRef.current = null;
+    setDynGreet(null);
     loadTree();
   }, [loadTree]);
 
@@ -335,6 +347,35 @@ export function TalkPage() {
     document.documentElement.classList.toggle('chat-speaking', speaking);
   }, [speakingProvider, voice.speaking, panelPlayLevel]);
   useEffect(() => () => { document.documentElement.classList.remove('chat-busy', 'chat-speaking'); }, []);
+
+  // Saudação dinâmica (modelo leve) — só na tela de boas-vindas, 1x por agente.
+  // Relembra a última coisa feita na conversa mais recente, se houver.
+  useEffect(() => {
+    if (messages.length !== 0 || !agentId || !treeLoaded) return;
+    if (greetedRef.current === agentId) return;
+    greetedRef.current = agentId;
+    let cancelled = false;
+    const fb = setTimeout(() => { if (!cancelled) setDynGreet((p) => p ?? `Como vai${period === 'noite' ? ' a noite' : ' hoje'}? O que a gente resolve agora?`); }, 1700);
+    (async () => {
+      const last = sessions.find((x) => !x.archivedAt);
+      let ctx = '';
+      if (last) {
+        try {
+          const msgs = await listMessages(last.id);
+          const lastA = [...msgs].reverse().find((m) => m.role === 'assistant' && m.content.trim());
+          ctx = lastA
+            ? `Última conversa "${last.title}". Última coisa feita: ${lastA.content.replace(/\s+/g, ' ').slice(0, 280)}`
+            : `Última conversa: "${last.title}".`;
+        } catch { ctx = `Última conversa: "${last.title}".`; }
+      }
+      try {
+        const line = await greetLine(agentId, { name: firstName, period, lastContext: ctx });
+        if (!cancelled && line) { clearTimeout(fb); setDynGreet((p) => p ?? line); }
+      } catch { /* fallback assume */ }
+    })();
+    return () => { cancelled = true; clearTimeout(fb); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, messages.length, treeLoaded]);
 
   // Botão "Parar": marca a msg como cancelada (a ponte mata o claude) + UI otimista.
   async function cancelTurn(msgId: string) {
@@ -833,35 +874,10 @@ export function TalkPage() {
               </div>
 
               <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
-                <div className="text-[14.5px] text-creme-mute mb-7 min-h-[1.4em]">
-                  <Typewriter phrases={['Como posso te ajudar?', 'Bora pra cima?', 'O que vamos resolver hoje?', 'Tô aqui pro que precisar.', 'Manda ver, Charles.']} />
+                {/* Saudação dinâmica (modelo leve) — natural, relembra a última coisa feita */}
+                <div className="text-[17px] text-creme-dim mb-7 min-h-[1.6em] leading-snug max-w-[540px]">
+                  {dynGreet && <Typewriter key={dynGreet} once phrases={[dynGreet]} speed={28} />}
                 </div>
-
-                {/* Chips de começo rápido */}
-                <div className="flex flex-wrap items-center justify-center gap-2.5 max-w-[520px] mb-5">
-                  {[
-                    { icon: BarChart3, text: 'Como tá o caixa hoje?' },
-                    { icon: Cog, text: 'Status da infra' },
-                    { icon: ListChecks, text: 'Demandas em aberto' },
-                    { icon: Lightbulb, text: 'Resumo do meu dia' },
-                  ].map((s) => (
-                    <button
-                      key={s.text}
-                      onClick={() => send(s.text)}
-                      className="flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl bg-surface-3 border border-default hover:border-brand/50 hover:bg-surface-hover text-[13px] font-medium text-creme-dim hover:text-creme transition-all shadow-[0_10px_28px_-16px_rgba(0,0,0,0.7)]"
-                    >
-                      <s.icon size={14} className="text-brand-bright shrink-0" /> {s.text}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Modo de fala — ele FALA o briefing do dia (liga o TTS e pede falado) */}
-                <button
-                  onClick={() => { setTtsOn(true); send('Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'); }}
-                  className="mb-5 flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[13px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
-                >
-                  <Volume2 size={15} className="shrink-0" /> Ouvir briefing do dia
-                </button>
 
                 {/* Composer no MEIO (igual à referência) */}
                 <div className="w-full">
@@ -875,7 +891,7 @@ export function TalkPage() {
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                         rows={1}
                         placeholder="Mensagem para o Bukowiski…"
-                        className="flex-1 resize-none bg-transparent py-1 text-[14.5px] text-creme placeholder-creme-faint focus:outline-none max-h-32"
+                        className="flex-1 resize-none bg-transparent py-1 text-[15px] text-creme placeholder-creme-faint focus:outline-none max-h-32"
                       />
                       <button onClick={() => startPanelVoice()} title="Modo voz" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Headphones size={17} /></button>
                       <button onClick={() => setRecording(true)} title="Gravar áudio" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Mic size={17} /></button>
@@ -883,6 +899,33 @@ export function TalkPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Começo rápido — 3 chips EMPILHADOS (1×1), embaixo da barra, fonte maior */}
+                <div className="w-full flex flex-col gap-2.5 mt-5">
+                  {[
+                    { icon: BarChart3, text: 'Como tá o caixa hoje?' },
+                    { icon: Cog, text: 'Status da infra' },
+                    { icon: ListChecks, text: 'Demandas em aberto' },
+                  ].map((s) => (
+                    <button
+                      key={s.text}
+                      onClick={() => send(s.text)}
+                      className="group/chip w-full flex items-center gap-3 pl-3 pr-4 py-2.5 rounded-2xl bg-surface-2/70 border border-default hover:border-brand/50 hover:bg-surface-hover transition-all shadow-[0_10px_28px_-18px_rgba(0,0,0,0.7)]"
+                    >
+                      <span className="w-9 h-9 rounded-xl bg-brand/12 flex items-center justify-center shrink-0"><s.icon size={17} className="text-brand-bright" /></span>
+                      <span className="flex-1 text-left text-[15px] font-semibold text-creme-dim group-hover/chip:text-creme transition-colors">{s.text}</span>
+                      <ArrowRight size={16} className="text-creme-faint opacity-0 -translate-x-1 group-hover/chip:opacity-70 group-hover/chip:translate-x-0 transition-all shrink-0" />
+                    </button>
+                  ))}
+                </div>
+
+                {/* Modo de fala — ele FALA o briefing do dia (liga o TTS e pede falado) */}
+                <button
+                  onClick={() => { setTtsOn(true); send('Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'); }}
+                  className="mt-5 flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[14px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
+                >
+                  <Volume2 size={15} className="shrink-0" /> Ouvir briefing do dia
+                </button>
 
                 {/* Atalhos: histórico + retomar última */}
                 {(() => {
