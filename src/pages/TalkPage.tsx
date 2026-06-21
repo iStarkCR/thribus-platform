@@ -312,8 +312,10 @@ export function TalkPage() {
 
   // Fala uma resposta: provider configurado (áudio) ou voz nativa do navegador.
   async function speakReply(text: string, onEnd?: () => void) {
-    const cfg = voiceCfgRef.current;
-    if (cfg?.enabled && cfg.provider !== 'browser' && agentId) {
+    // A Edge Function (service role) é a fonte da verdade do provider/voz — o front
+    // NÃO lê agent_voice_config (RLS protege a api_key). Então sempre tenta o TTS do
+    // provider; ttsBlob devolve null se a função decidir "browser" → aí sim navegador.
+    if (agentId) {
       try {
         const blob = await ttsBlob(agentId, text);
         if (blob) {
