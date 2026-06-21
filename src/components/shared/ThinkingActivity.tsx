@@ -111,8 +111,12 @@ export function ThinkingActivity({ agentName, refId }: { agentName: string; refI
     return () => { on = false; unsub(); };
   }, [refId]);
 
+  // Sem tool steps ainda → não mostra "pensando…" (redundante com "digitando…").
+  // Só aparece quando há atividade real (rodando/lendo/etc), que é informativa.
+  if (events.length === 0) return null;
+
   const latest = events[events.length - 1];
-  const status = latest ? `${verbFor(latest.label)}${latest.detail ? ` ${latest.detail}` : ''}` : 'pensando';
+  const status = `${verbFor(latest.label)}${latest.detail ? ` ${latest.detail}` : ''}`;
 
   return (
     <div className="flex gap-2.5">
