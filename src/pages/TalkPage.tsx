@@ -789,7 +789,7 @@ export function TalkPage() {
             <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
               {/* Esfera circular perfeita — efeitos contidos, borda esmaecida */}
               <div
-                className="absolute aspect-square w-[min(82vmin,640px)] rounded-full overflow-hidden"
+                className="absolute aspect-square w-[min(82vmin,640px)] rounded-full overflow-hidden opacity-[0.55]"
                 style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
               >
                 <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} />

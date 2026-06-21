@@ -37,13 +37,14 @@ const WAVE_AMP = 0.075; // radial — só miolo interno
 const WAVE_AMP_TAN = 0.22; // tangencial — superfície externa flui, sem mexer na borda
 const WAVE_FREQ = 1.05;
 const WAVE_SPEED = 0.75; // bem mais lento
-const HUE_DRIFT = 0.06; // desvio de matiz (verde ↔ teal/azulado) — toque Siri
+const HUE_DRIFT = 0.018; // desvio de matiz pequeno — não vira lime/amarelado
 
 function readPrimaryColor(): THREE.Color {
-  const v = getComputedStyle(document.documentElement).getPropertyValue('--brand-bright').trim();
+  // Sage da marca (--brand) — verde mais suave/nosso, não o bright que puxava lime.
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--brand').trim();
   const m = v.match(/(\d+)\s+(\d+)\s+(\d+)/);
   if (m) return new THREE.Color().setRGB(+m[1] / 255, +m[2] / 255, +m[3] / 255);
-  return new THREE.Color('#8cc47a');
+  return new THREE.Color('#6B8F5E');
 }
 
 interface Shell {
@@ -297,8 +298,8 @@ export function NeuralSphere({
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;
       outer.pointsMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
       outer.lineMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
-      inner.pointsMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.1), Math.min(1, baseHSL.l + 0.12));
-      inner.lineMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.1), Math.min(1, baseHSL.l + 0.12));
+      inner.pointsMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
+      inner.lineMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
 
       const t = (performance.now() - startTime) * 0.00085;
       const breath = 1 + Math.sin(t * 0.85) * 0.018;
