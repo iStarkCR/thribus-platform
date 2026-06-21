@@ -148,6 +148,39 @@ export function NeuralSphere({
     const outer = makePointsAndLines(outerShell, { count: OUTER_COUNT, pointSize: OUTER_POINT_SIZE, pointOpacity: OUTER_POINT_OPACITY, lineOpacity: OUTER_LINE_OPACITY }, baseColor);
     outerGroup.add(outer.points, outer.lines);
 
+    // ─── Pulsos sinápticos — "neurônios" viajando pelas linhas do córtex ──────
+    const TRAV_COUNT = 32;
+    const NEIGH_DIST = OUTER_CONNECT_DISTANCE * connectScale * 1.05;
+    const neighbors: number[][] = [];
+    for (let a = 0; a < OUTER_COUNT; a++) {
+      const list: number[] = [];
+      for (let b = 0; b < OUTER_COUNT; b++) {
+        if (a !== b && outerShell.originals[a].distanceTo(outerShell.originals[b]) < NEIGH_DIST) list.push(b);
+      }
+      neighbors.push(list);
+    }
+    const travA = new Int32Array(TRAV_COUNT);
+    const travB = new Int32Array(TRAV_COUNT);
+    const travT = new Float32Array(TRAV_COUNT);
+    const travSpeed = new Float32Array(TRAV_COUNT);
+    const pickEdge = (k: number, from?: number) => {
+      let a = from ?? Math.floor(Math.random() * OUTER_COUNT);
+      let tries = 0;
+      while (neighbors[a].length === 0 && tries++ < 8) a = Math.floor(Math.random() * OUTER_COUNT);
+      const nb = neighbors[a];
+      travA[k] = a;
+      travB[k] = nb.length ? nb[Math.floor(Math.random() * nb.length)] : (a + 1) % OUTER_COUNT;
+      travSpeed[k] = 0.5 + Math.random() * 0.9;
+    };
+    for (let k = 0; k < TRAV_COUNT; k++) { pickEdge(k); travT[k] = Math.random(); }
+    const travArr = new Float32Array(TRAV_COUNT * 3);
+    const travGeo = new THREE.BufferGeometry();
+    travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
+    const travMat = new THREE.PointsMaterial({ color: baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.45), size: 0.12, transparent: true, opacity: 0.9, sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    const travPoints = new THREE.Points(travGeo, travMat);
+    outerGroup.add(travPoints);
+    const easeTrav = (x: number) => x * x * (3 - 2 * x);
+
     const innerShell = buildShell({ count: INNER_COUNT, radius: INNER_RADIUS, radialVar: INNER_RADIAL_VARIATION, angularJitter: 0.05 });
     const innerColor = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.18);
     const inner = makePointsAndLines(innerShell, { count: INNER_COUNT, pointSize: INNER_POINT_SIZE, pointOpacity: INNER_POINT_OPACITY, lineOpacity: INNER_LINE_OPACITY }, innerColor);
@@ -294,6 +327,21 @@ export function NeuralSphere({
       updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now, waveBoost, OUTER_RADIUS);
       updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now, waveBoost, null);
 
+      // Pulsos viajando pelas linhas (lerp entre nó A→B; ao chegar, parte do B).
+      const travDt = 0.016 * (1 + I * 0.8); // mais rápido quando ativo (voz)
+      for (let k = 0; k < TRAV_COUNT; k++) {
+        travT[k] += travSpeed[k] * travDt;
+        if (travT[k] >= 1) { travT[k] -= 1; pickEdge(k, travB[k]); }
+        const a = outerShell.positions[travA[k]];
+        const b = outerShell.positions[travB[k]];
+        const e = easeTrav(travT[k]);
+        travArr[k * 3] = a.x + (b.x - a.x) * e;
+        travArr[k * 3 + 1] = a.y + (b.y - a.y) * e;
+        travArr[k * 3 + 2] = a.z + (b.z - a.z) * e;
+      }
+      travGeo.attributes.position.needsUpdate = true;
+      travMat.opacity = 0.55 + I * 0.4;
+
       // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;
       outer.pointsMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
@@ -339,6 +387,8 @@ export function NeuralSphere({
       outer.pointsMaterial.dispose();
       outer.linesGeometry.dispose();
       outer.lineMaterial.dispose();
+      travGeo.dispose();
+      travMat.dispose();
       inner.pointsGeometry.dispose();
       inner.pointsMaterial.dispose();
       inner.linesGeometry.dispose();
