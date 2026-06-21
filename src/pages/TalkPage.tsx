@@ -15,7 +15,8 @@ import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { Markdown } from '@/components/shared/Markdown';
-import { ThinkingActivity, MessageSteps } from '@/components/shared/ThinkingActivity';
+import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
+import { type RunEvent } from '@/services/runEvents';
 import { listMessages, sendMessage, cancelMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import { createDemand } from '@/services/demands';
@@ -556,6 +557,20 @@ export function TalkPage() {
     } catch (e) { useAppStore.getState().addToast('Falha: ' + (e as Error).message, 'red'); }
   }
 
+  // Ações a partir do resultado de um passo (modal): manda pro chat / demandas / hub.
+  function handleStepAct(action: StepAction, ev: RunEvent) {
+    const body = (ev.result ?? ev.input ?? '').trim();
+    if (!body) return;
+    if (action === 'demand') { msgToDemand(body); return; }
+    const prompts: Record<Exclude<StepAction, 'demand'>, string> = {
+      explica: `Sobre este resultado de um passo que você executou:\n\n${body}\n\nExplica isso pra mim em PT-BR, claro e direto.`,
+      edai: `Sobre este resultado:\n\n${body}\n\nE daí? O que isso significa na prática e o que eu faço agora?`,
+      resume: `Resume em até 4 bullets:\n\n${body}`,
+      hub: `Publica este conteúdo como relatório no Hub Thribus (hub.thribustech.com) e me devolve o link de compartilhamento:\n\n${body}`,
+    };
+    send(prompts[action]);
+  }
+
   async function toDemand(targetAgentId: string) {
     const text = input.trim();
     if (!text || !userId) return;
@@ -1010,7 +1025,7 @@ export function TalkPage() {
                         <Markdown text={m.content} onAction={(t) => send(t)} />
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
-                      <MessageSteps refId={[...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null} />
+                      <MessageSteps refId={[...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null} onAct={handleStepAct} />
                       {/* Ações ao passar o mouse */}
                       {m.status === 'done' && (
                         <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1051,7 +1066,7 @@ export function TalkPage() {
                   </div>
                 </div>
               )}
-              {waiting && <ThinkingActivity agentName={agent.name} refId={lastUserMsgId} />}
+              {waiting && <ThinkingActivity agentName={agent.name} refId={lastUserMsgId} onAct={handleStepAct} />}
             </div>
           )}
         </div>
