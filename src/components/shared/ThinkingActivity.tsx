@@ -3,8 +3,20 @@
  * trás: a lista ao vivo dos passos (tool calls) que o colaborador executa.
  */
 import { useEffect, useState } from 'react';
-import { Loader2, ChevronDown, ChevronRight, Wrench, X } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronRight, Wrench, X, Copy, Check, Download } from 'lucide-react';
 import { listRunEvents, subscribeRunEvents, type RunEvent } from '@/services/runEvents';
+import { CodeViewer } from '@/components/shared/CodeViewer';
+import { Markdown } from '@/components/shared/Markdown';
+
+// Identa JSON quando o input é JSON (tool params); senão devolve cru.
+function prettyInput(raw: string, label: string | null): { text: string; lang: string } {
+  const t = raw.trim();
+  if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+    try { return { text: JSON.stringify(JSON.parse(t), null, 2), lang: 'json' }; } catch { /* não é JSON */ }
+  }
+  return { text: raw, lang: label === 'Bash' ? 'bash' : 'texto' };
+}
+const looksMarkdown = (s: string) => /(^|\n)#{1,4}\s|\n\s*\|.*\|\s*\n\s*\|?[-:| ]+\||\*\*[^*\n]+\*\*|```|(^|\n)[-*]\s/.test(s);
 
 /** Linha de um passo — clicável quando tem input/resultado pra abrir o processo. */
 function StepRow({ e, onOpen }: { e: RunEvent; onOpen: (e: RunEvent) => void }) {
@@ -26,6 +38,18 @@ function StepRow({ e, onOpen }: { e: RunEvent; onOpen: (e: RunEvent) => void }) 
 
 /** Modal com o processo completo de um passo: comando/input + resultado. */
 export function StepDetailModal({ event, onClose }: { event: RunEvent; onClose: () => void }) {
+  const inp = event.input ? prettyInput(event.input, event.label) : null;
+  const result = event.result ?? '';
+  const [tab, setTab] = useState<'fmt' | 'raw'>(looksMarkdown(result) ? 'fmt' : 'raw');
+  const [copied, setCopied] = useState(false);
+  const copyResult = () => { navigator.clipboard?.writeText(result).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {}); };
+  const download = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([result], { type: 'text/markdown' }));
+    a.download = `${(event.label || 'resultado').toLowerCase()}-${event.id.slice(0, 6)}.md`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[85] p-4" onClick={onClose}>
       <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -33,17 +57,31 @@ export function StepDetailModal({ event, onClose }: { event: RunEvent; onClose: 
           <div className="text-[13.5px] font-semibold text-creme flex items-center gap-2"><Wrench size={14} className="text-brand-bright" /> {verbFor(event.label)} <span className="font-mono text-[11px] text-creme-faint">{event.label}</span></div>
           <button onClick={onClose} className="text-creme-faint hover:text-creme"><X size={17} /></button>
         </div>
-        <div className="p-4 overflow-y-auto space-y-3">
-          {event.input && (
+        <div className="p-4 overflow-y-auto space-y-4">
+          {inp && (
             <div>
-              <div className="text-[10.5px] font-bold uppercase tracking-wider text-creme-faint mb-1">Comando / input</div>
-              <pre className="rounded-lg bg-surface-3 border border-default p-3 font-mono text-[12px] text-creme-dim whitespace-pre-wrap break-words overflow-x-auto">{event.input}</pre>
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-creme-faint mb-1.5">Comando / input</div>
+              <CodeViewer content={inp.text} language={inp.lang} maxHeight="28vh" />
             </div>
           )}
           <div>
-            <div className="text-[10.5px] font-bold uppercase tracking-wider text-creme-faint mb-1">Resultado</div>
-            {event.result
-              ? <pre className="rounded-lg bg-surface-3 border border-default p-3 font-mono text-[12px] text-creme-mute whitespace-pre-wrap break-words overflow-x-auto max-h-[44vh] overflow-y-auto">{event.result}</pre>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-creme-faint">Resultado</div>
+              {result && (
+                <div className="flex items-center gap-1.5">
+                  <div className="flex rounded-lg border border-default overflow-hidden text-[11px] font-semibold">
+                    <button onClick={() => setTab('fmt')} className={`px-2.5 py-1 transition-colors ${tab === 'fmt' ? 'bg-brand/15 text-brand-bright' : 'text-creme-faint hover:text-creme'}`}>Formatado</button>
+                    <button onClick={() => setTab('raw')} className={`px-2.5 py-1 transition-colors ${tab === 'raw' ? 'bg-brand/15 text-brand-bright' : 'text-creme-faint hover:text-creme'}`}>Bruto</button>
+                  </div>
+                  <button onClick={copyResult} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-default text-[11px] text-creme-faint hover:text-creme transition-colors">{copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'copiado' : 'copiar'}</button>
+                  <button onClick={download} title="Baixar .md" className="flex items-center justify-center w-7 h-7 rounded-lg border border-default text-creme-faint hover:text-creme transition-colors"><Download size={12} /></button>
+                </div>
+              )}
+            </div>
+            {result
+              ? tab === 'fmt'
+                ? <div className="rounded-lg border border-default bg-surface-2/40 px-4 py-3 max-h-[50vh] overflow-y-auto text-[14px] leading-relaxed"><Markdown text={result} /></div>
+                : <CodeViewer content={result} language="texto" maxHeight="50vh" />
               : <div className="text-creme-faint text-[12px]">(sem saída registrada)</div>}
           </div>
         </div>
