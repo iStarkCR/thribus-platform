@@ -207,7 +207,7 @@ export function NeuralSphere({
     const travArr = new Float32Array(TRAV_TOTAL * 3);
     const travCol = new Float32Array(TRAV_TOTAL * 3);
     const sagePulse = isLight ? baseColor.clone() : baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
-    const goldPulse = new THREE.Color('#f2d27a');
+    const goldPulse = new THREE.Color('#d4af37');
     const tmpC = new THREE.Color();
     for (let k = 0; k < TRAV_COUNT; k++) {
       const c = (k % 5) < 2 ? goldPulse : sagePulse; // ~40% dourados
@@ -231,7 +231,7 @@ export function NeuralSphere({
     const FLASH_TIME = 0.42;
     const nodeFlash = new Float32Array(OUTER_COUNT);
     const nodeFlashGold = new Uint8Array(OUTER_COUNT);
-    const flashGold = new THREE.Color('#f2d27a');
+    const flashGold = new THREE.Color('#d4af37');
     const flashBlue = new THREE.Color('#5fa8ff');
     const outerPtCol = new Float32Array(OUTER_COUNT * 3);
     outer.pointsGeometry.setAttribute('color', new THREE.BufferAttribute(outerPtCol, 3));
