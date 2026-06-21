@@ -76,32 +76,42 @@ export function AgentsPage() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2 text-[15px] font-bold text-creme">
-          <Bot size={16} className="text-creme-mute" /> Todos os Colaboradores Digitais
-          <span className="ml-2 chip chip-muted">{agents.length}</span>
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-brand/12 ring-1 ring-brand/20 flex items-center justify-center shrink-0">
+            <Bot size={19} className="text-brand-bright" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-[19px] font-extrabold tracking-tight text-creme leading-none">Colaboradores Digitais</h1>
+            <div className="text-[12.5px] text-creme-mute mt-1">
+              <span className="text-creme font-semibold">{agents.length}</span> no time · <span className="text-semantic-green font-semibold">{agents.filter((a) => a.status === 'online').length} online</span>
+            </div>
+          </div>
         </div>
-        <button className="btn btn-accent" onClick={() => setShowNew(true)}>
-          <Plus size={13} /> Novo Colaborador
+        <button
+          onClick={() => setShowNew(true)}
+          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand/85 backdrop-blur-md border border-brand-bright/25 text-white text-[13px] font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_12px_28px_-16px_rgba(0,0,0,0.6)] hover:bg-brand transition-colors shrink-0"
+        >
+          <Plus size={15} /> Novo Colaborador
         </button>
       </div>
 
       {/* Busca */}
       {agents.length > 0 && (
-        <div className="relative mb-4 max-w-[420px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-creme-faint" />
+        <div className="relative mb-5 max-w-[440px]">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-creme-faint" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, cliente, setor ou canal..."
-            className="input pl-9"
+            placeholder="Buscar por nome, cliente, setor ou canal…"
+            className="glass-panel w-full bg-surface-2 border border-default rounded-xl pl-10 pr-3 py-2.5 text-[13.5px] text-creme placeholder-creme-faint outline-none transition-colors focus:border-brand"
           />
         </div>
       )}
 
       {agents.length === 0 ? (
-        <div className="bg-surface-2 border border-default rounded-[10px] px-12 py-16 text-center">
+        <div className="glass-panel bg-surface-2 border border-default rounded-2xl px-12 py-16 text-center">
           <div className="w-14 h-14 rounded-xl bg-surface-3 border border-default flex items-center justify-center mx-auto mb-4">
             <Bot size={22} className="text-creme-faint" />
           </div>
@@ -114,49 +124,42 @@ export function AgentsPage() {
           </button>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="bg-surface-2 border border-default rounded-[10px] px-8 py-12 text-center">
+        <div className="glass-panel bg-surface-2 border border-default rounded-2xl px-8 py-12 text-center">
           <p className="text-[13.5px] text-creme-mute">Nenhum colaborador corresponde a "{search}"</p>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-10">
           {companies.map((company) => (
             <div key={company.name.toLowerCase()}>
               {/* Empresa */}
-              <div className="flex items-center gap-2 mb-3">
-                <Building2 size={15} className="text-brand" />
-                <span className="text-[14px] font-bold tracking-tight text-creme">{company.name}</span>
-                <span className="chip chip-muted text-[11.5px]">{company.count}</span>
-                <div className="flex-1 h-px bg-default ml-2" />
+              <div className="flex items-center gap-2.5 mb-4">
+                <Building2 size={16} className="text-brand-bright shrink-0" />
+                <span className="text-[15px] font-bold tracking-tight text-creme">{company.name}</span>
+                <span className="text-[11px] font-bold text-creme-mute bg-creme/[0.05] px-2 py-0.5 rounded-full">{company.count}</span>
+                <div className="flex-1 h-px bg-gradient-to-r from-default to-transparent ml-1" />
               </div>
 
-              {/* Liderança (supervisores) */}
+              {/* Liderança (supervisores) — destaque, largura total */}
               {company.supervisors.length > 0 && (
-                <div className="mb-4">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
-                    {company.supervisors.map((a) => (
-                      <AgentCard key={a.id} agent={a} showFullInfo onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
-                    ))}
-                  </div>
+                <div className="grid grid-cols-1 gap-3 mb-5">
+                  {company.supervisors.map((a) => (
+                    <AgentCard key={a.id} agent={a} showFullInfo onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
+                  ))}
                 </div>
               )}
 
               {/* Setores */}
-              <div className="space-y-4 pl-1">
+              <div className="space-y-5 pl-0.5">
                 {company.sectorGroups.map(({ sector, agents: list }) => (
                   <div key={sector?.id ?? '__none__'}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: sector?.color ?? 'var(--creme-faint, #888)' }}
-                      />
-                      <span className="text-[12px] font-bold uppercase tracking-wider text-creme-mute">
-                        {sector?.name ?? 'Sem setor'}
-                      </span>
-                      <span className="chip chip-muted text-[11px]">{list.length}</span>
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <span className="w-2 h-2 rounded-full shrink-0 ring-2 ring-offset-0" style={{ backgroundColor: sector?.color ?? 'rgb(var(--creme-faint))', boxShadow: `0 0 8px ${sector?.color ?? 'transparent'}` }} />
+                      <span className="text-[11.5px] font-bold uppercase tracking-[0.1em] text-creme-mute">{sector?.name ?? 'Sem setor'}</span>
+                      <span className="text-[10.5px] font-bold text-creme-faint bg-creme/[0.04] px-1.5 py-px rounded-full">{list.length}</span>
                     </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
                       {list.map((a) => (
-                        <AgentCard key={a.id} agent={a} showFullInfo onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
+                        <AgentCard key={a.id} agent={a} showFullInfo accent={sector?.color} onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
                       ))}
                     </div>
                   </div>
