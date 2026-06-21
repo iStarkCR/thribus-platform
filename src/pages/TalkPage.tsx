@@ -802,9 +802,15 @@ export function TalkPage() {
                 style={{ background: 'radial-gradient(60% 52% at 50% 50%, rgb(var(--surface-0) / 0.88) 0%, rgb(var(--surface-0) / 0.5) 48%, transparent 74%)' }}
               />
 
+              {/* BOM DIA — grande, FORA da esfera (no topo), entra DIGITANDO + brilho */}
+              <div className="absolute top-[5.5vh] inset-x-0 z-20 text-center px-6 pointer-events-none">
+                <div className="greet-anim inline-block text-[clamp(34px,5.4vw,56px)] font-extrabold uppercase tracking-tight leading-none">
+                  <Typewriter once phrases={[greeting]} speed={95} />
+                </div>
+              </div>
+
               <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
-                <div className="greet-anim text-[clamp(40px,6.4vw,62px)] font-extrabold uppercase tracking-tight leading-[0.95] mb-2">{greeting}</div>
-                <div className="text-[clamp(24px,3.4vw,36px)] font-bold tracking-tight text-creme leading-none mb-3.5">{firstName}</div>
+                <div className="text-[clamp(26px,3.6vw,38px)] font-bold tracking-tight text-creme leading-none mb-3.5">{firstName}</div>
                 <div className="text-[14.5px] text-creme-mute mb-7 min-h-[1.4em]">
                   <Typewriter phrases={['Como posso te ajudar?', 'Bora pra cima?', 'O que vamos resolver hoje?', 'Tô aqui pro que precisar.', 'Manda ver, Charles.']} />
                 </div>
@@ -1287,23 +1293,25 @@ export function TalkPage() {
   );
 }
 
-// Efeito de digitação (typewriter) — digita e apaga frases em loop, com cursor.
-function Typewriter({ phrases, className }: { phrases: string[]; className?: string }) {
+// Efeito de digitação (typewriter). once=true → digita uma vez e para (entrada);
+// senão fica digitando/apagando as frases em loop. Cursor piscando.
+function Typewriter({ phrases, className, once = false, speed = 65 }: { phrases: string[]; className?: string; once?: boolean; speed?: number }) {
   const [txt, setTxt] = useState('');
   const [pi, setPi] = useState(0);
   const [del, setDel] = useState(false);
   useEffect(() => {
     const full = phrases[pi % phrases.length] ?? '';
-    let delay = del ? 38 : 65;
-    if (!del && txt === full) delay = 1700;       // pausa com a frase completa
-    else if (del && txt === '') delay = 320;      // pausa antes da próxima
+    if (once && txt === full) return; // terminou de digitar → para
+    let delay = del ? Math.round(speed * 0.6) : speed;
+    if (!del && txt === full) delay = 1700;
+    else if (del && txt === '') delay = 320;
     const t = setTimeout(() => {
       if (!del && txt === full) { setDel(true); return; }
       if (del && txt === '') { setDel(false); setPi((p) => (p + 1) % phrases.length); return; }
       setTxt(del ? full.slice(0, txt.length - 1) : full.slice(0, txt.length + 1));
     }, delay);
     return () => clearTimeout(t);
-  }, [txt, del, pi, phrases]);
+  }, [txt, del, pi, phrases, once, speed]);
   return <span className={className}>{txt}<span className="tw-caret">|</span></span>;
 }
 
