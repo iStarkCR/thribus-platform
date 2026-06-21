@@ -244,7 +244,8 @@ export function TalkPage() {
     const sVisible = orbFolderId ? s.filter((x) => x.folderId !== orbFolderId) : s;
     setFolders(fVisible);
     setSessions(sVisible);
-    setActiveId((cur) => cur ?? sVisible.find((x) => !x.archivedAt)?.id ?? null);
+    // Ao entrar no chat, abre na TELA DE BOAS-VINDAS (não pula pra última conversa);
+    // dá pra retomar a última pelo atalho na própria tela.
   }, [agentId, userId]);
 
   useEffect(() => {
@@ -786,50 +787,79 @@ export function TalkPage() {
         <div className="flex-1 relative overflow-hidden">
           {messages.length === 0 ? (
             /* Boas-vindas estilo CORTEX — esfera animada + saudação */
-            <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
-              {/* Esfera circular perfeita — efeitos contidos, borda esmaecida */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden">
+              {/* Esfera — mais acesa (opacidade alta) */}
               <div
-                className="absolute aspect-square w-[min(82vmin,640px)] rounded-full overflow-hidden opacity-[0.55]"
+                className="absolute aspect-square w-[min(82vmin,640px)] rounded-full overflow-hidden opacity-90"
                 style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
               >
                 <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} />
               </div>
 
-              {/* Scrim radial — escurece o centro pra o texto/chips ficarem legíveis
-                  sobre a esfera (adapta ao tema via --surface-0). */}
+              {/* Scrim — escurece o centro pra o texto/composer ficarem legíveis */}
               <div
                 className="absolute inset-0 pointer-events-none"
-                style={{ background: 'radial-gradient(closest-side at 50% 48%, rgb(var(--surface-0) / 0.86) 0%, rgb(var(--surface-0) / 0.55) 42%, transparent 68%)' }}
+                style={{ background: 'radial-gradient(60% 52% at 50% 50%, rgb(var(--surface-0) / 0.88) 0%, rgb(var(--surface-0) / 0.5) 48%, transparent 74%)' }}
               />
 
-              <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-2xl">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.32em] text-brand-bright/80 mb-2.5">{greeting}</div>
-                <div className="text-[clamp(38px,6vw,60px)] font-extrabold tracking-tight text-creme leading-none mb-3.5">{firstName}</div>
-                <div className="text-[14.5px] text-creme-mute mb-9">
-                  {active ? 'Como posso ajudar hoje?' : `Comece uma sessão com ${agent.name}.`}
+              <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.34em] text-brand-bright/80 mb-3">{greeting}</div>
+                <div className="text-[clamp(42px,6.5vw,68px)] font-extrabold tracking-tight text-creme leading-none mb-3.5">{firstName}</div>
+                <div className="text-[14.5px] text-creme-mute mb-7">Como posso te ajudar?</div>
+
+                {/* Chips de começo rápido */}
+                <div className="flex flex-wrap items-center justify-center gap-2.5 max-w-[520px] mb-5">
+                  {[
+                    { icon: BarChart3, text: 'Como tá o caixa hoje?' },
+                    { icon: Cog, text: 'Status da infra' },
+                    { icon: ListChecks, text: 'Demandas em aberto' },
+                    { icon: Lightbulb, text: 'Resumo do meu dia' },
+                  ].map((s) => (
+                    <button
+                      key={s.text}
+                      onClick={() => send(s.text)}
+                      className="flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl bg-surface-3 border border-default hover:border-brand/50 hover:bg-surface-hover text-[13px] font-medium text-creme-dim hover:text-creme transition-all shadow-[0_10px_28px_-16px_rgba(0,0,0,0.7)]"
+                    >
+                      <s.icon size={14} className="text-brand-bright shrink-0" /> {s.text}
+                    </button>
+                  ))}
                 </div>
-                {active ? (
-                  <div className="flex flex-wrap items-center justify-center gap-2.5 max-w-[520px]">
-                    {[
-                      { icon: BarChart3, text: 'Como tá o caixa hoje?' },
-                      { icon: Cog, text: 'Status da infra' },
-                      { icon: ListChecks, text: 'Demandas em aberto' },
-                      { icon: Lightbulb, text: 'Resumo do meu dia' },
-                    ].map((s) => (
-                      <button
-                        key={s.text}
-                        onClick={() => send(s.text)}
-                        className="flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl bg-surface-3 border border-default hover:border-brand/50 hover:bg-surface-hover text-[13px] font-medium text-creme-dim hover:text-creme transition-all shadow-[0_10px_28px_-16px_rgba(0,0,0,0.7)]"
-                      >
-                        <s.icon size={14} className="text-brand-bright shrink-0" /> {s.text}
+
+                {/* Composer no MEIO (igual à referência) */}
+                <div className="w-full">
+                  {recording ? (
+                    <AudioRecorderBar agentId={agentId ?? ''} onResult={(t) => { setRecording(false); if (t) setInput((c) => (c ? `${c} ${t}` : t)); }} onCancel={() => setRecording(false)} />
+                  ) : (
+                    <div className="glass-panel flex items-end gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 focus-within:border-brand transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]">
+                      <textarea
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+                        rows={1}
+                        placeholder="Mensagem para o Bukowiski…"
+                        className="flex-1 resize-none bg-transparent py-1 text-[14.5px] text-creme placeholder-creme-faint focus:outline-none max-h-32"
+                      />
+                      <button onClick={() => startPanelVoice()} title="Modo voz" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Headphones size={17} /></button>
+                      <button onClick={() => setRecording(true)} title="Gravar áudio" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Mic size={17} /></button>
+                      <button onClick={() => send()} disabled={sending || !input.trim()} className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors">{sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Atalhos: histórico + retomar última */}
+                {(() => {
+                  const last = sessions.find((x) => !x.archivedAt);
+                  const n = sessions.filter((x) => !x.archivedAt).length;
+                  if (!last) return null;
+                  return (
+                    <div className="flex items-center gap-4 mt-4 text-[12px] text-creme-faint">
+                      <span className="flex items-center gap-1.5"><Clock size={12} /> histórico <span className="text-creme-mute font-semibold">{n}</span></span>
+                      <button onClick={() => setActiveId(last.id)} className="flex items-center gap-1.5 hover:text-creme transition-colors">
+                        <ChevronRight size={12} /> retomar última
                       </button>
-                    ))}
-                  </div>
-                ) : (
-                  <button onClick={() => newSession(null)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand text-white text-[13.5px] font-semibold hover:bg-brand-bright transition-colors">
-                    <Plus size={15} /> Nova sessão
-                  </button>
-                )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ) : (
@@ -875,6 +905,7 @@ export function TalkPage() {
           )}
         </div>
 
+        {messages.length > 0 && (
         <div className="px-6 py-4 border-t border-default shrink-0">
           <div className="flex items-center justify-between mb-2 px-1 gap-2">
             <div className="flex items-center gap-2 min-w-0">
@@ -1028,6 +1059,7 @@ export function TalkPage() {
           </div>
           )}
         </div>
+        )}
       </div>
 
       {usageOpen && (
