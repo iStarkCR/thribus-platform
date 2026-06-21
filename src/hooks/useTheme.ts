@@ -87,6 +87,45 @@ function applyGlass(on: boolean): void {
 /** Aplica o estado de glass ANTES do React montar (evita flash). */
 export function initGlass(): void { applyGlass(readGlass()); }
 
+/* ─── Cor de destaque (accent) — muda os tokens --brand* ──────────────────── */
+export type Accent = 'sage' | 'gold' | 'blue' | 'violet' | 'coral';
+const ACCENT_KEY = 'thribus.accent';
+const ACCENT_EVENT = 'thribus-accent-change';
+export const ACCENTS: Record<Accent, { dim: string; base: string; bright: string; glow: string } | null> = {
+  sage:   null, // usa o default do globals.css (light/dark próprios)
+  gold:   { dim: '150 120 58',  base: '198 164 90',  bright: '226 198 132', glow: '235 212 160' },
+  blue:   { dim: '60 100 190',  base: '96 145 235',  bright: '130 175 250', glow: '165 200 255' },
+  violet: { dim: '110 90 200',  base: '150 130 230', bright: '180 165 245', glow: '205 195 255' },
+  coral:  { dim: '190 95 75',   base: '230 130 110', bright: '245 165 145', glow: '255 195 180' },
+};
+function readAccent(): Accent {
+  if (typeof window === 'undefined') return 'sage';
+  try { const v = localStorage.getItem(ACCENT_KEY); return v && v in ACCENTS ? (v as Accent) : 'sage'; } catch { return 'sage'; }
+}
+function applyAccent(a: Accent): void {
+  if (typeof document === 'undefined') return;
+  const r = document.documentElement.style;
+  const p = ACCENTS[a];
+  if (!p) { ['--brand-dim', '--brand', '--brand-bright', '--brand-glow'].forEach((k) => r.removeProperty(k)); return; }
+  r.setProperty('--brand-dim', p.dim); r.setProperty('--brand', p.base);
+  r.setProperty('--brand-bright', p.bright); r.setProperty('--brand-glow', p.glow);
+}
+export function initAccent(): void { applyAccent(readAccent()); }
+export function useAccent(): { accent: Accent; setAccent: (a: Accent) => void } {
+  const [accent, setA] = useState<Accent>(readAccent);
+  useEffect(() => {
+    const on = (e: Event) => { const d = (e as CustomEvent<{ a: Accent }>).detail; if (d) { setA(d.a); applyAccent(d.a); } };
+    window.addEventListener(ACCENT_EVENT, on);
+    return () => window.removeEventListener(ACCENT_EVENT, on);
+  }, []);
+  const setAccent = (a: Accent) => {
+    setA(a); applyAccent(a);
+    try { localStorage.setItem(ACCENT_KEY, a); } catch { /* ignora */ }
+    window.dispatchEvent(new CustomEvent(ACCENT_EVENT, { detail: { a } }));
+  };
+  return { accent, setAccent };
+}
+
 export function useGlass(): { glass: boolean; toggle: () => void } {
   const [glass, setGlass] = useState<boolean>(readGlass);
   useEffect(() => {
