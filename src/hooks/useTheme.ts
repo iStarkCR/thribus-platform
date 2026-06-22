@@ -87,10 +87,12 @@ function applyGlass(on: boolean): void {
 /** Aplica o estado de glass ANTES do React montar (evita flash). */
 export function initGlass(): void { applyGlass(readGlass()); }
 
-/* ─── Cor de destaque (accent) — muda os tokens --brand* ──────────────────── */
+/* ─── Cor de destaque (accent) — POR cliente (workspace), muda os tokens --brand* ── */
 export type Accent = 'sage' | 'gold' | 'blue' | 'violet' | 'coral';
-const ACCENT_KEY = 'thribus.accent';
+const ACCENT_KEY = 'thribus.accent';            // legado (global) — só fallback/migração
 const ACCENT_EVENT = 'thribus-accent-change';
+const ACTIVE_WS_KEY = 'activeWorkspaceId';      // mesma chave que o useAppStore persiste
+const WS_CHANGE_EVENT = 'thribus-workspace-change';
 export const ACCENTS: Record<Accent, { dim: string; base: string; bright: string; glow: string } | null> = {
   sage:   null, // usa o default do globals.css (light/dark próprios)
   gold:   { dim: '150 120 58',  base: '198 164 90',  bright: '226 198 132', glow: '235 212 160' },
@@ -98,9 +100,21 @@ export const ACCENTS: Record<Accent, { dim: string; base: string; bright: string
   violet: { dim: '110 90 200',  base: '150 130 230', bright: '180 165 245', glow: '205 195 255' },
   coral:  { dim: '190 95 75',   base: '230 130 110', bright: '245 165 145', glow: '255 195 180' },
 };
-function readAccent(): Accent {
+function activeWsId(): string {
+  if (typeof window === 'undefined') return 'default';
+  try { return localStorage.getItem(ACTIVE_WS_KEY) || 'default'; } catch { return 'default'; }
+}
+function accentKeyFor(wsId: string): string { return `${ACCENT_KEY}:${wsId}`; }
+/** Accent do cliente ativo — cai pro accent legado global e depois pro default 'sage'. */
+function readAccent(wsId: string = activeWsId()): Accent {
   if (typeof window === 'undefined') return 'sage';
-  try { const v = localStorage.getItem(ACCENT_KEY); return v && v in ACCENTS ? (v as Accent) : 'sage'; } catch { return 'sage'; }
+  try {
+    const v = localStorage.getItem(accentKeyFor(wsId));
+    if (v && v in ACCENTS) return v as Accent;
+    const legacy = localStorage.getItem(ACCENT_KEY); // preserva escolha antiga até o cliente customizar
+    if (legacy && legacy in ACCENTS) return legacy as Accent;
+  } catch { /* ignora */ }
+  return 'sage';
 }
 function applyAccent(a: Accent): void {
   if (typeof document === 'undefined') return;
@@ -110,18 +124,40 @@ function applyAccent(a: Accent): void {
   r.setProperty('--brand-dim', p.dim); r.setProperty('--brand', p.base);
   r.setProperty('--brand-bright', p.bright); r.setProperty('--brand-glow', p.glow);
 }
-export function initAccent(): void { applyAccent(readAccent()); }
+/** Aplica o accent do cliente ativo e reaplica sempre que troca de cliente (mesmo sem Settings montado). */
+export function initAccent(): void {
+  applyAccent(readAccent());
+  if (typeof window !== 'undefined') {
+    window.addEventListener(WS_CHANGE_EVENT, (e) => {
+      const id = (e as CustomEvent<{ id: string | null }>).detail?.id;
+      applyAccent(readAccent(id || activeWsId()));
+    });
+  }
+}
 export function useAccent(): { accent: Accent; setAccent: (a: Accent) => void } {
-  const [accent, setA] = useState<Accent>(readAccent);
+  const [accent, setA] = useState<Accent>(() => readAccent());
   useEffect(() => {
-    const on = (e: Event) => { const d = (e as CustomEvent<{ a: Accent }>).detail; if (d) { setA(d.a); applyAccent(d.a); } };
-    window.addEventListener(ACCENT_EVENT, on);
-    return () => window.removeEventListener(ACCENT_EVENT, on);
+    const onAccent = (e: Event) => {
+      const d = (e as CustomEvent<{ a: Accent; wsId: string }>).detail;
+      if (d && d.wsId === activeWsId()) { setA(d.a); applyAccent(d.a); }
+    };
+    const onWs = (e: Event) => {
+      const id = (e as CustomEvent<{ id: string | null }>).detail?.id || activeWsId();
+      const a = readAccent(id);
+      setA(a); applyAccent(a);
+    };
+    window.addEventListener(ACCENT_EVENT, onAccent);
+    window.addEventListener(WS_CHANGE_EVENT, onWs);
+    return () => {
+      window.removeEventListener(ACCENT_EVENT, onAccent);
+      window.removeEventListener(WS_CHANGE_EVENT, onWs);
+    };
   }, []);
   const setAccent = (a: Accent) => {
+    const wsId = activeWsId();
     setA(a); applyAccent(a);
-    try { localStorage.setItem(ACCENT_KEY, a); } catch { /* ignora */ }
-    window.dispatchEvent(new CustomEvent(ACCENT_EVENT, { detail: { a } }));
+    try { localStorage.setItem(accentKeyFor(wsId), a); } catch { /* ignora */ }
+    window.dispatchEvent(new CustomEvent(ACCENT_EVENT, { detail: { a, wsId } }));
   };
   return { accent, setAccent };
 }

@@ -157,6 +157,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       const valid = stored && workspaces.some((w) => w.id === stored) ? stored : null;
       const preferred = workspaces.find((w) => w.name.trim().toLowerCase() === 'thribus tech');
       const activeWorkspaceId = valid ?? preferred?.id ?? workspaces[0]?.id ?? null;
+      // Persiste a conta resolvida pra manter o accent (por cliente) consistente já no boot.
+      if (typeof localStorage !== 'undefined' && activeWorkspaceId) {
+        localStorage.setItem('activeWorkspaceId', activeWorkspaceId);
+      }
 
       const [agents, tools, executions, escalations, metrics, skills, templates, sectors] = await Promise.all([
         agentsApi.list(activeWorkspaceId),
@@ -188,6 +192,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         templates,
         loading: false,
       });
+      // Avisa o tema que a conta ativa mudou → reaplica o accent (cor de destaque) do cliente.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('thribus-workspace-change', { detail: { id: activeWorkspaceId } }));
+      }
     } catch {
       set({ loading: false });
       get().addToast('Erro ao carregar dados', 'red');
