@@ -9,7 +9,6 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
 import {
   ShieldCheck, Copy, Check, QrCode, Barcode, CreditCard,
   CalendarClock, AlertTriangle, CheckCircle2, Loader2, ExternalLink,
@@ -58,8 +57,8 @@ const STATUS: Record<string, { kind: StatusKind; label: string }> = {
 const statusOf = (s: AsaasChargeStatus | string) =>
   STATUS[s] ?? { kind: 'pending' as StatusKind, label: 'Aguardando pagamento' };
 
-export function PayPage() {
-  const { id = '' } = useParams();
+export function PayPage({ chargeId = '' }: { chargeId?: string }) {
+  const id = chargeId;
   const [charge, setCharge] = useState<AsaasPublicCharge | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
