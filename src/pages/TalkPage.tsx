@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
-  ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles,
+  ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -66,6 +66,7 @@ export function TalkPage() {
   // explícita (abrir uma conversa, retomar, enviar). Entrar nunca cai direto no chat.
   const [view, setView] = useState<'orb' | 'chat'>('orb');
   const [histOpen, setHistOpen] = useState(false);
+  const [sidebarQuery, setSidebarQuery] = useState(''); // busca de conversas na lateral
   // Uma vez que o usuário ENTRA num chat, navegar entre chats fica direto (não volta
   // pro orbe). Só recarregar/trocar de colaborador volta pro orbe. Default: false.
   const [chatMode, setChatMode] = useState(false);
@@ -420,6 +421,20 @@ export function TalkPage() {
   const archivedSessions = sessions.filter((s) => s.archivedAt);
   const ungrouped = liveSessions.filter((s) => !s.folderId);
   const byFolder = (fid: string) => liveSessions.filter((s) => s.folderId === fid);
+  // Busca da lateral — resultado flat (todas as sessões, ativas + arquivadas) por título.
+  const sq = sidebarQuery.trim().toLowerCase();
+  const searchResults = sq ? sessions.filter((s) => s.title.toLowerCase().includes(sq)) : [];
+  // Separadores por data (Hoje/Ontem/…) pelas conversas SEM pasta e não-fixadas.
+  const dateBucket = (iso: string): string => {
+    const startToday = new Date(); startToday.setHours(0, 0, 0, 0);
+    const t = new Date(iso).getTime(); const d0 = startToday.getTime(); const day = 86400000;
+    if (t >= d0) return 'Hoje';
+    if (t >= d0 - day) return 'Ontem';
+    if (t >= d0 - 7 * day) return 'Últimos 7 dias';
+    if (t >= d0 - 30 * day) return 'Últimos 30 dias';
+    return 'Mais antigo';
+  };
+  const DATE_ORDER = ['Hoje', 'Ontem', 'Últimos 7 dias', 'Últimos 30 dias', 'Mais antigo'];
   const rootFolders = folders.filter((f) => !f.parentId);
   const childFolders = (pid: string) => folders.filter((f) => f.parentId === pid);
 
@@ -777,6 +792,18 @@ export function TalkPage() {
           >
             <FolderPlus size={14} /> Nova pasta
           </button>
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-creme-faint pointer-events-none" />
+            <input
+              value={sidebarQuery}
+              onChange={(e) => setSidebarQuery(e.target.value)}
+              placeholder="Buscar conversas…"
+              className="w-full bg-surface-2 border border-default rounded-xl pl-9 pr-7 py-2 text-[12.5px] text-creme placeholder-creme-faint outline-none focus:border-brand transition-colors"
+            />
+            {sidebarQuery && (
+              <button onClick={() => setSidebarQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-creme-faint hover:text-creme" title="Limpar"><X size={13} /></button>
+            )}
+          </div>
         </div>
 
         <div
@@ -785,19 +812,44 @@ export function TalkPage() {
           onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverId((c) => (c === 'root' ? null : c)); }}
           onDrop={(e) => { e.preventDefault(); dropOnTarget(null); }}
         >
-          {rootFolders.map((f) => renderFolder(f, 0))}
-
-          {/* Sessões sem pasta */}
-          {ungrouped.length > 0 && (
-            <div className="pt-1">
-              {folders.length > 0 && (
-                <div className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition-colors ${dragOverId === 'root' ? 'text-brand' : 'text-creme-faint'}`}>Sem pasta</div>
-              )}
+          {sq ? (
+            /* ── Resultados da busca (flat) ───────────────────────────────── */
+            searchResults.length > 0 ? (
               <div className="space-y-0.5">
-                {ungrouped.map((s) => (
+                <div className="px-2 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-creme-faint">{searchResults.length} resultado{searchResults.length > 1 ? 's' : ''}</div>
+                {searchResults.map((s) => (
                   <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => selectConversation(s.id)} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
                 ))}
               </div>
+            ) : (
+              <div className="px-2 py-6 text-center text-[12px] text-creme-faint">Nenhuma conversa com "{sidebarQuery}".</div>
+            )
+          ) : (
+          <>
+          {rootFolders.map((f) => renderFolder(f, 0))}
+
+          {/* Sessões sem pasta — com separadores por data (fixadas no topo) */}
+          {ungrouped.length > 0 && (
+            <div className="pt-1">
+              {(() => {
+                const pinned = ungrouped.filter((s) => s.pinnedAt);
+                const rest = ungrouped.filter((s) => !s.pinnedAt);
+                const groups = new Map<string, ChatSession[]>();
+                for (const s of rest) { const b = dateBucket(s.updatedAt); if (!groups.has(b)) groups.set(b, []); groups.get(b)!.push(s); }
+                const blocks: { label: string; pin?: boolean; items: ChatSession[] }[] = [];
+                if (pinned.length) blocks.push({ label: 'Fixadas', pin: true, items: pinned });
+                for (const b of DATE_ORDER) if (groups.has(b)) blocks.push({ label: b, items: groups.get(b)! });
+                return blocks.map(({ label, pin, items }) => (
+                  <div key={label}>
+                    <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-creme-faint flex items-center gap-1">{pin && <Pin size={10} className="text-brand-bright" />}{label}</div>
+                    <div className="space-y-0.5">
+                      {items.map((s) => (
+                        <SessionItem key={s.id} session={s} active={s.id === activeId} depth={0} onClick={() => selectConversation(s.id)} onMenu={(pos) => setSessMenu({ id: s.id, ...pos })} onDragStartItem={() => { dragItemRef.current = { type: 'session', id: s.id }; }} />
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()}
             </div>
           )}
 
@@ -822,6 +874,8 @@ export function TalkPage() {
                 </div>
               )}
             </div>
+          )}
+          </>
           )}
         </div>
 
