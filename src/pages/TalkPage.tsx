@@ -1034,7 +1034,7 @@ export function TalkPage() {
                 className="absolute aspect-square w-[min(82vmin,640px)] rounded-full overflow-hidden opacity-90"
                 style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
               >
-                <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} pulseSpeed={0.42} />
+                <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} pulseSpeed={0.9} />
               </div>
 
               {/* Scrim — escurece o centro pra o texto/composer ficarem legíveis */}

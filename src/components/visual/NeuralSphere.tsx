@@ -206,20 +206,23 @@ export function NeuralSphere({
     // Cada pulso = rastro CONTÍNUO de pontos macios SOBREPOSTOS (espaçamento menor
     // que o raio do ponto → sem gaps; lê como um traço glow, não fileira de bolinhas).
     // ~40% DOURADOS, resto Sage. Cabeça (amostra 0) = mais forte; vai esmaecendo.
-    const TAIL = 22;           // muitas amostras densas → streak contínuo
+    const TAIL = 11;           // amostras densas → streak contínuo, porém curto (menos espesso)
     const SEGS = TAIL + 1;     // inclui a cabeça (amostra 0)
-    const TAIL_LAG = 0.016;    // espaçamento pequeno ao longo da aresta → pontos colam
+    const TAIL_LAG = 0.018;    // espaçamento pequeno → pontos colam (não vira bolinhas)
     const TRAV_TOTAL = TRAV_COUNT * SEGS;
     const travArr = new Float32Array(TRAV_TOTAL * 3);
     const travCol = new Float32Array(TRAV_TOTAL * 3);
     const sagePulse = isLight ? baseColor.clone() : baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
     const goldPulse = new THREE.Color('#d4af37');
+    // O rastro DISSOLVE no fundo em vez de escurecer: no claro vai pra cor do fundo,
+    // no escuro vai pro preto (aditivo some). Mata a "ponta escura" estranha do dourado.
+    const fadeTarget = isLight ? new THREE.Color(0.93, 0.96, 0.91) : new THREE.Color(0, 0, 0);
     const tmpC = new THREE.Color();
     for (let k = 0; k < TRAV_COUNT; k++) {
       const c = (k % 5) < 2 ? goldPulse : sagePulse; // ~40% dourados
       for (let s = 0; s < SEGS; s++) {
-        const fade = 1 - s / SEGS; // cabeça brilha, rastro esmaece suave
-        tmpC.copy(c).multiplyScalar(fade * fade);
+        const fade = 1 - s / SEGS; // cabeça brilha, rastro dissolve suave
+        tmpC.copy(c).lerp(fadeTarget, 1 - fade * fade);
         const idx = (k * SEGS + s) * 3;
         travCol[idx] = tmpC.r; travCol[idx + 1] = tmpC.g; travCol[idx + 2] = tmpC.b;
       }
@@ -227,7 +230,7 @@ export function NeuralSphere({
     const travGeo = new THREE.BufferGeometry();
     travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
     travGeo.setAttribute('color', new THREE.BufferAttribute(travCol, 3));
-    const travMat = new THREE.PointsMaterial({ size: 0.13, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
+    const travMat = new THREE.PointsMaterial({ size: 0.1, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
     const travPoints = new THREE.Points(travGeo, travMat);
     outerGroup.add(travPoints);
     const easeTrav = (x: number) => x * x * (3 - 2 * x);
