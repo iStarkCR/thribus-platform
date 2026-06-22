@@ -43,6 +43,9 @@ interface AgentRow {
   role: Agent['role'] | null;
   sector_id: string | null;
   is_supervisor: boolean | null;
+  avatar_url?: string | null;   // Fase 4 (migration 20260621_agent_profile)
+  display_name?: string | null;
+  color?: string | null;
   stats_today: number;
   stats_resolution: number;
   stats_avg_response_time: number;
@@ -70,6 +73,9 @@ function rowToAgent(r: AgentRow & { workspace_id?: string | null }): Agent {
     role: r.role ?? undefined,
     sectorId: r.sector_id ?? undefined,
     isSupervisor: r.is_supervisor ?? false,
+    avatarUrl: r.avatar_url ?? undefined,
+    displayName: r.display_name ?? undefined,
+    color: r.color ?? undefined,
     stats: {
       today: r.stats_today,
       resolution: r.stats_resolution,
@@ -476,6 +482,9 @@ export const agentsApi = {
     if (payload.role !== undefined) {
       (update as Record<string, unknown>).role = payload.role || null;
     }
+    if (payload.avatarUrl !== undefined) (update as Record<string, unknown>).avatar_url = payload.avatarUrl || null;
+    if (payload.displayName !== undefined) (update as Record<string, unknown>).display_name = payload.displayName || null;
+    if (payload.color !== undefined) (update as Record<string, unknown>).color = payload.color || null;
 
     const { data, error } = await supabase
       .from('agents')

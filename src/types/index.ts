@@ -45,6 +45,9 @@ export interface Agent {
   role?: AgentRole;       // M2: papel do agente (sales/support/finance/...)
   sectorId?: string;      // FK pra sectors — organograma da empresa
   isSupervisor?: boolean; // supervisor (ex: Bukowiski COO) — coroa + badge
+  avatarUrl?: string;     // foto do colaborador (bucket agent-avatars) — Fase 4
+  displayName?: string;   // nome de exibição (override de name) — Fase 4
+  color?: string;         // cor do avatar/tema (hex) — Fase 4
   stats: AgentStats;
   createdAt: string;
   updatedAt: string;

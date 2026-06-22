@@ -221,7 +221,7 @@ export function NeuralSphere({
     const travGeo = new THREE.BufferGeometry();
     travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
     travGeo.setAttribute('color', new THREE.BufferAttribute(travCol, 3));
-    const travMat = new THREE.PointsMaterial({ size: 0.13, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
+    const travMat = new THREE.PointsMaterial({ size: 0.16, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
     const travPoints = new THREE.Points(travGeo, travMat);
     outerGroup.add(travPoints);
     const easeTrav = (x: number) => x * x * (3 - 2 * x);
@@ -412,7 +412,7 @@ export function NeuralSphere({
         }
       }
       travGeo.attributes.position.needsUpdate = true;
-      travMat.opacity = (isLight ? 0.9 : 0.6) + I * 0.4; // normal blending no claro pede mais corpo
+      travMat.opacity = (isLight ? 0.9 : 0.85) + I * 0.4; // normal blending no claro pede mais corpo
 
       // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;

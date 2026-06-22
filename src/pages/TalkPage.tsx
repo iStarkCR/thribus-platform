@@ -84,6 +84,7 @@ export function TalkPage() {
   const [routineOpen, setRoutineOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switcherQuery, setSwitcherQuery] = useState('');
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -957,22 +958,43 @@ export function TalkPage() {
             </button>
             {switcherOpen && (
               <>
-                <div className="fixed inset-0 z-[55]" onClick={() => setSwitcherOpen(false)} />
-                <div className="absolute right-0 mt-1 w-64 max-h-[60vh] overflow-y-auto bg-surface-1 border border-default rounded-xl shadow-2xl z-[56] py-1">
-                  {collaborators.map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => { setSwitcherOpen(false); setView('orb'); setActiveId(null); setMessages([]); navigate(`/talk?agent=${c.id}`); }}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${c.id === agent.id ? 'bg-brand/10' : 'hover:bg-surface-hover'}`}
-                    >
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[11px] font-bold text-white shrink-0">{c.name[0]}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] text-creme flex items-center gap-1 truncate">{c.name}{c.isSupervisor && <Crown size={10} className="text-gold-bright" />}</div>
-                        <div className="text-[10.5px] text-creme-faint truncate">{c.sector}</div>
-                      </div>
-                      {c.id === agent.id && <Check size={13} className="text-brand shrink-0" />}
-                    </button>
-                  ))}
+                <div className="fixed inset-0 z-[55]" onClick={() => { setSwitcherOpen(false); setSwitcherQuery(''); }} />
+                <div className="glass-panel absolute right-0 mt-1.5 w-72 max-h-[66vh] flex flex-col bg-surface-1/95 border border-default rounded-2xl shadow-2xl z-[56] overflow-hidden">
+                  <div className="p-2 border-b border-default">
+                    <div className="relative">
+                      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-creme-faint pointer-events-none" />
+                      <input
+                        value={switcherQuery}
+                        onChange={(e) => setSwitcherQuery(e.target.value)}
+                        placeholder="Buscar colaborador…"
+                        autoFocus
+                        className="w-full bg-surface-2 border border-default rounded-lg pl-8 pr-2 py-1.5 text-[12.5px] text-creme placeholder-creme-faint outline-none focus:border-brand transition-colors"
+                      />
+                    </div>
+                  </div>
+                  <div className="overflow-y-auto py-1.5 px-1.5 space-y-0.5">
+                    {(() => {
+                      const q = switcherQuery.trim().toLowerCase();
+                      const list = q ? collaborators.filter((c) => c.name.toLowerCase().includes(q) || (c.sector ?? '').toLowerCase().includes(q)) : collaborators;
+                      if (list.length === 0) return <div className="px-3 py-4 text-center text-[12px] text-creme-faint">Nenhum colaborador.</div>;
+                      return list.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => { setSwitcherOpen(false); setSwitcherQuery(''); setView('orb'); setActiveId(null); setMessages([]); navigate(`/talk?agent=${c.id}`); }}
+                          className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-xl text-left transition-colors ${c.id === agent.id ? 'bg-brand/12 ring-1 ring-brand/25' : 'hover:bg-surface-hover'}`}
+                        >
+                          <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[12px] font-bold text-white shrink-0 overflow-hidden" style={c.color ? { background: c.color } : undefined}>
+                            {c.avatarUrl ? <img src={c.avatarUrl} alt="" className="w-full h-full object-cover" /> : c.name[0]}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-semibold text-creme flex items-center gap-1 truncate">{c.name}{c.isSupervisor && <Crown size={11} className="text-gold-bright shrink-0" />}</div>
+                            <div className="text-[10.5px] text-creme-faint truncate">{c.sector}</div>
+                          </div>
+                          {c.id === agent.id && <Check size={14} className="text-brand-bright shrink-0" />}
+                        </button>
+                      ));
+                    })()}
+                  </div>
                 </div>
               </>
             )}
