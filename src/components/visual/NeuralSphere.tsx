@@ -8,7 +8,7 @@ const OUTER_COUNT = 110;
 const OUTER_RADIUS = 2.4;
 const OUTER_RADIAL_VARIATION = 0; // raio externo fixo → silhueta sempre círculo perfeito
 const OUTER_ANGULAR_JITTER = 0.018;
-const OUTER_POINT_SIZE = 0.1;
+const OUTER_POINT_SIZE = 0.15;
 const OUTER_POINT_OPACITY = 1.0;
 const OUTER_LINE_OPACITY = 0.55;
 const OUTER_CONNECT_DISTANCE = 1.55;
@@ -170,7 +170,7 @@ export function NeuralSphere({
     // White mode: blending aditivo SOME no branco (cor + branco = branco) → usa
     // blending normal e cores mais firmes; e reforça opacidade de linhas/pulsos.
     const isLight = document.documentElement.classList.contains('light');
-    const opBoost = isLight ? 1.55 : 1;
+    const opBoost = isLight ? 1.7 : 1;
 
     const outerShell = buildShell({ count: OUTER_COUNT, radius: OUTER_RADIUS, radialVar: OUTER_RADIAL_VARIATION, angularJitter: OUTER_ANGULAR_JITTER });
     const outer = makePointsAndLines(outerShell, { count: OUTER_COUNT, pointSize: OUTER_POINT_SIZE, pointOpacity: OUTER_POINT_OPACITY, lineOpacity: OUTER_LINE_OPACITY }, baseColor);
@@ -203,49 +203,66 @@ export function NeuralSphere({
       travSpeed[k] = 0.5 + Math.random() * 0.9;
     };
     for (let k = 0; k < TRAV_COUNT; k++) { pickEdge(k); travT[k] = Math.random(); }
-    // Cada pulso = rastro CONTÍNUO de pontos macios SOBREPOSTOS (espaçamento menor
-    // que o raio do ponto → sem gaps; lê como um traço glow, não fileira de bolinhas).
-    // ~40% DOURADOS, resto Sage. Cabeça (amostra 0) = mais forte; vai esmaecendo.
-    const TAIL = 11;           // amostras densas → streak contínuo, porém curto (menos espesso)
-    const SEGS = TAIL + 1;     // inclui a cabeça (amostra 0)
-    const TAIL_LAG = 0.018;    // espaçamento pequeno → pontos colam (não vira bolinhas)
+    // Cada pulso = rastro CONTÍNUO de pontos macios sobrepostos. A COR é cheia
+    // (dourado/azul ATÉ a ponta — nada de preto/branco), e o esmaecimento é por
+    // ALPHA por vértice (cabeça opaca → cauda some). ~67% DOURADOS, ~33% AZUIS.
+    const TAIL = 12;
+    const SEGS = TAIL + 1;
+    const TAIL_LAG = 0.02;
     const TRAV_TOTAL = TRAV_COUNT * SEGS;
     const travArr = new Float32Array(TRAV_TOTAL * 3);
     const travCol = new Float32Array(TRAV_TOTAL * 3);
-    const sagePulse = isLight ? baseColor.clone() : baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.5);
-    const goldPulse = new THREE.Color('#d4af37');
-    // O rastro DISSOLVE no fundo em vez de escurecer: no claro vai pra cor do fundo,
-    // no escuro vai pro preto (aditivo some). Mata a "ponta escura" estranha do dourado.
-    const fadeTarget = isLight ? new THREE.Color(0.93, 0.96, 0.91) : new THREE.Color(0, 0, 0);
-    const tmpC = new THREE.Color();
+    const travAlpha = new Float32Array(TRAV_TOTAL);
+    const goldPulse = new THREE.Color('#e8b93a'); // dourado vivo
+    const bluePulse = new THREE.Color('#5aa6ff'); // azul vivo
+    const isGoldPulse = (k: number) => k % 3 !== 0; // ~67% dourado, ~33% azul
     for (let k = 0; k < TRAV_COUNT; k++) {
-      const c = (k % 5) < 2 ? goldPulse : sagePulse; // ~40% dourados
+      const c = isGoldPulse(k) ? goldPulse : bluePulse;
       for (let s = 0; s < SEGS; s++) {
-        const fade = 1 - s / SEGS; // cabeça brilha, rastro dissolve suave
-        tmpC.copy(c).lerp(fadeTarget, 1 - fade * fade);
-        const idx = (k * SEGS + s) * 3;
-        travCol[idx] = tmpC.r; travCol[idx + 1] = tmpC.g; travCol[idx + 2] = tmpC.b;
+        const fade = 1 - s / SEGS;
+        const i3 = (k * SEGS + s) * 3;
+        travCol[i3] = c.r; travCol[i3 + 1] = c.g; travCol[i3 + 2] = c.b; // cor cheia até a ponta
+        travAlpha[k * SEGS + s] = fade * fade;                            // só o alpha esmaece
       }
     }
     const travGeo = new THREE.BufferGeometry();
     travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
     travGeo.setAttribute('color', new THREE.BufferAttribute(travCol, 3));
-    const travMat = new THREE.PointsMaterial({ size: 0.1, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
+    travGeo.setAttribute('alpha', new THREE.BufferAttribute(travAlpha, 1));
+    const travMat = new THREE.PointsMaterial({ size: 0.135, map: dotTex, vertexColors: true, transparent: true, opacity: 1, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
+    // Alpha por vértice: a cabeça fica opaca e a cauda some — mantendo a cor cheia.
+    travMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float alpha;\nvarying float vAlpha;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvAlpha = alpha;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vAlpha;')
+        .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse, opacity * vAlpha );');
+    };
     const travPoints = new THREE.Points(travGeo, travMat);
     outerGroup.add(travPoints);
     const easeTrav = (x: number) => x * x * (3 - 2 * x);
 
-    // Flash dos nós: quando um pulso chega num ponto, ele pisca (dourado se o
-    // pulso é dourado, azul se é verde). Pontos passam a ter COR POR VÉRTICE.
-    const FLASH_TIME = 0.42;
+    // Flash dos nós: quando um pulso PASSA por um nó, ele pulsa (cresce + acende) na
+    // cor do pulso (dourado/azul). Cor E TAMANHO por vértice.
+    const FLASH_TIME = 0.6;
     const nodeFlash = new Float32Array(OUTER_COUNT);
     const nodeFlashGold = new Uint8Array(OUTER_COUNT);
-    const flashGold = new THREE.Color('#d4af37');
-    const flashBlue = new THREE.Color('#5fa8ff');
+    const flashGold = new THREE.Color('#ffce4d'); // dourado bem vivo no pico
+    const flashBlue = new THREE.Color('#7cbcff'); // azul vivo no pico
     const outerPtCol = new Float32Array(OUTER_COUNT * 3);
     outer.pointsGeometry.setAttribute('color', new THREE.BufferAttribute(outerPtCol, 3));
+    const nodeSize = new Float32Array(OUTER_COUNT).fill(1);
+    outer.pointsGeometry.setAttribute('aSize', new THREE.BufferAttribute(nodeSize, 1));
     outer.pointsMaterial.vertexColors = true;
     outer.pointsMaterial.color.set(0xffffff);
+    // Tamanho por vértice → o nó "pulsa" (cresce) no flash.
+    outer.pointsMaterial.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aSize;')
+        .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize;');
+    };
+    outer.pointsMaterial.needsUpdate = true;
     const baseNodeC = new THREE.Color();
     const flashTmp = new THREE.Color();
 
@@ -404,9 +421,9 @@ export function NeuralSphere({
         travT[k] += travSpeed[k] * travDt;
         if (travT[k] >= 1) {
           travT[k] -= 1;
-          const arrived = travB[k]; // nó onde o pulso chegou → pisca
+          const arrived = travB[k]; // nó onde o pulso chegou → pulsa
           nodeFlash[arrived] = FLASH_TIME;
-          nodeFlashGold[arrived] = (k % 5) < 2 ? 1 : 0; // dourado ou azul
+          nodeFlashGold[arrived] = isGoldPulse(k) ? 1 : 0; // mesma cor do pulso
           pickEdge(k, travB[k]);
         }
         const a = outerShell.positions[travA[k]];
@@ -421,13 +438,15 @@ export function NeuralSphere({
         }
       }
       travGeo.attributes.position.needsUpdate = true;
-      travMat.opacity = (isLight ? 0.92 : 0.88) + I * 0.4; // normal blending no claro pede mais corpo
 
-      // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
+      // Drift de cor — matiz desliza suave. No modo claro/glass, linhas e nós ficam
+      // mais profundos/saturados (contraste no fundo branco → "mais vivos").
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;
-      outer.lineMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
-      // Pontos do outer: cor base (drift) + flash dourado/azul ao receber um pulso.
-      baseNodeC.setHSL(h, baseHSL.s, baseHSL.l);
+      const vivL = isLight ? baseHSL.l * 0.62 : baseHSL.l;
+      const vivS = isLight ? Math.min(1, baseHSL.s + 0.16) : baseHSL.s;
+      outer.lineMaterial.color.setHSL(h, vivS, vivL);
+      // Pontos do outer: cor base + flash dourado/azul + pulso de tamanho ao ser tocado.
+      baseNodeC.setHSL(h, vivS, vivL);
       for (let n = 0; n < OUTER_COUNT; n++) {
         let r = baseNodeC.r, g = baseNodeC.g, bl = baseNodeC.b;
         if (nodeFlash[n] > 0) {
@@ -437,11 +456,15 @@ export function NeuralSphere({
           r += (flashTmp.r - r) * amt;
           g += (flashTmp.g - g) * amt;
           bl += (flashTmp.b - bl) * amt;
+          nodeSize[n] = 1 + amt * 1.3; // cresce no flash e volta ao normal
+        } else if (nodeSize[n] !== 1) {
+          nodeSize[n] = 1;
         }
         const ci = n * 3;
         outerPtCol[ci] = r; outerPtCol[ci + 1] = g; outerPtCol[ci + 2] = bl;
       }
       outer.pointsGeometry.attributes.color.needsUpdate = true;
+      outer.pointsGeometry.attributes.aSize.needsUpdate = true;
       inner.pointsMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
       inner.lineMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
 
