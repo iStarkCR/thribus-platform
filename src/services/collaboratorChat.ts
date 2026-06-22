@@ -150,3 +150,17 @@ export function subscribeChat(userId: string, onChange: () => void): () => void 
     sb.removeChannel(ch);
   };
 }
+
+/**
+ * Reescreve a mensagem do usuário num prompt mais claro/estruturado via edge
+ * function `improve-prompt` (a chave OpenAI fica server-side, nunca no front).
+ * Devolve o texto reescrito.
+ */
+export async function improvePrompt(agentId: string, text: string): Promise<string> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { data, error } = await supabase.functions.invoke('improve-prompt', {
+    body: { agentId, text },
+  });
+  if (error) throw error;
+  return ((data as { improved?: string } | null)?.improved ?? '').trim();
+}

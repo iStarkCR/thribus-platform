@@ -18,7 +18,7 @@ import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { Markdown } from '@/components/shared/Markdown';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
 import { type RunEvent } from '@/services/runEvents';
-import { listMessages, sendMessage, cancelMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
+import { listMessages, sendMessage, cancelMessage, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import { createDemand } from '@/services/demands';
 import { RoutineModal } from '@/components/routines/RoutineModal';
@@ -104,6 +104,7 @@ export function TalkPage() {
     if (n.has(id)) n.delete(id); else n.add(id);
     return n;
   });
+  const [improvingId, setImprovingId] = useState<string | null>(null);
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -630,6 +631,23 @@ export function TalkPage() {
   // Vira o texto digitado numa DEMANDA (fila async), opcionalmente delegada a outro agente.
   // Ações por mensagem (hover): copiar, ouvir, refazer, virar demanda.
   function copyMsg(text: string) { navigator.clipboard.writeText(text); useAppStore.getState().addToast('Copiado', 'green'); }
+  async function improveMyPrompt(m: ChatMessage) {
+    if (!agent || !m.content.trim() || improvingId) return;
+    setImprovingId(m.id);
+    try {
+      const improved = await improvePrompt(agent.id, m.content);
+      if (improved && improved !== m.content) {
+        setInput(improved);
+        useAppStore.getState().addToast('Prompt melhorado no campo — revise e reenvie', 'green');
+      } else {
+        useAppStore.getState().addToast('Sem mudanças sugeridas', 'amber');
+      }
+    } catch (e) {
+      useAppStore.getState().addToast('Melhorar prompt indisponível: ' + (e as Error).message, 'red');
+    } finally {
+      setImprovingId(null);
+    }
+  }
   function regenerate(mi: number) { const u = [...messages.slice(0, mi)].reverse().find((x) => x.role === 'user'); if (u) send(u.content); }
   async function msgToDemand(text: string) {
     if (!userId || !agent) return;
@@ -1236,6 +1254,14 @@ export function TalkPage() {
                           <a.icon size={12} />
                         </button>
                       ))}
+                      <button
+                        onClick={() => improveMyPrompt(m)}
+                        disabled={improvingId === m.id}
+                        title="Melhorar meu prompt (IA reescreve)"
+                        className="w-7 h-7 rounded-lg bg-gold/10 border border-gold/30 text-gold-bright hover:bg-gold/20 flex items-center justify-center transition-colors disabled:opacity-60"
+                      >
+                        {improvingId === m.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                      </button>
                     </div>
                   </div>
                   );
