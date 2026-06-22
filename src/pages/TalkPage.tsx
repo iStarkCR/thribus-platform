@@ -1250,17 +1250,19 @@ export function TalkPage() {
                         { icon: GitBranch, label: 'Bifurcar a conversa', on: () => { if (active) forkSessionAction(active); } },
                         { icon: ListChecks, label: 'Virar demanda', on: () => msgToDemand(m.content) },
                       ].map((a) => (
-                        <button key={a.label} onClick={a.on} title={a.label} className="w-7 h-7 rounded-lg bg-surface-3 border border-default text-creme-faint hover:text-creme hover:bg-surface-hover flex items-center justify-center transition-colors">
-                          <a.icon size={12} />
+                        <button key={a.label} onClick={a.on} title={a.label} className="group/act h-7 px-1.5 rounded-lg bg-surface-3 border border-default text-creme-faint hover:text-creme hover:bg-surface-hover flex items-center transition-all">
+                          <a.icon size={12} className="shrink-0" />
+                          <span className="max-w-0 group-hover/act:max-w-[150px] group-hover/act:ml-1.5 overflow-hidden whitespace-nowrap text-[11px] font-semibold transition-all duration-200">{a.label}</span>
                         </button>
                       ))}
                       <button
                         onClick={() => improveMyPrompt(m)}
                         disabled={improvingId === m.id}
                         title="Melhorar meu prompt (IA reescreve)"
-                        className="w-7 h-7 rounded-lg bg-gold/10 border border-gold/30 text-gold-bright hover:bg-gold/20 flex items-center justify-center transition-colors disabled:opacity-60"
+                        className="group/act h-7 px-1.5 rounded-lg bg-gold/10 border border-gold/30 text-gold-bright hover:bg-gold/20 flex items-center transition-all disabled:opacity-60"
                       >
-                        {improvingId === m.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        {improvingId === m.id ? <Loader2 size={12} className="animate-spin shrink-0" /> : <Sparkles size={12} className="shrink-0" />}
+                        <span className="max-w-0 group-hover/act:max-w-[160px] group-hover/act:ml-1.5 overflow-hidden whitespace-nowrap text-[11px] font-semibold transition-all duration-200">{improvingId === m.id ? 'Melhorando…' : 'Melhorar prompt'}</span>
                       </button>
                     </div>
                   </div>
