@@ -56,6 +56,28 @@ export interface AsaasSubscription {
   description: string;
 }
 
+/** Cobrança pública — só dados de exibição da página de pagamento (/pay/:id). */
+export interface AsaasPublicCharge {
+  id: string;
+  value: number;
+  status: AsaasChargeStatus;
+  billingType: AsaasBillingType;
+  dueDate: string;
+  paymentDate?: string;
+  description: string;
+  invoiceNumber?: string;
+  invoiceUrl?: string;
+  boletoUrl?: string;
+  boletoLine?: string;
+  fine: number;
+  interest: number;
+  discount: number;
+  pixQrCode?: string;
+  pixCopyPaste?: string;
+  buyerName: string;
+  buyerEmail?: string;
+}
+
 async function call<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
   if (!supabase) throw new Error('Supabase não configurado — Asaas proxy indisponível');
   const { data, error } = await supabase.functions.invoke('asaas-proxy', { body: { action, params } });
@@ -82,4 +104,7 @@ export async function createBoleto(customerId: string, value: number, descriptio
 }
 export async function refundCharge(chargeId: string, value?: number): Promise<AsaasCharge> {
   return call('charges.refund', { id: chargeId, value });
+}
+export async function getPublicCharge(id: string): Promise<AsaasPublicCharge> {
+  return call('charges.get', { id });
 }

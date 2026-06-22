@@ -13,6 +13,7 @@
  * Actions:
  *   customers.list
  *   charges.list, charges.create, charges.refund
+ *   charges.get        — público, read-only (página de pagamento Thribus)
  *   subscriptions.list
  */
 
@@ -50,11 +51,15 @@ interface AsaasCustomerRaw {
   id: string; name: string; cpfCnpj: string; email?: string; mobilePhone?: string; phone?: string;
   city?: string; dateCreated: string;
 }
+interface AsaasFee { value?: number; type?: string }
+interface AsaasDiscount { value?: number; dueDateLimitDays?: number; type?: string }
 interface AsaasChargeRaw {
   id: string; customer: string; value: number; netValue: number;
   billingType: 'PIX' | 'BOLETO' | 'CREDIT_CARD' | 'UNDEFINED';
   status: string; dueDate: string; paymentDate?: string;
-  invoiceUrl?: string; bankSlipUrl?: string; description: string;
+  invoiceUrl?: string; bankSlipUrl?: string; invoiceNumber?: string;
+  identificationField?: string; description: string;
+  fine?: AsaasFee; interest?: AsaasFee; discount?: AsaasDiscount;
 }
 interface AsaasSubscriptionRaw {
   id: string; customer: string; value: number; cycle: string;
@@ -126,6 +131,62 @@ serve(async (req: Request) => {
         });
       }
 
+      // Público, read-only: alimenta a página de pagamento Thribus (/pay/:id).
+      // Devolve só dados de exibição da cobrança + o pagador. Sem token, sem ações.
+      case 'charges.get': {
+        const id = String(params.id ?? '').trim();
+        if (!id) return bad('missing charge id');
+
+        const c = await asaasCall<AsaasChargeRaw>(`/payments/${id}`);
+
+        // Linha digitável do boleto (quando houver)
+        let boletoLine: string | undefined = c.identificationField;
+        if (!boletoLine && c.billingType === 'BOLETO') {
+          try {
+            const idf = await asaasCall<{ identificationField: string }>(`/payments/${id}/identificationField`);
+            boletoLine = idf.identificationField;
+          } catch (_) { /* sem linha digitável — segue */ }
+        }
+
+        // QR Code PIX (qualquer cobrança PIX-elegível tem QR via Asaas)
+        let pixQrCode: string | undefined;
+        let pixCopyPaste: string | undefined;
+        try {
+          const pix = await asaasCall<{ encodedImage: string; payload: string; success?: boolean }>(`/payments/${id}/pixQrCode`);
+          if (pix.payload) { pixQrCode = pix.encodedImage; pixCopyPaste = pix.payload; }
+        } catch (_) { /* nem toda cobrança tem PIX — segue */ }
+
+        // Pagador (nome/email) — dado do próprio comprador, seguro exibir
+        let buyerName = '';
+        let buyerEmail: string | undefined;
+        try {
+          const cust = await asaasCall<AsaasCustomerRaw>(`/customers/${c.customer}`);
+          buyerName = cust.name;
+          buyerEmail = cust.email;
+        } catch (_) { /* segue sem dados do pagador */ }
+
+        return ok({
+          id: c.id,
+          value: c.value,
+          status: c.status,
+          billingType: c.billingType,
+          dueDate: c.dueDate,
+          paymentDate: c.paymentDate,
+          description: c.description,
+          invoiceNumber: c.invoiceNumber,
+          invoiceUrl: c.invoiceUrl,
+          boletoUrl: c.bankSlipUrl,
+          boletoLine,
+          fine: c.fine?.value ?? 0,
+          interest: c.interest?.value ?? 0,
+          discount: c.discount?.value ?? 0,
+          pixQrCode,
+          pixCopyPaste,
+          buyerName,
+          buyerEmail,
+        });
+      }
+
       case 'charges.refund': {
         const data = await asaasCall<AsaasChargeRaw>(`/payments/${params.id}/refund`, {
           method: 'POST',
@@ -159,5 +220,11 @@ serve(async (req: Request) => {
 function ok<T>(data: T) {
   return new Response(JSON.stringify(data), {
     status: 200, headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+}
+
+function bad(message: string) {
+  return new Response(JSON.stringify({ error: message }), {
+    status: 400, headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 }
