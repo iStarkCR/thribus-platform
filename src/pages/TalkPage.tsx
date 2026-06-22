@@ -1002,23 +1002,26 @@ export function TalkPage() {
               <button
                 onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setChatMode(false); setHistOpen(false); }}
                 title="Tela inicial — o orbe"
-                className="w-8 h-8 flex items-center justify-center rounded-xl text-creme-mute hover:text-brand-bright hover:bg-brand/10 active:scale-90 transition-all"
+                className="group/seg h-8 px-1.5 flex items-center rounded-xl text-creme-mute hover:text-brand-bright hover:bg-brand/10 active:scale-90 transition-all"
               >
-                <Sparkles size={16} />
+                <Sparkles size={16} className="shrink-0" />
+                <span className="max-w-0 group-hover/seg:max-w-[120px] group-hover/seg:ml-1.5 overflow-hidden whitespace-nowrap text-[12px] font-semibold transition-all duration-200">Orbe</span>
               </button>
               <button
                 onClick={() => setUsageOpen(true)}
                 title="Uso por sessão — tokens, custo e contexto de cada conversa"
-                className="w-8 h-8 flex items-center justify-center rounded-xl text-creme-mute hover:text-creme hover:bg-surface-hover active:scale-90 transition-all"
+                className="group/seg h-8 px-1.5 flex items-center rounded-xl text-creme-mute hover:text-creme hover:bg-surface-hover active:scale-90 transition-all"
               >
-                <BarChart3 size={16} />
+                <BarChart3 size={16} className="shrink-0" />
+                <span className="max-w-0 group-hover/seg:max-w-[120px] group-hover/seg:ml-1.5 overflow-hidden whitespace-nowrap text-[12px] font-semibold transition-all duration-200">Uso</span>
               </button>
               <button
                 onClick={() => startPanelVoice()}
                 title="Modo voz — conversa falando nesta conversa"
-                className="w-8 h-8 flex items-center justify-center rounded-xl text-creme-mute hover:text-brand-bright hover:bg-brand/10 active:scale-90 transition-all"
+                className="group/seg h-8 px-1.5 flex items-center rounded-xl text-creme-mute hover:text-brand-bright hover:bg-brand/10 active:scale-90 transition-all"
               >
-                <Headphones size={16} />
+                <Headphones size={16} className="shrink-0" />
+                <span className="max-w-0 group-hover/seg:max-w-[120px] group-hover/seg:ml-1.5 overflow-hidden whitespace-nowrap text-[12px] font-semibold transition-all duration-200">Voz</span>
               </button>
             </div>
 
