@@ -57,6 +57,11 @@ const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 3000);
 const TIMEOUT_MS = Number(process.env.BRIDGE_TIMEOUT_MS || 180_000); // chat interativo: 3min
 const DEMAND_TIMEOUT_MS = Number(process.env.BRIDGE_DEMAND_TIMEOUT_MS || 1_500_000); // demandas: 25min (tarefas longas: relatórios, etc.)
 const HISTORY = 20; // últimas N msgs do thread como contexto
+// Anti-bloat de contexto: a sessão do claude é resumida a cada turno e ACUMULA
+// (dumps de tool, etc.). Quando passa de ~70% da janela (1M no Max), reiniciamos
+// a sessão limpa (re-seed persona + histórico recente) em vez de resumir infinito.
+const CONTEXT_WINDOW = Number(process.env.BRIDGE_CONTEXT_WINDOW || 1_000_000);
+const CONTEXT_RESET_TOKENS = Math.round(CONTEXT_WINDOW * Number(process.env.BRIDGE_CONTEXT_RESET_PCT || 0.70));
 
 if (!URL || !KEY) {
   console.error('Faltam SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY. Veja o cabeçalho do arquivo.');
@@ -188,7 +193,12 @@ const GUARD =
   '{"action":"Criar cobrança PIX de R$ 1.200 pro TexNet","detail":"vencimento 25/06","danger":false}. ' +
   'O painel mostra botões Confirmar/Cancelar; só execute quando o Charles confirmar na mensagem seguinte. ' +
   'Use danger:true pra ações destrutivas (deletar, derrubar serviço).\n\n' +
-  '(NÃO use cards/confirm em modo voz — ali a resposta é só fala natural.)';
+  '(NÃO use cards/confirm em modo voz — ali a resposta é só fala natural.)\n\n' +
+  'EFICIÊNCIA DE CONTEXTO (importante): a sessão é mantida entre turnos e TUDO que você lê fica na memória e ' +
+  'pesa nos próximos turnos. Ao consultar banco/IXC/arquivos: NUNCA traga tabela inteira nem dump gigante pro ' +
+  'contexto. Use queries com LIMIT e filtros, SELECT só das colunas necessárias, e prefira AGREGAR/CONTAR a ' +
+  'listar tudo (ex: "SELECT count(*)" em vez de listar 500 linhas). Se um resultado for grande, leia o ' +
+  'suficiente pra responder e RESUMA — não cole o bruto completo. Isso mantém a sessão leve e rápida.';
 
 let bukowiskiCmd = null;
 function bukowiskiPersona() {
@@ -391,10 +401,16 @@ async function processMessage(msg) {
   // Sessão do claude desta conversa (memória otimizada via --resume).
   const { data: sess } = await sb
     .from('chat_sessions')
-    .select('claude_session_id')
+    .select('claude_session_id,context_tokens')
     .eq('id', msg.session_id)
     .maybeSingle();
-  const resumeId = sess?.claude_session_id || null;
+  let resumeId = sess?.claude_session_id || null;
+  // Anti-bloat: se o contexto acumulado passou de ~70% da janela, NÃO resume —
+  // reinicia a sessão limpa (re-seed persona + histórico recente) e zera o acúmulo.
+  if (resumeId && (sess?.context_tokens || 0) > CONTEXT_RESET_TOKENS) {
+    console.log(`[contexto ${sess.context_tokens} > ${CONTEXT_RESET_TOKENS} (${Math.round((sess.context_tokens / CONTEXT_WINDOW) * 100)}%) → reinicia sessão limpa]`);
+    resumeId = null;
+  }
 
   // anexos (imagem/PDF/vídeo) → baixa pro Mac e referencia no prompt
   const files = await downloadAttachments(msg.attachments);
