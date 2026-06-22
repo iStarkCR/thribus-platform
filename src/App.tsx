@@ -44,6 +44,7 @@ import { OptimizerPage } from '@/pages/OptimizerPage';
 import { CompliancePage } from '@/pages/CompliancePage';
 import { VaultPage } from '@/pages/VaultPage';
 import { LoginPage } from '@/pages/LoginPage';
+import { PayPage } from '@/pages/PayPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { AccessPage } from '@/pages/AccessPage';
 import { TalkPage } from '@/pages/TalkPage';
@@ -69,6 +70,8 @@ export function App() {
     <HashRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {/* Página de pagamento pública (sem login) — checkout Thribus sobre Asaas */}
+        <Route path="/pay/:id" element={<PayPage />} />
         <Route path="/*" element={
           <ProtectedShell />
         } />
