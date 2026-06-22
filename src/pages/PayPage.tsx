@@ -471,7 +471,7 @@ function Footer() {
         <ShieldCheck size={13} style={{ color: C.sage }} />
         Processado com segurança via Asaas (gateway homologado pelo Banco Central)
       </div>
-      <div>{BILLER.legal} · CNPJ {BILLER.cnpj}</div>
+      <div>{BILLER.name} · CNPJ {BILLER.cnpj}</div>
       <div>
         {BILLER.email} · {BILLER.phone} · {BILLER.site}
       </div>
