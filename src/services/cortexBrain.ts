@@ -107,11 +107,22 @@ export function effortIndex(e: CortexEffort): number {
 }
 
 // ─── Config ─────────────────────────────────────────────────────────────────
+// Teto de contexto: quanto a conversa acumula (tokens do turno) antes de o daemon
+// rotacionar / a ponte resetar a sessão. Piso 250k; teto 1M (janela do Max).
+export const CONTEXT_LIMIT_MIN = 250_000;
+export const CONTEXT_LIMIT_MAX = 1_000_000;
+export const CONTEXT_LIMIT_STEP = 50_000;
+
+const clampContext = (n: number) =>
+  Math.min(CONTEXT_LIMIT_MAX, Math.max(CONTEXT_LIMIT_MIN, Math.round(n) || CONTEXT_LIMIT_MIN));
+
 export interface CortexBrainConfig {
   model: CortexModel;
   effort: CortexEffort;
   monthlyBudgetUsd: number;
   maxBudgetUsd: number;
+  /** Teto de contexto (tokens) antes de rotacionar/resetar a conversa. */
+  contextLimitTokens: number;
 }
 
 export const DEFAULT_CORTEX_CONFIG: CortexBrainConfig = {
@@ -119,6 +130,7 @@ export const DEFAULT_CORTEX_CONFIG: CortexBrainConfig = {
   effort: 'high',
   monthlyBudgetUsd: 0,
   maxBudgetUsd: 0,
+  contextLimitTokens: CONTEXT_LIMIT_MIN,
 };
 
 interface ConfigRow {
@@ -126,13 +138,14 @@ interface ConfigRow {
   effort: CortexEffort;
   monthly_budget_usd: number | string;
   max_budget_usd: number | string;
+  context_limit_tokens: number | string | null;
 }
 
 export async function getCortexConfig(): Promise<CortexBrainConfig> {
   if (!supabase) return DEFAULT_CORTEX_CONFIG;
   const { data, error } = await supabase
     .from('cortex_brain_config')
-    .select('model,effort,monthly_budget_usd,max_budget_usd')
+    .select('model,effort,monthly_budget_usd,max_budget_usd,context_limit_tokens')
     .eq('scope', 'global')
     .maybeSingle();
   if (error) throw error;
@@ -143,6 +156,7 @@ export async function getCortexConfig(): Promise<CortexBrainConfig> {
     effort: r.effort,
     monthlyBudgetUsd: Number(r.monthly_budget_usd) || 0,
     maxBudgetUsd: Number(r.max_budget_usd) || 0,
+    contextLimitTokens: clampContext(Number(r.context_limit_tokens)),
   };
 }
 
@@ -155,6 +169,7 @@ export async function saveCortexConfig(cfg: CortexBrainConfig): Promise<void> {
       effort: cfg.effort,
       monthly_budget_usd: cfg.monthlyBudgetUsd,
       max_budget_usd: cfg.maxBudgetUsd,
+      context_limit_tokens: clampContext(cfg.contextLimitTokens),
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'scope' },
