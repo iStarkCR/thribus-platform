@@ -206,9 +206,9 @@ export function NeuralSphere({
     // Cada pulso = rastro CONTÍNUO de pontos macios sobrepostos. A COR é cheia
     // (dourado/azul ATÉ a ponta — nada de preto/branco), e o esmaecimento é por
     // ALPHA por vértice (cabeça opaca → cauda some). ~67% DOURADOS, ~33% AZUIS.
-    const TAIL = 12;
+    const TAIL = 24;          // mais amostras → rastro mais LONGO
     const SEGS = TAIL + 1;
-    const TAIL_LAG = 0.02;
+    const TAIL_LAG = 0.016;   // espaçamento pequeno → continua colado (sem virar bolinhas)
     const TRAV_TOTAL = TRAV_COUNT * SEGS;
     const travArr = new Float32Array(TRAV_TOTAL * 3);
     const travCol = new Float32Array(TRAV_TOTAL * 3);
@@ -229,7 +229,7 @@ export function NeuralSphere({
     travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
     travGeo.setAttribute('color', new THREE.BufferAttribute(travCol, 3));
     travGeo.setAttribute('alpha', new THREE.BufferAttribute(travAlpha, 1));
-    const travMat = new THREE.PointsMaterial({ size: 0.135, map: dotTex, vertexColors: true, transparent: true, opacity: 1, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
+    const travMat = new THREE.PointsMaterial({ size: 0.085, map: dotTex, vertexColors: true, transparent: true, opacity: 1, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
     // Alpha por vértice: a cabeça fica opaca e a cauda some — mantendo a cor cheia.
     travMat.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader
