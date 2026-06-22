@@ -349,7 +349,11 @@ function BoletoCard({ charge }: { charge: AsaasPublicCharge }) {
 
 function NotaFiscal({ charge }: { charge: AsaasPublicCharge }) {
   const nf = charge.nf;
-  const authorized = nf?.status === 'AUTHORIZED' && nf?.pdfUrl;
+  const status = nf?.status;
+  const authorized = status === 'AUTHORIZED' && nf?.pdfUrl;
+  // ERROR/CANCELED no Asaas: a nota normalmente existe no portal (emissão por
+  // outro canal). Não dizer "em processamento" — orientar a pedir a via.
+  const issuedElsewhere = status === 'ERROR' || status === 'CANCELLATION_DENIED';
 
   return (
     <section className="rounded-2xl p-5" style={{ background: C.card, border: `1px solid ${C.border}` }}>
@@ -381,6 +385,10 @@ function NotaFiscal({ charge }: { charge: AsaasPublicCharge }) {
             </a>
           )}
         </div>
+      ) : issuedElsewhere ? (
+        <p className="mt-1.5 flex items-center gap-1.5 text-[12.5px]" style={{ color: C.ink3 }}>
+          <FileText size={14} /> Nota fiscal emitida. Para receber a via, fale com a gente em {BILLER.email}.
+        </p>
       ) : nf ? (
         <p className="mt-1.5 flex items-center gap-1.5 text-[12.5px]" style={{ color: C.ink3 }}>
           <Clock size={14} /> Nota fiscal em processamento — disponível em instantes.
