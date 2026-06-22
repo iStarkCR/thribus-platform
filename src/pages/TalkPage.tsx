@@ -4,7 +4,7 @@ import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
-  PanelLeftClose, PanelLeft,
+  PanelLeftClose, PanelLeft, GitBranch,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -47,6 +47,8 @@ export function TalkPage() {
   const setVoiceModeActive = useAppStore((s) => s.setVoiceModeActive);
   const setSttBusy = useAppStore((s) => s.setSttBusy);
   const { user } = useSession();
+  const userName = (user?.user_metadata?.name as string | undefined) ?? user?.email?.split('@')[0] ?? 'Você';
+  const userInitials = userName.split(/\s+/).map((n) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'VC';
   const userId = user?.id ?? null;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -94,6 +96,13 @@ export function TalkPage() {
     const next = !v;
     try { localStorage.setItem('thribus.chatNav', next ? '0' : '1'); } catch { /* noop */ }
     return next;
+  });
+  // Mensagens longas do usuário colapsadas (id → expandida).
+  const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => setExpandedMsgs((prev) => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
   });
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
@@ -1000,21 +1009,36 @@ export function TalkPage() {
                       const q = switcherQuery.trim().toLowerCase();
                       const list = q ? collaborators.filter((c) => c.name.toLowerCase().includes(q) || (c.sector ?? '').toLowerCase().includes(q)) : collaborators;
                       if (list.length === 0) return <div className="px-3 py-4 text-center text-[12px] text-creme-faint">Nenhum colaborador.</div>;
-                      return list.map((c) => (
-                        <button
-                          key={c.id}
-                          onClick={() => { setSwitcherOpen(false); setSwitcherQuery(''); setView('orb'); setActiveId(null); setMessages([]); navigate(`/talk?agent=${c.id}`); }}
-                          className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-xl text-left transition-colors ${c.id === agent.id ? 'bg-brand/12 ring-1 ring-brand/25' : 'hover:bg-surface-hover'}`}
-                        >
-                          <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[12px] font-bold text-white shrink-0 overflow-hidden" style={c.color ? { background: c.color } : undefined}>
-                            {c.avatarUrl ? <img src={c.avatarUrl} alt="" className="w-full h-full object-cover" /> : c.name[0]}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[13px] font-semibold text-creme flex items-center gap-1 truncate">{c.name}{c.isSupervisor && <Crown size={11} className="text-gold-bright shrink-0" />}</div>
-                            <div className="text-[10.5px] text-creme-faint truncate">{c.sector}</div>
-                          </div>
-                          {c.id === agent.id && <Check size={14} className="text-brand-bright shrink-0" />}
-                        </button>
+                      // Agrupa por setor — Liderança no topo, "Sem setor" no fim.
+                      const LEAD = 'Liderança';
+                      const groups = new Map<string, typeof list>();
+                      for (const c of list) {
+                        const key = c.isSupervisor ? LEAD : (c.sector || 'Sem setor');
+                        if (!groups.has(key)) groups.set(key, []);
+                        groups.get(key)!.push(c);
+                      }
+                      const keys = [...groups.keys()].sort((a, b) =>
+                        a === LEAD ? -1 : b === LEAD ? 1 : a === 'Sem setor' ? 1 : b === 'Sem setor' ? -1 : a.localeCompare(b),
+                      );
+                      return keys.map((key) => (
+                        <div key={key} className="mb-0.5">
+                          <div className="px-2.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-creme-faint">{key}</div>
+                          {groups.get(key)!.map((c) => (
+                            <button
+                              key={c.id}
+                              onClick={() => { setSwitcherOpen(false); setSwitcherQuery(''); setView('orb'); setActiveId(null); setMessages([]); navigate(`/talk?agent=${c.id}`); }}
+                              className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-xl text-left transition-colors ${c.id === agent.id ? 'bg-brand/12 ring-1 ring-brand/25' : 'hover:bg-surface-hover'}`}
+                            >
+                              <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[12px] font-bold text-white shrink-0 overflow-hidden" style={c.color ? { background: c.color } : undefined}>
+                                {c.avatarUrl ? <img src={c.avatarUrl} alt="" className="w-full h-full object-cover" /> : c.name[0]}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[13px] font-semibold text-creme flex items-center gap-1 truncate">{c.name}{c.isSupervisor && <Crown size={11} className="text-gold-bright shrink-0" />}</div>
+                              </div>
+                              {c.id === agent.id && <Check size={14} className="text-brand-bright shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
                       ));
                     })()}
                   </div>
@@ -1167,26 +1191,55 @@ export function TalkPage() {
                 </div>
               )}
               {messages.map((m, mi) =>
-                m.role === 'user' ? (
-                  <div key={m.id} className="flex justify-end">
-                    <div className="max-w-[74%] px-[18px] py-3 rounded-[20px] rounded-br-md bg-brand text-white text-[15px] leading-[1.72] shadow-[0_12px_28px_-16px_rgba(0,0,0,0.55)]">
-                      {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
-                      {m.content && <span className="whitespace-pre-wrap">{m.content}</span>}
-                      {m.status === 'error' && (
-                        <div className="text-[11px] mt-1 text-white/80 flex items-center gap-2 flex-wrap">
-                          <span>erro: {m.error}</span>
-                          <button
-                            onClick={() => send(m.content)}
-                            disabled={sending}
-                            className="underline underline-offset-2 hover:text-white disabled:opacity-50 shrink-0"
-                          >
-                            ↻ Reenviar
-                          </button>
-                        </div>
-                      )}
+                m.role === 'user' ? (() => {
+                  const COLLAPSE_AT = 440;
+                  const isLong = m.content.length > COLLAPSE_AT;
+                  const open = expandedMsgs.has(m.id);
+                  const shown = isLong && !open ? m.content.slice(0, COLLAPSE_AT).trimEnd() : m.content;
+                  const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+                  return (
+                  <div key={m.id} className="group flex flex-col items-end gap-1">
+                    <div className="flex items-end gap-2.5 max-w-[82%]">
+                      <div className="px-[18px] py-3 rounded-[20px] rounded-br-md bg-brand text-white text-[15px] leading-[1.72] shadow-[0_12px_28px_-16px_rgba(0,0,0,0.55)] min-w-0">
+                        {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
+                        {m.content && (
+                          <span className="whitespace-pre-wrap">
+                            {shown}{isLong && !open && '… '}
+                            {isLong && (
+                              <button onClick={() => toggleExpanded(m.id)} className="text-white/85 underline underline-offset-2 hover:text-white text-[13px] font-semibold">
+                                {open ? 'ver menos' : 'ver mais'}
+                              </button>
+                            )}
+                          </span>
+                        )}
+                        {m.status === 'error' && (
+                          <div className="text-[11px] mt-1 text-white/80 flex items-center gap-2 flex-wrap">
+                            <span>erro: {m.error}</span>
+                            <button onClick={() => send(m.content)} disabled={sending} className="underline underline-offset-2 hover:text-white disabled:opacity-50 shrink-0">↻ Reenviar</button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-dim to-brand text-white flex items-center justify-center text-[12px] font-bold shrink-0 ring-1 ring-brand/25 mt-0.5" title={userName}>
+                        {userInitials}
+                      </div>
+                    </div>
+                    {/* horário + ações ao passar o mouse */}
+                    <div className="flex items-center gap-1 mr-[42px] opacity-0 group-hover:opacity-100 transition-opacity">
+                      {time && <span className="text-[10.5px] text-creme-faint mr-1">{time}</span>}
+                      {[
+                        { icon: Pencil, label: 'Editar & reenviar', on: () => { setInput(m.content); useAppStore.getState().addToast('Mensagem no campo — ajuste e reenvie', 'green'); } },
+                        { icon: Copy, label: 'Copiar', on: () => copyMsg(m.content) },
+                        { icon: GitBranch, label: 'Bifurcar a conversa', on: () => { if (active) forkSessionAction(active); } },
+                        { icon: ListChecks, label: 'Virar demanda', on: () => msgToDemand(m.content) },
+                      ].map((a) => (
+                        <button key={a.label} onClick={a.on} title={a.label} className="w-7 h-7 rounded-lg bg-surface-3 border border-default text-creme-faint hover:text-creme hover:bg-surface-hover flex items-center justify-center transition-colors">
+                          <a.icon size={12} />
+                        </button>
+                      ))}
                     </div>
                   </div>
-                ) : (
+                  );
+                })() : (
                   <div key={m.id} className="group flex gap-3 max-w-[88%]">
                     <div className="w-8 h-8 rounded-xl bg-brand/15 text-brand-bright flex items-center justify-center text-[13px] font-bold shrink-0 mt-0.5 ring-1 ring-brand/20">
                       {agent.name.charAt(0).toUpperCase()}
