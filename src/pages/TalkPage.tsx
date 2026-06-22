@@ -4,6 +4,7 @@ import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
+  PanelLeftClose, PanelLeft,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -85,6 +86,15 @@ export function TalkPage() {
   const [usageOpen, setUsageOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [switcherQuery, setSwitcherQuery] = useState('');
+  // Recolher a sidebar de conversas (persistido).
+  const [navCollapsed, setNavCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('thribus.chatNav') === '0'; } catch { return false; }
+  });
+  const toggleNav = () => setNavCollapsed((v) => {
+    const next = !v;
+    try { localStorage.setItem('thribus.chatNav', next ? '0' : '1'); } catch { /* noop */ }
+    return next;
+  });
   const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -777,10 +787,17 @@ export function TalkPage() {
   const runSlash = (c: { run: () => void }) => { c.run(); setInput(''); setCmdIdx(0); };
 
   return (
-    <div className="-m-6 h-screen grid grid-cols-[300px_1fr] overflow-hidden">
+    <div className={`-m-6 h-screen grid overflow-hidden ${navCollapsed ? 'grid-cols-[1fr]' : 'grid-cols-[300px_1fr]'}`}>
       {/* Sessões + pastas */}
-      <div className="glass-panel border-r border-default flex flex-col bg-surface-1 min-h-0">
+      {!navCollapsed && (
+      <div className="glass-strong border-r border-default flex flex-col bg-surface-1 min-h-0">
         <div className="p-3.5 border-b border-default space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-creme-faint">Conversas</span>
+            <button onClick={toggleNav} title="Recolher conversas" className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
+              <PanelLeftClose size={15} />
+            </button>
+          </div>
           <button
             onClick={() => newSession(null)}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-white text-[14px] font-semibold transition-all bg-brand/85 hover:bg-brand backdrop-blur-md border border-brand-bright/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_26px_-10px_rgba(107,143,94,0.55)]"
@@ -897,11 +914,17 @@ export function TalkPage() {
           </button>
         </div>
       </div>
+      )}
 
       {/* Thread */}
       <div className="flex flex-col bg-surface-0 min-w-0 min-h-0">
         <div className="glass-panel relative z-30 h-16 px-6 flex items-center justify-between gap-3 border-b border-default shrink-0">
           <div className="flex items-center gap-3 min-w-0">
+            {navCollapsed && (
+              <button onClick={toggleNav} title="Mostrar conversas" className="w-9 h-9 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors shrink-0">
+                <PanelLeft size={17} />
+              </button>
+            )}
             <button
               onClick={() => navigate('/settings')}
               title="Abrir configurações"
@@ -959,7 +982,7 @@ export function TalkPage() {
             {switcherOpen && (
               <>
                 <div className="fixed inset-0 z-[55]" onClick={() => { setSwitcherOpen(false); setSwitcherQuery(''); }} />
-                <div className="glass-panel absolute right-0 mt-1.5 w-72 max-h-[66vh] flex flex-col bg-surface-1/95 border border-default rounded-2xl shadow-2xl z-[56] overflow-hidden">
+                <div className="glass-strong absolute right-0 mt-1.5 w-72 max-h-[66vh] flex flex-col bg-surface-1 border border-default rounded-2xl shadow-2xl z-[56] overflow-hidden">
                   <div className="p-2 border-b border-default">
                     <div className="relative">
                       <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-creme-faint pointer-events-none" />
@@ -1011,7 +1034,7 @@ export function TalkPage() {
                 className="absolute aspect-square w-[min(82vmin,640px)] rounded-full overflow-hidden opacity-90"
                 style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
               >
-                <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} />
+                <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} pulseSpeed={0.42} />
               </div>
 
               {/* Scrim — escurece o centro pra o texto/composer ficarem legíveis */}

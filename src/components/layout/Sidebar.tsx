@@ -41,7 +41,7 @@ export function Sidebar() {
   });
 
   return (
-    <aside className={clsx('glass-panel fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-50 transition-[width] duration-200', collapsed ? 'w-[64px]' : 'w-[244px]')}>
+    <aside className={clsx('glass-strong fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-50 transition-[width] duration-200', collapsed ? 'w-[64px]' : 'w-[244px]')}>
       {/* Brand + sino + recolher */}
       <div className={clsx('h-14 flex items-center border-b border-default shrink-0', collapsed ? 'justify-center px-2' : 'px-3 gap-2.5')}>
         <div className="w-[30px] h-[30px] rounded-lg bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center shrink-0">
@@ -80,7 +80,7 @@ export function Sidebar() {
             {!collapsed && (
               <button
                 onClick={() => toggleGroup(group.group)}
-                className="w-full flex items-center gap-1 px-2 py-1 mb-0.5 rounded-md text-[11px] font-bold uppercase tracking-widest text-creme-faint hover:text-creme-mute hover:bg-surface-hover/50 transition-colors"
+                className="w-full flex items-center gap-1 px-2 py-1.5 mb-0.5 rounded-md text-[11px] font-bold uppercase tracking-widest text-creme-mute hover:text-creme hover:bg-surface-hover/60 transition-colors"
               >
                 <ChevronRight size={12} className={clsx('shrink-0 transition-transform', expanded && 'rotate-90')} />
                 <span className="flex-1 text-left truncate">{group.group}</span>
@@ -96,17 +96,17 @@ export function Sidebar() {
                   onClick={() => navigate(item.path)}
                   title={collapsed ? item.label : undefined}
                   className={clsx(
-                    'w-full flex items-center py-[7px] rounded-[10px] text-[13.5px] font-medium transition-all duration-150 relative min-w-0',
+                    'w-full flex items-center py-2 rounded-[10px] text-[14px] font-medium transition-all duration-150 relative min-w-0',
                     collapsed ? 'justify-center px-0' : 'gap-2.5 px-2.5',
                     isActive
-                      ? 'bg-brand/[0.13] text-creme'
-                      : 'text-creme-mute hover:bg-surface-hover/70 hover:text-creme-dim',
+                      ? 'bg-brand/[0.18] text-creme font-semibold'
+                      : 'text-creme-dim hover:bg-surface-hover hover:text-creme',
                   )}
                 >
                   {isActive && (
                     <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-brand-bright rounded-r-full" />
                   )}
-                  <Icon size={16} className={clsx('shrink-0', isActive ? 'opacity-100 text-brand-bright' : 'opacity-50')} />
+                  <Icon size={17} className={clsx('shrink-0', isActive ? 'opacity-100 text-brand-bright' : 'opacity-70')} />
                   {!collapsed && <span className="truncate min-w-0 text-left">{item.label}</span>}
                   {!collapsed && item.badge && (
                     <span className="ml-auto shrink-0 text-[12px] font-semibold font-mono bg-brand/10 text-brand px-1.5 py-px rounded-full">
@@ -182,26 +182,31 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
       {open && (
         <div
           className={clsx(
-            'absolute bg-surface-1 border border-default rounded-lg shadow-2xl overflow-hidden z-50',
+            'glass-strong absolute bg-surface-1 border border-default rounded-2xl shadow-2xl overflow-hidden z-50 py-1.5',
             // recolhido: flyout pra direita com largura fixa (não espreme nos 64px)
-            collapsed ? 'left-full ml-2 bottom-2.5 w-60' : 'left-2.5 right-2.5 bottom-[60px]',
+            collapsed ? 'left-full ml-2 bottom-2.5 w-72' : 'left-2 right-2 bottom-[64px]',
           )}
         >
-          <div className="px-3 py-2.5 border-b border-default">
-            <div className="text-[12.5px] font-semibold text-creme truncate">{displayName}</div>
-            <div className="text-[10.5px] font-mono text-creme-faint truncate">{displayEmail}</div>
+          <div className="flex items-center gap-2.5 px-3.5 py-3 mb-1 border-b border-default">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-dim to-brand border border-hover flex items-center justify-center text-[13px] font-bold text-creme shrink-0">
+              {initials}
+            </div>
+            <div className="min-w-0">
+              <div className="text-[13.5px] font-bold text-creme truncate">{displayName}</div>
+              <div className="text-[11px] font-mono text-creme-faint truncate">{displayEmail}</div>
+            </div>
           </div>
-          <MenuItem icon={<User size={13} />} label="Meu perfil" onClick={() => go('/profile')} />
-          <MenuItem icon={<Bell size={13} />} label="Notificações" onClick={() => go('/notifications')} />
-          <MenuItem icon={<Building2 size={13} />} label="Workspaces" onClick={() => go('/clients')} />
-          <MenuItem icon={<Settings size={13} />} label="Configurações" onClick={() => go('/settings')} />
-          <MenuItem icon={<Lock size={13} />} label="Vault & API Keys" onClick={() => go('/vault')} />
-          <div className="border-t border-default" />
-          <MenuItem icon={<HelpCircle size={13} />} label="Ajuda & Academy" onClick={() => go('/help')} />
-          <MenuItem icon={<Moon size={13} />} label="Aparência / Tema" onClick={() => go('/settings')} />
-          <MenuItem icon={<Sparkles size={13} />} label={glass ? 'Liquid Glass · ligado' : 'Liquid Glass'} onClick={() => toggleGlass()} />
-          <div className="border-t border-default" />
-          <MenuItem icon={<LogOut size={13} />} label="Sair" danger onClick={logout} />
+          <MenuItem icon={<User size={16} />} label="Meu perfil" onClick={() => go('/profile')} />
+          <MenuItem icon={<Bell size={16} />} label="Notificações" onClick={() => go('/notifications')} />
+          <MenuItem icon={<Building2 size={16} />} label="Workspaces" onClick={() => go('/clients')} />
+          <MenuItem icon={<Settings size={16} />} label="Configurações" onClick={() => go('/settings')} />
+          <MenuItem icon={<Lock size={16} />} label="Vault & API Keys" onClick={() => go('/vault')} />
+          <div className="border-t border-default my-1" />
+          <MenuItem icon={<HelpCircle size={16} />} label="Ajuda & Academy" onClick={() => go('/help')} />
+          <MenuItem icon={<Moon size={16} />} label="Aparência / Tema" onClick={() => go('/settings')} />
+          <MenuItem icon={<Sparkles size={16} />} label={glass ? 'Liquid Glass · ligado' : 'Liquid Glass'} onClick={() => toggleGlass()} />
+          <div className="border-t border-default my-1" />
+          <MenuItem icon={<LogOut size={16} />} label="Sair" danger onClick={logout} />
         </div>
       )}
     </div>
@@ -213,7 +218,7 @@ function MenuItem({ icon, label, subtitle, danger, onClick }: { icon: React.Reac
     <button
       onClick={onClick}
       className={clsx(
-        'w-full flex items-center gap-2.5 px-3 py-2 text-[12.5px] font-medium transition-colors',
+        'w-full flex items-center gap-3 px-3.5 py-2.5 text-[13.5px] font-medium transition-colors',
         danger ? 'text-semantic-red hover:bg-semantic-red/10' : 'text-creme-mute hover:text-creme hover:bg-surface-hover',
       )}
     >

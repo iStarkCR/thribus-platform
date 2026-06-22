@@ -58,7 +58,7 @@ export function WorkspaceSwitcher() {
       </button>
 
       {open && (
-        <div className="glass-panel absolute left-2.5 right-2.5 mt-1.5 bg-surface-1/95 border border-default rounded-2xl shadow-2xl overflow-hidden z-50">
+        <div className="glass-strong absolute left-2.5 right-2.5 mt-1.5 bg-surface-1 border border-default rounded-2xl shadow-2xl overflow-hidden z-50">
           <div className="px-3.5 py-2 text-[10px] font-bold uppercase tracking-wider text-creme-faint">
             Alterar conta · {workspaces.length}
           </div>

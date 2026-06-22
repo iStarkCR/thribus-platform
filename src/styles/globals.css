@@ -229,6 +229,14 @@
     border-color: rgba(255, 255, 255, 0.09) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 18px 50px rgba(0, 0, 0, 0.42);
   }
+  /* glass-strong — variante quase opaca p/ navegação e overlays (não "atrapalha" o conteúdo atrás) */
+  html.glass:not(.light) .glass-strong {
+    background: rgba(18, 21, 20, 0.93) !important;
+    backdrop-filter: blur(22px) saturate(130%);
+    -webkit-backdrop-filter: blur(22px) saturate(130%);
+    border-color: rgba(255, 255, 255, 0.10) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 20px 54px rgba(0, 0, 0, 0.5);
+  }
 
   /* LIGHT + glass — vidro fosco claro (Liquid Glass "dia") */
   html.glass.light body { background-color: #eef4ea; }
@@ -245,6 +253,13 @@
     -webkit-backdrop-filter: blur(26px) saturate(155%);
     border-color: rgba(255, 255, 255, 0.65) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 16px 44px rgba(70, 100, 60, 0.14);
+  }
+  html.glass.light .glass-strong {
+    background: rgba(252, 253, 251, 0.94) !important;
+    backdrop-filter: blur(22px) saturate(150%);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    border-color: rgba(120, 140, 110, 0.22) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 18px 48px rgba(70, 100, 60, 0.16);
   }
 }
 
