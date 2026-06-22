@@ -261,6 +261,12 @@ export function AgentDetailModal({ agent, onClose }: Props) {
 
       {tab === 'prompt' && (
         <div>
+          {agent.isSupervisor && (
+            <div className="mb-3 flex items-start gap-2 rounded-xl border border-gold/35 bg-gold/8 px-3 py-2.5 text-[12.5px] text-creme-dim">
+              <span className="text-gold-bright shrink-0 mt-0.5">⚠</span>
+              <span>A persona do <b>{agent.name}</b> vem de um arquivo local da ponte (<code className="font-mono text-[11.5px]">~/.claude/commands/bukowiski.md</code>). Editar aqui muda o <b>system_prompt do banco</b> — que ele <b>não usa</b>. Pra mudar a persona dele de verdade, edite o arquivo.</span>
+            </div>
+          )}
           <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
             System Prompt (treinamento)
           </label>

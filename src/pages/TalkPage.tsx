@@ -828,16 +828,17 @@ export function TalkPage() {
         {/* Config & docs + skill de voz */}
         <div className="p-2 border-t border-default shrink-0 space-y-0.5">
           <button
-            onClick={() => setInfoOpen(true)}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-surface-hover transition-colors text-left"
+            onClick={() => setEditOpen(true)}
+            className="group/cfg w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-surface-hover transition-colors text-left"
           >
-            <div className="w-8 h-8 rounded-lg bg-surface-2 border border-default flex items-center justify-center text-creme-mute shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-brand/12 border border-brand/20 flex items-center justify-center text-brand-bright shrink-0 group-hover/cfg:bg-brand/18 transition-colors">
               <Settings2 size={15} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-semibold text-creme-dim truncate">Config & docs</div>
-              <div className="text-[11px] text-creme-faint truncate">Skills e documentação de {agent.name}</div>
+              <div className="text-[13px] font-semibold text-creme-dim group-hover/cfg:text-creme truncate transition-colors">Configurar {agent.name}</div>
+              <div className="text-[11px] text-creme-faint truncate">Persona · modelo · skills · canal</div>
             </div>
+            <ChevronRight size={15} className="text-creme-faint opacity-0 -translate-x-1 group-hover/cfg:opacity-60 group-hover/cfg:translate-x-0 transition-all shrink-0" />
           </button>
         </div>
       </div>
