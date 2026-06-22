@@ -1038,7 +1038,7 @@ export function TalkPage() {
                       );
                       return keys.map((key) => (
                         <div key={key} className="mb-0.5">
-                          <div className="px-2.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gold-bright">{key}</div>
+                          <div className="px-2.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-creme-faint">{key}</div>
                           {groups.get(key)!.map((c) => (
                             <button
                               key={c.id}
