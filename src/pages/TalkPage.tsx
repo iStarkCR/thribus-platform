@@ -1043,11 +1043,8 @@ export function TalkPage() {
                             <button
                               key={c.id}
                               onClick={() => { setSwitcherOpen(false); setSwitcherQuery(''); setView('orb'); setActiveId(null); setMessages([]); navigate(`/talk?agent=${c.id}`); }}
-                              className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-xl text-left transition-colors ${c.id === agent.id ? 'bg-brand/12 ring-1 ring-brand/25' : 'hover:bg-surface-hover'}`}
+                              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-left transition-colors ${c.id === agent.id ? 'bg-brand/12 ring-1 ring-brand/25' : 'hover:bg-surface-hover'}`}
                             >
-                              <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[12px] font-bold text-white shrink-0 overflow-hidden" style={c.color ? { background: c.color } : undefined}>
-                                {c.avatarUrl ? <img src={c.avatarUrl} alt="" className="w-full h-full object-cover" /> : c.name[0]}
-                              </span>
                               <div className="flex-1 min-w-0">
                                 <div className="text-[13px] font-semibold text-creme flex items-center gap-1 truncate">{c.name}{c.isSupervisor && <Crown size={11} className="text-gold-bright shrink-0" />}</div>
                               </div>
