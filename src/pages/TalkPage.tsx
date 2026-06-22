@@ -1288,8 +1288,9 @@ export function TalkPage() {
                             { icon: RefreshCw, label: 'Refazer', on: () => regenerate(mi), gold: false },
                             { icon: ListChecks, label: 'Virar demanda', on: () => msgToDemand(m.content), gold: false },
                           ].map((a) => (
-                            <button key={a.label} onClick={a.on} title={a.label} className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-colors ${a.gold ? 'bg-surface-3 border-gold/30 text-gold-bright hover:bg-gold/10' : 'bg-surface-3 border-default text-creme-faint hover:text-creme hover:bg-surface-hover'}`}>
-                              <a.icon size={13} />
+                            <button key={a.label} onClick={a.on} title={a.label} className={`group/act h-7 px-1.5 rounded-lg border flex items-center transition-all ${a.gold ? 'bg-surface-3 border-gold/30 text-gold-bright hover:bg-gold/10' : 'bg-surface-3 border-default text-creme-faint hover:text-creme hover:bg-surface-hover'}`}>
+                              <a.icon size={13} className="shrink-0" />
+                              <span className="max-w-0 group-hover/act:max-w-[150px] group-hover/act:ml-1.5 overflow-hidden whitespace-nowrap text-[11px] font-semibold transition-all duration-200">{a.label}</span>
                             </button>
                           ))}
                         </div>
