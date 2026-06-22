@@ -26,6 +26,20 @@ export function Sidebar() {
     .map((g) => ({ ...g, items: allowedPaths ? g.items.filter((i) => allowedPaths.has(i.path)) : g.items }))
     .filter((g) => g.items.length > 0);
 
+  // Seções colapsáveis — só as principais abertas por padrão (são ~45 itens).
+  // Estado persistido; o grupo da rota ativa abre sempre.
+  const DEFAULT_OPEN = ['Principal', 'Cérebro', 'Operação'];
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    try { const s = localStorage.getItem('thribus.navGroups'); if (s) return new Set<string>(JSON.parse(s)); } catch { /* noop */ }
+    return new Set(DEFAULT_OPEN);
+  });
+  const toggleGroup = (g: string) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(g)) next.delete(g); else next.add(g);
+    try { localStorage.setItem('thribus.navGroups', JSON.stringify([...next])); } catch { /* noop */ }
+    return next;
+  });
+
   return (
     <aside className={clsx('glass-panel fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-50 transition-[width] duration-200', collapsed ? 'w-[64px]' : 'w-[244px]')}>
       {/* Brand + sino + recolher */}
@@ -58,14 +72,22 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 p-2.5 overflow-y-auto">
-        {groups.map((group) => (
-          <div key={group.group} className={collapsed ? 'mb-2' : 'mb-5'}>
+        {groups.map((group) => {
+          const hasActive = group.items.some((i) => i.path === location.pathname);
+          const expanded = collapsed || openGroups.has(group.group) || hasActive;
+          return (
+          <div key={group.group} className={collapsed ? 'mb-2' : 'mb-1.5'}>
             {!collapsed && (
-              <div className="text-[11.5px] font-bold uppercase tracking-widest text-creme-faint px-2.5 mb-1.5">
-                {group.group}
-              </div>
+              <button
+                onClick={() => toggleGroup(group.group)}
+                className="w-full flex items-center gap-1 px-2 py-1 mb-0.5 rounded-md text-[11px] font-bold uppercase tracking-widest text-creme-faint hover:text-creme-mute hover:bg-surface-hover/50 transition-colors"
+              >
+                <ChevronRight size={12} className={clsx('shrink-0 transition-transform', expanded && 'rotate-90')} />
+                <span className="flex-1 text-left truncate">{group.group}</span>
+                {!expanded && <span className="shrink-0 text-[10px] font-mono text-creme-faint/60">{group.items.length}</span>}
+              </button>
             )}
-            {group.items.map((item) => {
+            {expanded && group.items.map((item) => {
               const isActive = location.pathname === item.path;
               const Icon = item.icon;
               return (
@@ -95,7 +117,8 @@ export function Sidebar() {
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </nav>
 
       {/* Footer — User menu */}
