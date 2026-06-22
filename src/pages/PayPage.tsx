@@ -135,10 +135,10 @@ function BrandHeader() {
   return (
     <header className="mb-7 flex items-center justify-between">
       <div className="leading-tight">
-        <div className="text-[19px] font-extrabold tracking-tight" style={{ color: C.sageInk }}>
-          Thribus<span style={{ color: C.ink }}> Tech</span>
+        <div className="text-[20px] font-extrabold tracking-tight" style={{ color: C.ink }}>
+          <span style={{ color: C.sage }}>T</span>hribus Tech
         </div>
-        <div className="text-[11.5px]" style={{ color: C.ink3 }}>Colaboradores Digitais &amp; AI</div>
+        <div className="text-[11.5px]" style={{ color: C.ink3 }}>Soluções Corporativas</div>
       </div>
       <div className="hidden items-center gap-1.5 text-[11.5px] sm:flex" style={{ color: C.ink3 }}>
         <ShieldCheck size={14} style={{ color: C.sage }} />
