@@ -129,6 +129,8 @@ interface NeuralSphereProps {
   intensity?: number;
   /** Escala a distância de conexão → <1 = menos linhas (esfera pequena). */
   connectScale?: number;
+  /** Velocidade dos pulsos sinápticos (1 = padrão; <1 = mais lento/contemplativo). */
+  pulseSpeed?: number;
 }
 
 export function NeuralSphere({
@@ -139,6 +141,7 @@ export function NeuralSphere({
   ambient = true,
   intensity = 0,
   connectScale = 1,
+  pulseSpeed = 1,
 }: NeuralSphereProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const intensityRef = useRef(intensity);
@@ -200,9 +203,12 @@ export function NeuralSphere({
       travSpeed[k] = 0.5 + Math.random() * 0.9;
     };
     for (let k = 0; k < TRAV_COUNT; k++) { pickEdge(k); travT[k] = Math.random(); }
-    // Cada pulso = cabeça + rastro de cometa (TAIL). ~40% são DOURADOS, resto Sage.
-    const TAIL = 4;
-    const SEGS = TAIL + 1;
+    // Cada pulso = rastro CONTÍNUO de pontos macios SOBREPOSTOS (espaçamento menor
+    // que o raio do ponto → sem gaps; lê como um traço glow, não fileira de bolinhas).
+    // ~40% DOURADOS, resto Sage. Cabeça (amostra 0) = mais forte; vai esmaecendo.
+    const TAIL = 22;           // muitas amostras densas → streak contínuo
+    const SEGS = TAIL + 1;     // inclui a cabeça (amostra 0)
+    const TAIL_LAG = 0.016;    // espaçamento pequeno ao longo da aresta → pontos colam
     const TRAV_TOTAL = TRAV_COUNT * SEGS;
     const travArr = new Float32Array(TRAV_TOTAL * 3);
     const travCol = new Float32Array(TRAV_TOTAL * 3);
@@ -212,7 +218,7 @@ export function NeuralSphere({
     for (let k = 0; k < TRAV_COUNT; k++) {
       const c = (k % 5) < 2 ? goldPulse : sagePulse; // ~40% dourados
       for (let s = 0; s < SEGS; s++) {
-        const fade = 1 - s / SEGS; // cabeça brilha, rastro escurece
+        const fade = 1 - s / SEGS; // cabeça brilha, rastro esmaece suave
         tmpC.copy(c).multiplyScalar(fade * fade);
         const idx = (k * SEGS + s) * 3;
         travCol[idx] = tmpC.r; travCol[idx + 1] = tmpC.g; travCol[idx + 2] = tmpC.b;
@@ -221,7 +227,7 @@ export function NeuralSphere({
     const travGeo = new THREE.BufferGeometry();
     travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
     travGeo.setAttribute('color', new THREE.BufferAttribute(travCol, 3));
-    const travMat = new THREE.PointsMaterial({ size: 0.16, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
+    const travMat = new THREE.PointsMaterial({ size: 0.13, map: dotTex, vertexColors: true, transparent: true, opacity: 0.95, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
     const travPoints = new THREE.Points(travGeo, travMat);
     outerGroup.add(travPoints);
     const easeTrav = (x: number) => x * x * (3 - 2 * x);
@@ -389,8 +395,8 @@ export function NeuralSphere({
       updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now, waveBoost, null);
 
       // Pulsos viajando pelas linhas (lerp nó A→B; ao chegar, parte do B). Cada um
-      // arrasta um rastro de cometa (TAIL segmentos atrás da cabeça).
-      const travDt = 0.016 * (1 + I * 0.8); // mais rápido quando ativo (voz)
+      // deixa um rastro CONTÍNUO (linha) que esmaece atrás da cabeça.
+      const travDt = 0.016 * pulseSpeed * (1 + I * 0.8); // pulseSpeed calibra por instância; +rápido na voz
       for (let k = 0; k < TRAV_COUNT; k++) {
         travT[k] += travSpeed[k] * travDt;
         if (travT[k] >= 1) {
@@ -404,7 +410,7 @@ export function NeuralSphere({
         const b = outerShell.positions[travB[k]];
         const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
         for (let s = 0; s < SEGS; s++) {
-          const e = easeTrav(Math.max(0, travT[k] - s * 0.07));
+          const e = easeTrav(Math.max(0, travT[k] - s * TAIL_LAG));
           const idx = (k * SEGS + s) * 3;
           travArr[idx] = a.x + dx * e;
           travArr[idx + 1] = a.y + dy * e;
@@ -412,7 +418,7 @@ export function NeuralSphere({
         }
       }
       travGeo.attributes.position.needsUpdate = true;
-      travMat.opacity = (isLight ? 0.9 : 0.85) + I * 0.4; // normal blending no claro pede mais corpo
+      travMat.opacity = (isLight ? 0.92 : 0.88) + I * 0.4; // normal blending no claro pede mais corpo
 
       // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;
