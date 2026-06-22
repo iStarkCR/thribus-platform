@@ -4,7 +4,7 @@ import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
-  PanelLeftClose, PanelLeft, GitBranch,
+  PanelLeftClose, PanelLeft, GitBranch, Activity, AlertTriangle,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -20,7 +20,8 @@ import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/sh
 import { type RunEvent } from '@/services/runEvents';
 import { listMessages, sendMessage, cancelMessage, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
-import { createDemand } from '@/services/demands';
+import { createDemand, listDemands } from '@/services/demands';
+import { listStatusComponents, platformConfigured } from '@/services/platform';
 import { RoutineModal } from '@/components/routines/RoutineModal';
 import { SessionUsageModal } from '@/components/chat/SessionUsageModal';
 import { SessionContextMenu } from '@/components/chat/SessionContextMenu';
@@ -44,6 +45,8 @@ const BUKOWISKI_ID = 'bukowiski-thribus';
  */
 export function TalkPage() {
   const agents = useAppStore((s) => s.agents);
+  const metrics = useAppStore((s) => s.metrics);
+  const escalations = useAppStore((s) => s.escalations);
   const setVoiceModeActive = useAppStore((s) => s.setVoiceModeActive);
   const setSttBusy = useAppStore((s) => s.setSttBusy);
   const { user } = useSession();
@@ -369,6 +372,31 @@ export function TalkPage() {
   // Só mostra a CONVERSA quando o usuário foi explicitamente pra ela (view='chat'),
   // há sessão ativa E ela tem mensagens. Senão o orbe é a tela — nunca branco/fantasma.
   const inChat = view === 'chat' && activeId != null && messages.length > 0;
+  // Pulse/Atenção da tela inicial (dados reais, carregados async ao entrar no orbe).
+  const [orbDemands, setOrbDemands] = useState<number | null>(null);
+  const [orbSystems, setOrbSystems] = useState<{ ok: number; total: number; issues: { name: string; status: string }[] } | null>(null);
+  useEffect(() => {
+    if (inChat) return;
+    let alive = true;
+    (async () => {
+      if (userId) {
+        try {
+          const ds = await listDemands(userId);
+          if (alive) setOrbDemands(ds.filter((d) => d.status === 'todo' || d.status === 'doing' || d.status === 'waiting').length);
+        } catch { /* silencioso */ }
+      }
+      if (platformConfigured) {
+        try {
+          const comps = await listStatusComponents();
+          if (alive && comps.length) {
+            const issues = comps.filter((c) => c.status !== 'operational').map((c) => ({ name: c.name, status: c.status }));
+            setOrbSystems({ ok: comps.length - issues.length, total: comps.length, issues });
+          }
+        } catch { /* silencioso */ }
+      }
+    })();
+    return () => { alive = false; };
+  }, [inChat, userId]);
   const waiting =
     messages.length > 0 &&
     messages[messages.length - 1].role === 'user' &&
@@ -1101,19 +1129,50 @@ export function TalkPage() {
               <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
                 {/* Começo rápido — chips do COO (caixa/infra/demandas) SÓ pro Bukowiski (supervisor).
                     Pros outros colaboradores não faz sentido — fica só a barra. */}
+                {/* Atenção agora — só aparece quando há algo real pra ver (escalações + sistemas com problema) */}
+                {agent.isSupervisor && (() => {
+                  const prio: Record<string, string> = { critical: '#ef4444', high: '#f97316', medium: '#f59e0b', low: '#64748b' };
+                  const items: { color: string; text: string; on: () => void }[] = [
+                    ...escalations.map((e) => ({ color: prio[e.priority] ?? '#f59e0b', text: `Escalação · ${e.agentName}: ${e.reason}`, on: () => send(`Me ajuda a resolver a escalação do ${e.agentName}: ${e.reason}`) })),
+                    ...(orbSystems?.issues ?? []).map((s) => ({ color: '#ef4444', text: `Sistema · ${s.name} (${s.status.replace(/_/g, ' ')})`, on: () => navigate('/status') })),
+                  ];
+                  if (items.length === 0) return null;
+                  return (
+                    <div className="w-full mb-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3 text-left backdrop-blur-md shadow-[0_12px_30px_-18px_rgba(0,0,0,0.7)]">
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-300/90 mb-2">
+                        <AlertTriangle size={12} /> Atenção agora · {items.length}
+                      </div>
+                      <div className="space-y-1.5">
+                        {items.slice(0, 4).map((a, i) => (
+                          <button key={i} onClick={a.on} className="group/at w-full flex items-center gap-2 text-[13px] text-creme-dim hover:text-creme transition-colors text-left">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: a.color }} />
+                            <span className="flex-1 min-w-0 truncate">{a.text}</span>
+                            <ChevronRight size={13} className="text-creme-faint shrink-0 group-hover/at:translate-x-0.5 transition-transform" />
+                          </button>
+                        ))}
+                        {items.length > 4 && <div className="text-[11.5px] text-creme-faint pl-3.5">+{items.length - 4} mais</div>}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Pulse do dia — KPIs reais (store + async), clicáveis. Só pro supervisor. */}
                 {agent.isSupervisor && (
-                  <div className="flex items-center justify-center gap-2.5 flex-wrap mb-5">
+                  <div className="flex items-center justify-center gap-2 flex-wrap mb-5">
                     {[
-                      { icon: BarChart3, label: 'Caixa de hoje', send: 'Como tá o caixa hoje?' },
-                      { icon: Cog, label: 'Status da infra', send: 'Status da infra' },
-                      { icon: ListChecks, label: 'Demandas', send: 'Demandas em aberto' },
-                    ].map((s) => (
+                      { icon: Activity, value: String(metrics?.activeAgents ?? agents.filter((a) => a.status === 'online').length), label: 'online', on: () => send('Como tá o time agora? Quem está online e com o quê.') },
+                      { icon: BarChart3, value: String(metrics?.totalToday ?? 0), label: 'hoje', on: () => send('Resumo do que rolou hoje até agora.') },
+                      { icon: ListChecks, value: orbDemands == null ? '—' : String(orbDemands), label: 'demandas', on: () => navigate('/demands') },
+                      { icon: Cog, value: orbSystems ? `${orbSystems.ok}/${orbSystems.total}` : '—', label: 'sistemas', on: () => navigate('/status') },
+                    ].map((k) => (
                       <button
-                        key={s.label}
-                        onClick={() => send(s.send)}
-                        className="flex items-center gap-2 pl-3 pr-3.5 py-2.5 rounded-2xl bg-surface-2/80 border border-default hover:border-brand/50 hover:bg-surface-hover text-[14px] font-semibold text-creme-dim hover:text-creme transition-all shadow-[0_10px_28px_-18px_rgba(0,0,0,0.7)]"
+                        key={k.label}
+                        onClick={k.on}
+                        className="flex items-center gap-2 pl-3 pr-3.5 py-2 rounded-2xl bg-surface-2/80 border border-default hover:border-brand/50 hover:bg-surface-hover transition-all shadow-[0_10px_28px_-18px_rgba(0,0,0,0.7)]"
                       >
-                        <s.icon size={16} className="text-brand-bright shrink-0" /> {s.label}
+                        <k.icon size={15} className="text-brand-bright shrink-0" />
+                        <span className="text-[15px] font-bold text-creme tabular-nums leading-none">{k.value}</span>
+                        <span className="text-[12.5px] font-medium text-creme-mute leading-none">{k.label}</span>
                       </button>
                     ))}
                   </div>
@@ -1164,8 +1223,8 @@ export function TalkPage() {
                           <ChevronDown size={12} className={`text-creme-faint transition-transform ${histOpen ? 'rotate-180' : ''}`} />
                         </button>
                         <span className="w-px h-3.5 bg-creme/15" />
-                        <button onClick={() => enterConversation(active && messages.length > 0 ? active.id : last.id)} className="flex items-center gap-1.5 text-brand-bright font-semibold hover:text-brand transition-colors">
-                          <ChevronRight size={13} /> retornar ao chat
+                        <button onClick={() => enterConversation(active && messages.length > 0 ? active.id : last.id)} className="flex items-center gap-1.5 text-brand-bright font-semibold hover:text-brand transition-colors min-w-0 max-w-[280px]">
+                          <ChevronRight size={13} className="shrink-0" /> <span className="truncate">{last.title ? `Retomar · ${last.title}` : 'retornar ao chat'}</span>
                         </button>
                       </div>
                       {histOpen && (
