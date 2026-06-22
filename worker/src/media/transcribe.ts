@@ -8,6 +8,7 @@
  */
 
 import OpenAI from 'openai';
+import { whisperCostUsd, logAuxCost } from '../llm/cost.js';
 
 let cachedClient: OpenAI | null = null;
 let cachedKey: string | null = null;
@@ -87,6 +88,8 @@ export async function transcribeAudio(
 
     const text = (result.text ?? '').trim();
     const ms = Date.now() - start;
+    const estSeconds = text.length * 0.08; // estimativa: ~750 chars/min de fala
+    logAuxCost('whisper', 'whisper-1', whisperCostUsd(estSeconds), { chars: text.length, estSeconds: Math.round(estSeconds) });
     console.log(`[transcribe] ok ${sourceLabel} durationMs=${ms} chars=${text.length}`);
     return text || null;
   } catch (err) {

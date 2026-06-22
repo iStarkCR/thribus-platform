@@ -8,6 +8,7 @@
  */
 
 import OpenAI from 'openai';
+import { ttsCostUsd, logAuxCost } from '../llm/cost.js';
 
 let cachedClient: OpenAI | null = null;
 let cachedKey: string | null = null;
@@ -56,6 +57,8 @@ export async function generateSpeech(
     const arrayBuffer = await response.arrayBuffer();
     const buf = Buffer.from(arrayBuffer);
     const ms = Date.now() - start;
+    const ttsModel = opts.model ?? 'tts-1';
+    logAuxCost('tts', ttsModel, ttsCostUsd(ttsModel, text.length), { chars: text.length, ms });
     console.log(`[tts] ok durationMs=${ms} chars=${text.length} bytes=${buf.length}`);
     return buf;
   } catch (err) {

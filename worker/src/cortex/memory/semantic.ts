@@ -10,6 +10,7 @@
  */
 
 import { supabase } from '../../db/supabase.js';
+import { embeddingCostUsd, logAuxCost } from '../../llm/cost.js';
 
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMS = 1536;
@@ -49,6 +50,8 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
       return null;
     }
     const json = (await resp.json()) as OpenAiEmbeddingResponse;
+    const embTokens = Math.ceil(text.length / 4); // estimativa (~4 chars/token)
+    logAuxCost('embedding', EMBEDDING_MODEL, embeddingCostUsd(EMBEDDING_MODEL, embTokens), { tokens: embTokens });
     return json.data[0]?.embedding ?? null;
   } catch (err) {
     console.warn('[cortex.semantic] generateEmbedding ex:', (err as Error).message);

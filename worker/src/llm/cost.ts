@@ -108,3 +108,42 @@ export function calculateCost(usage: LLMResponse['usage'], model: string): numbe
 export function accumulateCost(prev: number, usage: LLMResponse['usage'], model: string): number {
   return prev + calculateCost(usage, model);
 }
+
+// ─── Custo de ÁUDIO + EMBEDDINGS (não-chat) ──────────────────────────────────
+// Hoje NÃO entram no executions.cost_usd (só modelos de chat entram). Estas
+// funções calculam o custo dessas chamadas pra dar VISIBILIDADE (log estruturado
+// `[aux-cost]`). Pricing OpenAI aproximado — confira no dashboard. gpt-4o-mini-tts
+// é cobrado por token de áudio; usamos estimativa por caractere (~= tts-1).
+const AUX_PRICING: Record<string, { perMChars?: number; perMTokens?: number; perMinute?: number }> = {
+  'whisper-1':              { perMinute: 0.006 },
+  'tts-1':                  { perMChars: 15 },
+  'tts-1-hd':               { perMChars: 30 },
+  'gpt-4o-mini-tts':        { perMChars: 15 }, // estimativa (cobrado por token de áudio)
+  'text-embedding-3-small': { perMTokens: 0.02 },
+  'text-embedding-3-large': { perMTokens: 0.13 },
+};
+
+/** Custo USD de uma síntese de voz (TTS) — por caractere de entrada. */
+export function ttsCostUsd(model: string, chars: number): number {
+  const p = AUX_PRICING[model];
+  return p?.perMChars ? (Math.max(0, chars) / TOKENS_PER_M) * p.perMChars : 0;
+}
+/** Custo USD de uma transcrição (Whisper) — por minuto de áudio. */
+export function whisperCostUsd(audioSeconds: number): number {
+  return (Math.max(0, audioSeconds) / 60) * (AUX_PRICING['whisper-1'].perMinute ?? 0.006);
+}
+/** Custo USD de um embedding — por token. */
+export function embeddingCostUsd(model: string, tokens: number): number {
+  const p = AUX_PRICING[model];
+  return p?.perMTokens ? (Math.max(0, tokens) / TOKENS_PER_M) * p.perMTokens : 0;
+}
+/** Loga custo de voz/embeddings de forma estruturada e greppável: `[aux-cost] ...`. */
+export function logAuxCost(
+  kind: 'tts' | 'whisper' | 'embedding',
+  model: string,
+  costUsd: number,
+  meta: Record<string, string | number> = {},
+): void {
+  const extra = Object.entries(meta).map(([k, v]) => `${k}=${v}`).join(' ');
+  console.log(`[aux-cost] kind=${kind} model=${model} costUsd=${costUsd.toFixed(6)} ${extra}`.trimEnd());
+}
