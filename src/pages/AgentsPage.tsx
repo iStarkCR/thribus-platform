@@ -1,14 +1,17 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Plus, Search, Building2 } from 'lucide-react';
+import { clsx } from 'clsx';
+import { Bot, Plus, Search, Building2, Layers, Users, ChevronDown } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { AgentCard } from '@/components/agents/AgentCard';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
 import { NewAgentModal } from '@/components/agents/NewAgentModal';
 import type { Agent, Sector } from '@/types';
 
+type GroupBy = 'empresa' | 'setor' | 'colaborador';
+type SectorLike = Pick<Sector, 'id' | 'name'> & Partial<Pick<Sector, 'color' | 'sortOrder'>>;
 interface SectorGroup {
-  sector: Sector | null;
+  sector: SectorLike | null;
   agents: Agent[];
 }
 interface CompanyGroup {
@@ -18,6 +21,8 @@ interface CompanyGroup {
   sectorGroups: SectorGroup[];
 }
 
+const LEAD_KEY = '__leadership__';
+
 export function AgentsPage() {
   const agents = useAppStore((s) => s.agents);
   const sectors = useAppStore((s) => s.sectors);
@@ -25,9 +30,22 @@ export function AgentsPage() {
   const [selected, setSelected] = useState<Agent | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
+  const [groupBy, setGroupBy] = useState<GroupBy>('empresa');
+  // Seções recolhidas (em memória; default tudo aberto).
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const isOpen = (k: string) => !collapsed.has(k);
+  const toggle = (k: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
 
   // Clicar no colaborador → abre o chat com ele. Engrenagem → config.
   const goToChat = (a: Agent) => navigate(`/talk?agent=${a.id}`);
+
+  const sectorById = useMemo(() => new Map(sectors.map((s) => [s.id, s])), [sectors]);
 
   // Filtra por busca
   const filtered = useMemo(() => {
@@ -44,7 +62,6 @@ export function AgentsPage() {
 
   // Organograma: empresa (client) → liderança (supervisores) → setores → colaboradores.
   const companies = useMemo<CompanyGroup[]>(() => {
-    const sectorById = new Map(sectors.map((s) => [s.id, s]));
     const byClient = new Map<string, { name: string; agents: Agent[] }>();
     for (const a of filtered) {
       const raw = a.client || '— sem cliente —';
@@ -72,7 +89,57 @@ export function AgentsPage() {
           });
         return { name: c.name, count: c.agents.length, supervisors, sectorGroups };
       });
-  }, [filtered, sectors]);
+  }, [filtered, sectorById]);
+
+  // Visão "por setor": agrupa todos os filtrados por setor (lideranças sem setor → "Liderança").
+  const sectorView = useMemo<SectorGroup[]>(() => {
+    const map = new Map<string, Agent[]>();
+    for (const a of filtered) {
+      const k = a.isSupervisor && !a.sectorId ? LEAD_KEY : a.sectorId ?? '__none__';
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(a);
+    }
+    return Array.from(map.entries())
+      .map(([sid, list]) => ({
+        sector:
+          sid === LEAD_KEY
+            ? ({ id: LEAD_KEY, name: 'Liderança' } as SectorLike)
+            : sectorById.get(sid) ?? null,
+        agents: list.slice().sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .sort((a, b) => {
+        if (a.sector?.id === LEAD_KEY) return -1;
+        if (b.sector?.id === LEAD_KEY) return 1;
+        const ao = a.sector?.sortOrder ?? 999;
+        const bo = b.sector?.sortOrder ?? 999;
+        return ao !== bo ? ao - bo : (a.sector?.name ?? 'zzz').localeCompare(b.sector?.name ?? 'zzz');
+      });
+  }, [filtered, sectorById]);
+
+  // Visão "por colaborador": lista plana, ordem alfabética.
+  const peopleView = useMemo(() => filtered.slice().sort((a, b) => a.name.localeCompare(b.name)), [filtered]);
+
+  const renderSector = (key: string, sector: SectorLike | null, list: Agent[]) => {
+    const open = isOpen(key);
+    const dot = sector?.color ?? 'rgb(var(--creme-faint))';
+    return (
+      <div key={key}>
+        <button onClick={() => toggle(key)} className="w-full flex items-center gap-2 mb-2.5 group/sec">
+          <ChevronDown size={14} className={clsx('text-creme-faint shrink-0 transition-transform', !open && '-rotate-90')} />
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: dot, boxShadow: `0 0 8px ${sector?.color ?? 'transparent'}` }} />
+          <span className="text-[11.5px] font-bold uppercase tracking-[0.1em] text-creme-mute group-hover/sec:text-creme transition-colors">{sector?.name ?? 'Sem setor'}</span>
+          <span className="text-[10.5px] font-bold text-creme-faint bg-creme/[0.04] px-1.5 py-px rounded-full">{list.length}</span>
+        </button>
+        {open && (
+          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+            {list.map((a) => (
+              <AgentCard key={a.id} agent={a} showFullInfo accent={sector?.color} onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -96,17 +163,34 @@ export function AgentsPage() {
         </button>
       </div>
 
-      {/* Busca */}
+      {/* Busca + agrupar por */}
       {agents.length > 0 && (
-        <div className="relative mb-5 max-w-[440px]">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-creme-faint" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, cliente, setor ou canal…"
-            className="glass-panel w-full bg-surface-2 border border-default rounded-xl pl-10 pr-3 py-2.5 text-[13.5px] text-creme placeholder-creme-faint outline-none transition-colors focus:border-brand"
-          />
+        <div className="flex items-center gap-3 mb-5 flex-wrap">
+          <div className="relative flex-1 min-w-[220px] max-w-[440px]">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-creme-faint" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome, cliente, setor ou canal…"
+              className="glass-panel w-full bg-surface-2 border border-default rounded-xl pl-10 pr-3 py-2.5 text-[13.5px] text-creme placeholder-creme-faint outline-none transition-colors focus:border-brand"
+            />
+          </div>
+          <div className="flex items-center gap-0.5 p-1 rounded-xl bg-surface-2 border border-default shrink-0">
+            {([['empresa', 'Empresa', Building2], ['setor', 'Setor', Layers], ['colaborador', 'Colaborador', Users]] as const).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                onClick={() => setGroupBy(key)}
+                title={`Agrupar por ${label.toLowerCase()}`}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold transition-colors',
+                  groupBy === key ? 'bg-brand/15 text-brand-bright' : 'text-creme-mute hover:text-creme hover:bg-surface-hover',
+                )}
+              >
+                <Icon size={14} /> {label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -127,46 +211,54 @@ export function AgentsPage() {
         <div className="glass-panel bg-surface-2 border border-default rounded-2xl px-8 py-12 text-center">
           <p className="text-[13.5px] text-creme-mute">Nenhum colaborador corresponde a "{search}"</p>
         </div>
-      ) : (
-        <div className="space-y-10">
-          {companies.map((company) => (
-            <div key={company.name.toLowerCase()}>
-              {/* Empresa */}
-              <div className="flex items-center gap-2.5 mb-4">
-                <Building2 size={16} className="text-brand-bright shrink-0" />
-                <span className="text-[15px] font-bold tracking-tight text-creme">{company.name}</span>
-                <span className="text-[11px] font-bold text-creme-mute bg-creme/[0.05] px-2 py-0.5 rounded-full">{company.count}</span>
-                <div className="flex-1 h-px bg-gradient-to-r from-default to-transparent ml-1" />
-              </div>
-
-              {/* Liderança (supervisores) — destaque, largura total */}
-              {company.supervisors.length > 0 && (
-                <div className="grid grid-cols-1 gap-3 mb-5">
-                  {company.supervisors.map((a) => (
-                    <AgentCard key={a.id} agent={a} showFullInfo onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
-                  ))}
-                </div>
-              )}
-
-              {/* Setores */}
-              <div className="space-y-5 pl-0.5">
-                {company.sectorGroups.map(({ sector, agents: list }) => (
-                  <div key={sector?.id ?? '__none__'}>
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <span className="w-2 h-2 rounded-full shrink-0 ring-2 ring-offset-0" style={{ backgroundColor: sector?.color ?? 'rgb(var(--creme-faint))', boxShadow: `0 0 8px ${sector?.color ?? 'transparent'}` }} />
-                      <span className="text-[11.5px] font-bold uppercase tracking-[0.1em] text-creme-mute">{sector?.name ?? 'Sem setor'}</span>
-                      <span className="text-[10.5px] font-bold text-creme-faint bg-creme/[0.04] px-1.5 py-px rounded-full">{list.length}</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
-                      {list.map((a) => (
-                        <AgentCard key={a.id} agent={a} showFullInfo accent={sector?.color} onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+      ) : groupBy === 'colaborador' ? (
+        // ─── Plano: todos os colaboradores ───────────────────────────────────
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
+          {peopleView.map((a) => (
+            <AgentCard key={a.id} agent={a} showFullInfo accent={a.sectorId ? sectorById.get(a.sectorId)?.color : undefined} onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
           ))}
+        </div>
+      ) : groupBy === 'setor' ? (
+        // ─── Por setor (todas as empresas juntas) ────────────────────────────
+        <div className="space-y-6">
+          {sectorView.map(({ sector, agents: list }) => renderSector(`setor:${sector?.id ?? '__none__'}`, sector, list))}
+        </div>
+      ) : (
+        // ─── Por empresa → liderança → setores ───────────────────────────────
+        <div className="space-y-10">
+          {companies.map((company) => {
+            const ckey = `company:${company.name.toLowerCase()}`;
+            const open = isOpen(ckey);
+            return (
+              <div key={ckey}>
+                <button onClick={() => toggle(ckey)} className="w-full flex items-center gap-2.5 mb-4 group/co">
+                  <ChevronDown size={16} className={clsx('text-creme-faint shrink-0 transition-transform', !open && '-rotate-90')} />
+                  <Building2 size={16} className="text-brand-bright shrink-0" />
+                  <span className="text-[15px] font-bold tracking-tight text-creme">{company.name}</span>
+                  <span className="text-[11px] font-bold text-creme-mute bg-creme/[0.05] px-2 py-0.5 rounded-full">{company.count}</span>
+                  <div className="flex-1 h-px bg-gradient-to-r from-default to-transparent ml-1" />
+                </button>
+
+                {open && (
+                  <>
+                    {/* Liderança (supervisores) — destaque, largura total */}
+                    {company.supervisors.length > 0 && (
+                      <div className="grid grid-cols-1 gap-3 mb-5">
+                        {company.supervisors.map((a) => (
+                          <AgentCard key={a.id} agent={a} showFullInfo onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Setores */}
+                    <div className="space-y-5 pl-0.5">
+                      {company.sectorGroups.map(({ sector, agents: list }) => renderSector(`${ckey}:${sector?.id ?? '__none__'}`, sector, list))}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
