@@ -215,7 +215,7 @@ export function NeuralSphere({
     const travAlpha = new Float32Array(TRAV_TOTAL);
     const goldPulse = new THREE.Color('#e8b93a'); // dourado vivo
     const bluePulse = new THREE.Color('#5aa6ff'); // azul vivo
-    const isGoldPulse = (k: number) => k % 3 !== 0; // ~67% dourado, ~33% azul
+    const isGoldPulse = (_k: number) => true; // todos os pulsos dourados
     for (let k = 0; k < TRAV_COUNT; k++) {
       const c = isGoldPulse(k) ? goldPulse : bluePulse;
       for (let s = 0; s < SEGS; s++) {
