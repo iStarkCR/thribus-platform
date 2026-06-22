@@ -47,8 +47,6 @@ export function TalkPage() {
   const setVoiceModeActive = useAppStore((s) => s.setVoiceModeActive);
   const setSttBusy = useAppStore((s) => s.setSttBusy);
   const { user } = useSession();
-  const userName = (user?.user_metadata?.name as string | undefined) ?? user?.email?.split('@')[0] ?? 'Você';
-  const userInitials = userName.split(/\s+/).map((n) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'VC';
   const userId = user?.id ?? null;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -1237,12 +1235,9 @@ export function TalkPage() {
                           </div>
                         )}
                       </div>
-                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-dim to-brand text-white flex items-center justify-center text-[12px] font-bold shrink-0 ring-1 ring-brand/25 mt-0.5" title={userName}>
-                        {userInitials}
-                      </div>
                     </div>
                     {/* horário + ações ao passar o mouse */}
-                    <div className="flex items-center gap-1 mr-[42px] opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 mr-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       {time && <span className="text-[10.5px] text-creme-faint mr-1">{time}</span>}
                       {[
                         { icon: Pencil, label: 'Editar & reenviar', on: () => { setInput(m.content); useAppStore.getState().addToast('Mensagem no campo — ajuste e reenvie', 'green'); } },
@@ -1268,10 +1263,7 @@ export function TalkPage() {
                   </div>
                   );
                 })() : (
-                  <div key={m.id} className="group flex gap-3 max-w-[88%]">
-                    <div className="w-8 h-8 rounded-xl bg-brand/15 text-brand-bright flex items-center justify-center text-[13px] font-bold shrink-0 mt-0.5 ring-1 ring-brand/20">
-                      {agent.name.charAt(0).toUpperCase()}
-                    </div>
+                  <div key={m.id} className="group flex max-w-[88%]">
                     <div className="min-w-0 flex-1">
                       <div className="text-[11px] font-semibold text-creme-mute mb-1.5 tracking-wide">{agent.name}</div>
                       <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[15px] leading-[1.72] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
@@ -1310,10 +1302,7 @@ export function TalkPage() {
                 ),
               )}
               {waiting && (
-                <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-brand/15 text-brand-bright flex items-center justify-center text-[13px] font-bold shrink-0 ring-1 ring-brand/20">
-                    {agent.name.charAt(0).toUpperCase()}
-                  </div>
+                <div className="flex">
                   <div className="flex items-center gap-1.5 bg-surface-2 border border-default rounded-[20px] rounded-tl-md px-4 py-3.5">
                     <span className="typing-dot" /><span className="typing-dot" style={{ animationDelay: '.16s' }} /><span className="typing-dot" style={{ animationDelay: '.32s' }} />
                     <span className="text-[12.5px] text-creme-mute ml-1.5">{agent.name} está digitando…</span>
