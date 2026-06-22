@@ -76,6 +76,7 @@ export interface AsaasPublicCharge {
   pixCopyPaste?: string;
   buyerName: string;
   buyerEmail?: string;
+  nf?: { status: string; number?: string; pdfUrl?: string; xmlUrl?: string };
 }
 
 async function call<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {

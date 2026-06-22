@@ -165,6 +165,14 @@ serve(async (req: Request) => {
           buyerEmail = cust.email;
         } catch (_) { /* segue sem dados do pagador */ }
 
+        // Nota fiscal (NFS-e) vinculada à cobrança — quando emitida
+        let nf: { status: string; number?: string; pdfUrl?: string; xmlUrl?: string } | undefined;
+        try {
+          const inv = await asaasCall<AsaasListResp<{ status: string; number?: string; pdfUrl?: string; xmlUrl?: string }>>(`/invoices?payment=${id}&limit=1`);
+          const first = inv.data?.[0];
+          if (first) nf = { status: first.status, number: first.number, pdfUrl: first.pdfUrl, xmlUrl: first.xmlUrl };
+        } catch (_) { /* sem NF — segue */ }
+
         return ok({
           id: c.id,
           value: c.value,
@@ -184,6 +192,7 @@ serve(async (req: Request) => {
           pixCopyPaste,
           buyerName,
           buyerEmail,
+          nf,
         });
       }
 
