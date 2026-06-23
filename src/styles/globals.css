@@ -32,11 +32,11 @@
     --gold-bright: 226 198 132; /* #e2c684 */
     --gold-dim:    150 120 58;  /* #96783a */
 
-    /* Creme — texto e foreground */
-    --creme:       237 232 220; /* #EDE8DC — texto primário */
-    --creme-dim:   196 191 178; /* #c4bfb2 — texto secundário */
-    --creme-mute:  138 133 122; /* #8a857a — texto muted */
-    --creme-faint:  94  90  82; /* #5e5a52 — texto faint */
+    /* Creme — texto e foreground (clareados pra contraste no fundo escuro) */
+    --creme:       240 236 226; /* #f0ece2 — texto primário */
+    --creme-dim:   205 200 188; /* #cdc8bc — texto secundário */
+    --creme-mute:  166 160 148; /* #a6a094 — texto muted */
+    --creme-faint: 130 125 115; /* #827d73 — texto faint */
 
     /* Semantic */
     --semantic-green: 74 222 128;  /* #4ade80 */

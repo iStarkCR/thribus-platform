@@ -97,7 +97,7 @@ function miniChart(header: string[], rows: string[][], idxs: number[]): ReactNod
       <div className="text-[10px] uppercase tracking-[0.08em] text-creme-faint font-semibold mb-2">{header[numCol] || 'valores'}</div>
       <div className="flex flex-col gap-1.5">
         {rows.map((r, i) => (
-          <div key={i} className="flex items-center gap-2.5 text-[12px]">
+          <div key={i} className="flex items-center gap-2.5 text-[13px]">
             <span className="w-[34%] truncate text-creme-mute text-right shrink-0">{r[labCol]}</span>
             <div className="flex-1 h-3 rounded-full bg-surface-3 overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${Math.max(3, (Math.abs(vals[i]) / max) * 100)}%`, background: 'linear-gradient(90deg, rgb(var(--brand)), rgb(var(--brand-bright)))' }} />
@@ -142,7 +142,7 @@ function CardList({ items }: { items: CardItem[] }) {
             <div className="text-right shrink-0">
               {it.value != null && it.value !== '' && <div className="font-mono tabular-nums text-[14px] font-bold text-creme leading-tight">{String(it.value)}</div>}
               {it.status != null && it.status !== '' && (
-                <span className="inline-block mt-0.5 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md" style={{ background: `rgb(var(${acc}) / 0.14)`, color: `rgb(var(${acc}))` }}>{String(it.status)}</span>
+                <span className="inline-block mt-0.5 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md" style={{ background: `rgb(var(${acc}) / 0.14)`, color: `rgb(var(${acc}))` }}>{String(it.status)}</span>
               )}
             </div>
           </div>
@@ -234,11 +234,11 @@ export function Markdown({ text, className, onAction }: { text: string; classNam
       blocks.push(
         <div key={key++} className="my-3">
         <div className="overflow-x-auto rounded-xl border border-default shadow-[0_8px_24px_-16px_rgba(0,0,0,0.5)]">
-          <table className="w-full text-[13px] border-collapse">
+          <table className="w-full text-[14.5px] border-collapse">
             <thead>
               <tr className="bg-surface-3">
                 {idxs.map((ci) => (
-                  <th key={ci} className="text-left font-semibold text-[10.5px] uppercase tracking-[0.07em] text-creme-mute px-3.5 py-2.5 border-b border-default whitespace-nowrap">{renderInline(header[ci] ?? '')}</th>
+                  <th key={ci} className="text-left font-semibold text-[11.5px] uppercase tracking-[0.07em] text-creme-mute px-3.5 py-2.5 border-b border-default whitespace-nowrap">{renderInline(header[ci] ?? '')}</th>
                 ))}
               </tr>
             </thead>
