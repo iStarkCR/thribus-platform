@@ -35,6 +35,7 @@ const FOLDER_COLORS = ['#6B8F5E', '#3b82f6', '#8b5cf6', '#ef4444', '#f59e0b', '#
 import { AgentInfoModal } from '@/components/agents/AgentInfoModal';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
 import { getVoiceConfig, ttsBlob, transcribeBlob, quickAck, greetLine, type VoiceConfig } from '@/services/voiceSkill';
+import { getCortexConfig, updateContextLimit, CONTEXT_LIMIT_MIN, CONTEXT_LIMIT_MAX, CONTEXT_LIMIT_STEP } from '@/services/cortexBrain';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -1808,18 +1809,57 @@ function MenuRow({ icon, label, hint, onClick, disabled, active, chevron }: {
   );
 }
 
-// Janela de contexto da conversa (igual o Claude: "X / 1M"). Opus 4.8 = 1M tokens.
+// Janela de contexto da conversa: uso atual vs TETO configurável. Clique abre o
+// slider pra ajustar o teto na hora (mesmo valor do /cortex-brain, global).
 function ContextMeter({ tokens }: { tokens: number }) {
-  const MAX = 1_000_000;
-  const pct = Math.min(100, (tokens / MAX) * 100);
+  const [limit, setLimit] = useState(CONTEXT_LIMIT_MIN);
+  const [open, setOpen] = useState(false);
+  useEffect(() => { getCortexConfig().then((c) => setLimit(c.contextLimitTokens)).catch(() => {}); }, []);
+  const pct = Math.min(100, (tokens / limit) * 100);
   const fmt = (n: number) => (n >= 1_000_000 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+  const fmtLimit = (n: number) => (n >= 1_000_000 ? `${(n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 1)}M` : `${Math.round(n / 1000)}k`);
+  const save = async (v: number) => { setLimit(v); try { await updateContextLimit(v); } catch { /* noop */ } };
   return (
-    <div className="flex items-center gap-2 text-[11px] text-creme-faint shrink-0" title="Janela de contexto desta conversa (tokens usados na sessão)">
-      <span>contexto</span>
-      <div className="w-16 h-1.5 rounded-full bg-surface-3 overflow-hidden">
-        <div className={`h-full rounded-full ${pct >= 85 ? 'bg-amber-400' : 'bg-brand'}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="font-mono text-creme-mute">{fmt(tokens)}/1M · {pct.toFixed(0)}%</span>
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 text-[11px] text-creme-faint hover:text-creme-mute transition-colors"
+        title="Teto de contexto — clique pra ajustar. Quando a conversa passa do teto, ela reseta resumindo o fio."
+      >
+        <span>contexto</span>
+        <div className="w-16 h-1.5 rounded-full bg-surface-3 overflow-hidden">
+          <div className={`h-full rounded-full ${pct >= 85 ? 'bg-amber-400' : 'bg-brand'}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="font-mono text-creme-mute">{fmt(tokens)}/{fmtLimit(limit)} · {pct.toFixed(0)}%</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 bottom-full mb-2 z-50 w-64 rounded-xl border border-default bg-surface-2 p-3 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.6)]">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[12px] font-semibold text-creme">Teto de contexto</span>
+              <span className="text-[11px] font-mono text-creme-mute">{fmtLimit(limit)} tokens</span>
+            </div>
+            <input
+              type="range"
+              min={CONTEXT_LIMIT_MIN}
+              max={CONTEXT_LIMIT_MAX}
+              step={CONTEXT_LIMIT_STEP}
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value))}
+              onPointerUp={() => save(limit)}
+              onKeyUp={() => save(limit)}
+              className="w-full accent-brand-bright cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-creme-faint font-mono mt-0.5">
+              <span>250k · enxuto</span><span>1M · memória longa</span>
+            </div>
+            <p className="text-[11px] text-creme-mute mt-1.5 leading-snug">
+              Quando a conversa passa de <strong className="text-creme-mute font-semibold">{fmtLimit(limit)}</strong>, o time reseta resumindo o fio. Menor = mais barato; maior = lembra mais.
+            </p>
+          </div>
+        </>
+      )}
     </div>
   );
 }

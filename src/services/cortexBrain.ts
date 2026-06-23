@@ -177,6 +177,16 @@ export async function saveCortexConfig(cfg: CortexBrainConfig): Promise<void> {
   if (error) throw error;
 }
 
+/** Atualiza só o teto de contexto (usado pelo controle rápido dentro do chat). */
+export async function updateContextLimit(tokens: number): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { error } = await supabase
+    .from('cortex_brain_config')
+    .update({ context_limit_tokens: clampContext(tokens), updated_at: new Date().toISOString() })
+    .eq('scope', 'global');
+  if (error) throw error;
+}
+
 // ─── Uso & limites ──────────────────────────────────────────────────────────
 export interface UsageRow {
   id: string;
