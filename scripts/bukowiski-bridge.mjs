@@ -388,11 +388,20 @@ function bukowiskiPersona() {
   return bukowiskiCmd;
 }
 
-function buildPrompt(agent, history, content) {
-  const transcript = history
-    .map((m) => `${m.role === 'user' ? 'Charles' : agent.name}: ${m.content}`)
-    .join('\n');
-  const ctx = transcript ? `Histórico recente da conversa:\n${transcript}\n\n` : '';
+function buildPrompt(agent, history, content, seed = null) {
+  let ctx = '';
+  if (seed) {
+    // Sessão compactada: o modelo NÃO tem o histórico completo — o resumo curado
+    // é a memória dele. (caminho C — ver migration 20260624_chat_compaction)
+    ctx =
+      `Resumo do contexto desta conversa até aqui (ela foi COMPACTADA — você não tem ` +
+      `o histórico completo; use este resumo como sua memória):\n${seed}\n\n`;
+  } else {
+    const transcript = history
+      .map((m) => `${m.role === 'user' ? 'Charles' : agent.name}: ${m.content}`)
+      .join('\n');
+    ctx = transcript ? `Histórico recente da conversa:\n${transcript}\n\n` : '';
+  }
   const task = `${ctx}Nova mensagem do Charles:\n${content}`;
 
   if (agent.id === BUKOWISKI_ID) {
@@ -584,7 +593,7 @@ async function processMessage(msg) {
   // Sessão do claude desta conversa (memória otimizada via --resume).
   const { data: sess } = await sb
     .from('chat_sessions')
-    .select('claude_session_id,context_tokens,working_dir')
+    .select('claude_session_id,context_tokens,working_dir,context_seed')
     .eq('id', msg.session_id)
     .maybeSingle();
   let resumeId = sess?.claude_session_id || null;
@@ -671,16 +680,21 @@ async function processMessage(msg) {
     }
     if (!r) {
       if (ctl.cancelled) throw new Error('cancelado');
-      // inicia (ou reinicia) a sessão: persona + histórico RECENTE pra semear o contexto
-      const { data: history } = await sb
-        .from('collaborator_messages')
-        .select('role,content,created_at')
-        .eq('session_id', msg.session_id)
-        .in('status', ['done'])
-        .order('created_at', { ascending: false })
-        .limit(HISTORY);
-      const recent = (history ?? []).reverse(); // mais recentes, em ordem cronológica
-      r = await runClaude(buildPrompt(agent, recent, content), opts);
+      // inicia (ou reinicia) a sessão semeando o contexto. Se a conversa foi
+      // COMPACTADA (caminho C), semeia com o resumo curado; senão, com o
+      // histórico RECENTE cru (comportamento padrão).
+      let recent = [];
+      if (!sess?.context_seed) {
+        const { data: history } = await sb
+          .from('collaborator_messages')
+          .select('role,content,created_at')
+          .eq('session_id', msg.session_id)
+          .in('status', ['done'])
+          .order('created_at', { ascending: false })
+          .limit(HISTORY);
+        recent = (history ?? []).reverse(); // mais recentes, em ordem cronológica
+      }
+      r = await runClaude(buildPrompt(agent, recent, content, sess?.context_seed || null), opts);
     }
     if (ctl.cancelled) throw new Error('cancelado');
 
@@ -749,6 +763,79 @@ async function tick(teamIds) {
         .update({ status: 'error', error: String(e.message).slice(0, 500) })
         .eq('id', msg.id);
     });
+  }
+}
+
+// ─── Compactação de conversa (caminho C) ────────────────────────────────────
+// Gera um resumo curado (TL;DR) usando a PRÓPRIA sessão do claude (--resume, que
+// já tem o contexto todo), grava como semente + marcador visual e ZERA a sessão.
+// A próxima mensagem reinicia a sessão semeada com o resumo — contexto barato,
+// histórico visual intacto. Roda na raia da conversa (não colide com mensagens).
+const COMPACT_PROMPT =
+  'Compacte NOSSA conversa até aqui num resumo de contexto (TL;DR) que outra ' +
+  'instância sua possa usar pra continuar SEM o histórico completo. Cubra, em ' +
+  'bullets curtos e densos (PT-BR): (1) o que estamos fazendo e as decisões já ' +
+  'tomadas; (2) o que JÁ foi executado/entregue; (3) o que ficou pendente; (4) ' +
+  'próximos passos; (5) fatos e identificadores importantes (paths, nomes, ' +
+  'números, IDs). Sem saudação, sem firula — só o resumo.';
+
+async function compactSession(sess, agent) {
+  if (!sess.claude_session_id) {
+    // Sessão já limpa: nada pra resumir — só baixa a flag do botão.
+    if (sess.compact_requested) await sb.from('chat_sessions').update({ compact_requested: false }).eq('id', sess.id);
+    return;
+  }
+  const cwd = await cwdForSession(sess.agent_id, sess.working_dir);
+  let summary = '';
+  let usage = null;
+  try {
+    const r = await runClaude(COMPACT_PROMPT, {
+      resumeSessionId: sess.claude_session_id,
+      model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, cwd,
+    });
+    summary = (r.text || '').trim();
+    usage = r.usage;
+  } catch (e) {
+    console.error(`[compact falhou] sessão ${sess.id}: ${e.message}`);
+  }
+  if (!summary) {
+    // Sem resumo (erro/sessão expirada): baixa a flag e deixa o reset cego antigo
+    // agir no teto. Não corrompe nada.
+    if (sess.compact_requested) await sb.from('chat_sessions').update({ compact_requested: false }).eq('id', sess.id);
+    return;
+  }
+  // Marcador visual (role='system') + semente, e zera o ponteiro de contexto.
+  const { data: marker } = await sb.from('collaborator_messages')
+    .insert({ session_id: sess.id, agent_id: sess.agent_id, user_id: sess.user_id, role: 'system', content: summary, status: 'done', channel: 'thribus' })
+    .select('id').single();
+  await sb.from('chat_sessions').update({
+    context_seed: summary,
+    claude_session_id: null,
+    context_tokens: 0,
+    compacted_at: new Date().toISOString(),
+    compact_requested: false,
+  }).eq('id', sess.id);
+  await recordUsage({ userId: sess.user_id, agentId: sess.agent_id, kind: 'chat', refId: marker?.id, sessionId: sess.id, usage });
+  console.log(`[compactado] ${agent.name} · sessão ${sess.id} → resumo ${summary.length} chars`);
+}
+
+async function tickCompaction(teamIds) {
+  // Manual (botão "Compactar" → compact_requested) OU automático (contexto passou
+  // do teto do painel). Em ambos, gera resumo curado em vez do corte cego.
+  const ctxLimit = BRAIN.contextLimitTokens || CONTEXT_RESET_TOKENS;
+  const { data: rows, error } = await sb
+    .from('chat_sessions')
+    .select('id,agent_id,user_id,claude_session_id,working_dir,context_tokens,compact_requested')
+    .not('claude_session_id', 'is', null)
+    .or(`compact_requested.eq.true,context_tokens.gt.${ctxLimit}`)
+    .limit(3);
+  if (error) { console.error('[compact poll erro]', error.message); return; }
+  for (const sess of rows ?? []) {
+    if (!teamIds.has(sess.agent_id)) continue;
+    const { data: agent } = await sb.from('agents').select('id,name,sector,system_prompt').eq('id', sess.agent_id).single();
+    if (!agent) continue;
+    // Mesma raia das mensagens da conversa → serial (não corrompe a sessão).
+    runOnLane(`chat:${sess.id}`, () => compactSession(sess, agent)).catch((e) => console.error(`[compact erro] sessão ${sess.id}:`, e.message));
   }
 }
 
@@ -1056,6 +1143,7 @@ async function loop() {
     await importSkills();           // espelha as skills reais no painel (1x)
     await materializeSkills();      // skills do painel → ~/.claude/skills (cache 15s)
     await tick(teamIds);            // chat interativo primeiro
+    await tickCompaction(teamIds);  // compacta conversas (botão ou teto) → semente
     await tickDemandReplies(teamIds); // respostas no thread (conversa ativa) têm prioridade
     await tickRoutines(teamIds);    // rotinas vencidas viram demanda
     await tickDemands(teamIds);     // depois 1 demanda nova da fila

@@ -24,6 +24,8 @@ export interface ChatSession {
   color: string | null;
   pinnedAt: string | null;
   workingDir: string | null;
+  compactedAt: string | null;     // última compactação (caminho C)
+  compactRequested: boolean;      // botão "Compactar" disparado, aguardando a ponte
 }
 
 const FOLDER_COLS = 'id,name,sort_order,parent_id,color';
@@ -31,16 +33,16 @@ const toFolder = (r: { id: string; name: string; sort_order: number; parent_id: 
   id: r.id, name: r.name, sortOrder: r.sort_order, parentId: r.parent_id, color: r.color,
 });
 
-const SESSION_COLS = 'id,agent_id,folder_id,title,updated_at,context_tokens,archived_at,color,pinned_at,working_dir';
+const SESSION_COLS = 'id,agent_id,folder_id,title,updated_at,context_tokens,archived_at,color,pinned_at,working_dir,compacted_at,compact_requested';
 interface SessionRow {
   id: string; agent_id: string; folder_id: string | null; title: string; updated_at: string;
   context_tokens: number | null; archived_at: string | null; color: string | null; pinned_at: string | null;
-  working_dir: string | null;
+  working_dir: string | null; compacted_at: string | null; compact_requested: boolean | null;
 }
 const toSession = (r: SessionRow): ChatSession => ({
   id: r.id, agentId: r.agent_id, folderId: r.folder_id, title: r.title, updatedAt: r.updated_at,
   contextTokens: r.context_tokens ?? 0, archivedAt: r.archived_at ?? null, color: r.color ?? null, pinnedAt: r.pinned_at ?? null,
-  workingDir: r.working_dir ?? null,
+  workingDir: r.working_dir ?? null, compactedAt: r.compacted_at ?? null, compactRequested: r.compact_requested ?? false,
 });
 
 export async function listFolders(agentId: string, userId: string): Promise<ChatFolder[]> {
@@ -164,6 +166,15 @@ export async function setSessionPinned(id: string, pinned: boolean): Promise<str
 export async function setSessionWorkingDir(id: string, path: string | null): Promise<void> {
   if (!supabase) return;
   const { error } = await supabase.from('chat_sessions').update({ working_dir: path }).eq('id', id);
+  if (error) throw error;
+}
+
+// Compactar conversa (caminho C): seta a flag; a ponte gera o resumo, insere o
+// marcador (role='system'), grava a semente e zera a sessão do claude. O
+// histórico visual fica intacto. Ver bukowiski-bridge.mjs / [[chat-blocos-ricos]].
+export async function requestCompaction(sessionId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { error } = await supabase.from('chat_sessions').update({ compact_requested: true }).eq('id', sessionId);
   if (error) throw error;
 }
 

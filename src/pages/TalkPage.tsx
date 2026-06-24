@@ -30,7 +30,7 @@ import { ArtifactPanel, type ArtifactData } from '@/components/chat/ArtifactPane
 import { StreamingMarkdown } from '@/components/chat/StreamingMarkdown';
 import { TranscriptModal } from '@/components/chat/TranscriptModal';
 import {
-  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession, setSessionArchived, setSessionColor, setSessionPinned, setSessionWorkingDir, forkSession,
+  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession, setSessionArchived, setSessionColor, setSessionPinned, setSessionWorkingDir, forkSession, requestCompaction,
   type ChatFolder, type ChatSession,
 } from '@/services/chatSessions';
 
@@ -565,6 +565,38 @@ export function TalkPage() {
 
   const patchSession = (id: string, patch: Partial<ChatSession>) =>
     setSessions((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+
+  // Compactar conversa (caminho C): seta a flag; a ponte gera o resumo, insere o
+  // marcador (role='system') e recomeça o contexto. Histórico visual fica intacto.
+  const [compacting, setCompacting] = useState(false);
+  const isCompacting = compacting || active?.compactRequested === true;
+  const sysCount = useMemo(() => messages.filter((m) => m.role === 'system').length, [messages]);
+  const prevSysCount = useRef(sysCount);
+  useEffect(() => {
+    if (sysCount > prevSysCount.current && compacting) {
+      setCompacting(false);
+      useAppStore.getState().addToast('Conversa compactada — contexto recomeçado do resumo', 'green');
+    }
+    prevSysCount.current = sysCount;
+  }, [sysCount, compacting]);
+  async function compactConversation() {
+    if (!activeId) return;
+    const ok = await useAppStore.getState().askConfirm({
+      title: 'Compactar conversa?',
+      message: 'O histórico continua visível aqui. O Bukowiski gera um resumo e recomeça o contexto a partir dele — as próximas mensagens ficam mais baratas.',
+      confirmLabel: 'Compactar',
+      danger: false,
+    });
+    if (!ok) return;
+    try {
+      setCompacting(true);
+      await requestCompaction(activeId);
+      useAppStore.getState().addToast('Compactando a conversa…', 'green');
+    } catch (e) {
+      setCompacting(false);
+      useAppStore.getState().addToast('Falha ao compactar: ' + (e as Error).message, 'red');
+    }
+  }
 
   async function toggleArchive(s: ChatSession) {
     try {
@@ -1371,22 +1403,39 @@ export function TalkPage() {
             </div>
           ) : (
             <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 py-6 space-y-5">
-              {/* Resumo da conversa (TL;DR) — flutua no topo em conversas longas */}
+              {/* Compactar conversa — flutua no topo em conversas longas. Gera um
+                  resumo (TL;DR) e recomeça o contexto a partir dele; o histórico
+                  visual fica intacto. Ver requestCompaction / ponte (caminho C). */}
               {messages.length >= 8 && !waiting && (
                 <div className="sticky top-0 z-20 flex justify-center pointer-events-none -mt-2 mb-1">
                   <button
-                    onClick={() => send('Faz um TL;DR rápido da nossa conversa até aqui: principais decisões, o que você já executou, o que ficou pendente e os próximos passos. Curto, em bullets.')}
-                    title="Resumir esta conversa"
-                    className="pointer-events-auto flex items-center gap-2 pl-2.5 pr-3.5 py-1.5 rounded-full glass-panel bg-surface-2/80 border border-default text-[12px] shadow-[0_8px_24px_-14px_rgba(0,0,0,0.6)] hover:border-brand/40 transition-colors"
+                    onClick={compactConversation}
+                    disabled={isCompacting}
+                    title="Compactar: gera um resumo e recomeça o contexto a partir dele (o histórico continua visível). Deixa as próximas mensagens mais baratas."
+                    className="pointer-events-auto flex items-center gap-2 pl-2.5 pr-3.5 py-1.5 rounded-full glass-panel bg-surface-2/80 border border-default text-[12px] shadow-[0_8px_24px_-14px_rgba(0,0,0,0.6)] hover:border-brand/40 disabled:opacity-60 transition-colors"
                   >
-                    <History size={13} className="text-brand-bright shrink-0" />
-                    <span className="font-semibold text-creme-dim">Resumo da conversa</span>
-                    <span className="text-creme-faint">{messages.length} mensagens · TL;DR</span>
+                    {isCompacting ? <Loader2 size={13} className="text-brand-bright shrink-0 animate-spin" /> : <History size={13} className="text-brand-bright shrink-0" />}
+                    <span className="font-semibold text-creme-dim">{isCompacting ? 'Compactando…' : 'Compactar conversa'}</span>
+                    {!isCompacting && <span className="text-creme-faint">{messages.length} mensagens · TL;DR</span>}
                   </button>
                 </div>
               )}
               {messages.map((m, mi) =>
-                m.role === 'user' ? (() => {
+                m.role === 'system' ? (
+                  /* Marcador de compactação — divisor + o TL;DR (recolhível). Daqui
+                     pra cima o modelo só "lembra" do resumo; as msgs continuam visíveis. */
+                  <div key={m.id} data-msg-id={m.id} className="flex flex-col items-center gap-2 py-1 scroll-mt-4">
+                    <div className="flex items-center gap-2 w-full">
+                      <div className="flex-1 h-px bg-default" />
+                      <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-creme-faint shrink-0"><Pin size={11} className="text-brand-bright" /> Contexto compactado</span>
+                      <div className="flex-1 h-px bg-default" />
+                    </div>
+                    <button onClick={() => toggleExpanded(m.id)} className="max-w-[82%] text-left glass-panel bg-surface-2/70 border border-default rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed text-creme-dim hover:border-brand/40 transition-colors">
+                      <div className="flex items-center gap-2 mb-1 text-[11px] font-semibold text-brand-bright"><History size={12} /> Resumo da conversa {expandedMsgs.has(m.id) ? '· recolher' : '· ver'}</div>
+                      <div className={expandedMsgs.has(m.id) ? 'whitespace-pre-wrap' : 'whitespace-pre-wrap line-clamp-3'}>{m.content}</div>
+                    </button>
+                  </div>
+                ) : m.role === 'user' ? (() => {
                   const COLLAPSE_AT = 440;
                   const isLong = m.content.length > COLLAPSE_AT;
                   const open = expandedMsgs.has(m.id);

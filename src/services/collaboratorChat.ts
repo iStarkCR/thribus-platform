@@ -7,7 +7,7 @@
 
 import { supabase } from '@/lib/supabase';
 
-export type ChatRole = 'user' | 'assistant';
+export type ChatRole = 'user' | 'assistant' | 'system'; // 'system' = marcador de compactação (divisor + TL;DR)
 export type ChatStatus = 'pending' | 'processing' | 'done' | 'error' | 'cancelled';
 export type ChatChannel = 'thribus' | 'telegram' | 'talki';
 
