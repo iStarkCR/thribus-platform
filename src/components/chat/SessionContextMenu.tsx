@@ -3,6 +3,7 @@
  * mover pra pasta, duplicar, transcrição, arquivar e apagar.
  */
 import { useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Pencil, Pin, PinOff, Palette, FolderInput, Files, FileText, Archive, ArchiveRestore, Trash2, ChevronRight, Check } from 'lucide-react';
 import type { ChatSession, ChatFolder } from '@/services/chatSessions';
 
@@ -45,7 +46,10 @@ export function SessionContextMenu({
   }, [pos.x, pos.y, sub]);
   const run = (fn: () => void) => () => { fn(); onClose(); };
 
-  return (
+  // Portal pro body: o menu fica fora de qualquer ancestral com transform/filter
+  // (glass/aurora) que faria o `position: fixed` ser relativo ao container em vez
+  // da tela — assim a medição acima usa a viewport de verdade e nada é cortado.
+  return createPortal(
     <>
       <div className="fixed inset-0 z-[58]" onClick={onClose} />
       <div ref={menuRef} className="fixed z-[59] w-52 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px] max-h-[calc(100vh-16px)] overflow-y-auto" style={{ left: coords.left, top: coords.top }}>
@@ -87,7 +91,8 @@ export function SessionContextMenu({
         <Row icon={session.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />} label={session.archivedAt ? 'Desarquivar' : 'Arquivar'} onClick={run(onToggleArchive)} />
         <Row icon={<Trash2 size={14} />} label="Apagar" danger onClick={run(onDelete)} />
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 
