@@ -31,7 +31,7 @@ import { createClient } from '@supabase/supabase-js';
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -158,6 +158,49 @@ async function cwdForSession(workingDir) {
   if (allowed.has(workingDir)) return workingDir;
   console.error('[cwd] pasta fora da allowlist, ignorando:', workingDir);
   return undefined;
+}
+
+// Navegador de pastas pro painel: o painel (web) não acessa o filesystem; aqui
+// listamos os subdiretórios de um caminho e devolvemos. Guard: só dentro do home
+// do daemon e /Volumes (não expõe o sistema inteiro). Poller rápido (700ms) pra
+// navegar fluido.
+const FS_ROOTS = [homedir(), '/Volumes'];
+function fsAllowed(p) {
+  const r = resolve(p);
+  return FS_ROOTS.some((root) => r === root || r.startsWith(root + '/'));
+}
+let _fsBusy = false;
+async function tickFsBrowse() {
+  if (_fsBusy) return;
+  _fsBusy = true;
+  try {
+    const { data: reqs } = await sb
+      .from('fs_browse_requests')
+      .select('id,path')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(5);
+    for (const req of reqs || []) {
+      let patch;
+      try {
+        const base = req.path && req.path.trim() ? resolve(req.path.trim()) : homedir();
+        if (!fsAllowed(base)) throw new Error('pasta fora do permitido');
+        const ents = readdirSync(base, { withFileTypes: true })
+          .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+          .map((d) => ({ name: d.name, path: join(base, d.name) }))
+          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+        patch = { status: 'done', entries: { base, items: ents }, error: null, resolved_at: new Date().toISOString() };
+      } catch (e) {
+        patch = { status: 'error', entries: null, error: e.message, resolved_at: new Date().toISOString() };
+      }
+      await sb.from('fs_browse_requests').update(patch).eq('id', req.id);
+    }
+    await sb.from('fs_browse_requests').delete().lt('resolved_at', new Date(Date.now() - 5 * 60_000).toISOString());
+  } catch (e) {
+    console.error('[fs browse]', e.message);
+  } finally {
+    _fsBusy = false;
+  }
 }
 
 // Grava o custo/tokens reais de uma execução (best-effort; nunca derruba o loop).
@@ -914,6 +957,8 @@ async function loop() {
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 }
+// Navegador de pastas: poller próprio e rápido (independe do loop pesado).
+setInterval(tickFsBrowse, 700);
 loop().catch((e) => {
   console.error('fatal:', e);
   process.exit(1);

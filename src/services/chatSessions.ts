@@ -191,6 +191,40 @@ export async function addWorkFolder(label: string, path: string): Promise<WorkFo
   return { id: data.id, label: data.label, path: data.path, sort: data.sort };
 }
 
+// ─── Navegador de pastas (via bridge) ──────────────────────────────────────
+// O painel não acessa o filesystem; pede pro bridge listar os subdiretórios de
+// um caminho (vazio = home do daemon) e espera a resposta. Ver [[work-folders]].
+export interface FsEntry { name: string; path: string }
+export interface FsListing { base: string; items: FsEntry[] }
+export async function browseFolder(path: string | null): Promise<FsListing> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { data: ins, error } = await supabase
+    .from('fs_browse_requests')
+    .insert({ path: path ?? '' })
+    .select('id')
+    .single();
+  if (error) throw error;
+  const id = ins.id as string;
+
+  return new Promise<FsListing>((res, rej) => {
+    let done = false;
+    const finish = (fn: () => void) => { if (done) return; done = true; clearInterval(poll); clearTimeout(timer); fn(); };
+    const check = async () => {
+      const { data } = await supabase!
+        .from('fs_browse_requests')
+        .select('status,entries,error')
+        .eq('id', id)
+        .maybeSingle();
+      if (!data || data.status === 'pending') return;
+      if (data.status === 'error') finish(() => rej(new Error(data.error || 'erro ao listar pasta')));
+      else finish(() => res((data.entries as FsListing) ?? { base: path ?? '', items: [] }));
+    };
+    const poll = setInterval(check, 500);
+    const timer = setTimeout(() => finish(() => rej(new Error('o bridge não respondeu (offline?)'))), 15000);
+    check();
+  });
+}
+
 /**
  * Duplica uma conversa (fork): cria uma nova sessão com o mesmo histórico, pra
  * ramificar sem mexer na original. A nova NÃO herda a sessão do claude nem a

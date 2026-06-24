@@ -7,11 +7,13 @@
 import { useEffect, useState } from 'react';
 import { Folder, ChevronDown, Check, Plus } from 'lucide-react';
 import { listWorkFolders, addWorkFolder, type WorkFolder } from '@/services/chatSessions';
+import { FolderBrowserModal } from '@/components/cortex/FolderBrowserModal';
 
 const baseName = (p: string) => p.replace(/\/+$/, '').split('/').pop() || p;
 
 export function WorkFolderBar({ workingDir, onChange }: { workingDir: string | null; onChange: (path: string | null) => void }) {
   const [open, setOpen] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const [folders, setFolders] = useState<WorkFolder[]>([]);
 
   const load = () => { listWorkFolders().then(setFolders).catch(() => {}); };
@@ -19,17 +21,14 @@ export function WorkFolderBar({ workingDir, onChange }: { workingDir: string | n
 
   const current = workingDir ? (folders.find((f) => f.path === workingDir)?.label ?? baseName(workingDir)) : null;
 
-  const addNew = async () => {
-    const path = window.prompt('Caminho absoluto da pasta (no Mac do daemon):');
-    if (!path || !path.trim()) return;
-    const clean = path.trim().replace(/\/+$/, '');
-    const label = (window.prompt('Nome curto pra exibir:', baseName(clean)) || baseName(clean)).trim();
+  // Pasta escolhida no navegador → garante na allowlist (cortex_work_folders) e aplica.
+  const pickFolder = async (path: string) => {
+    const clean = path.replace(/\/+$/, '');
     try {
       const existing = folders.find((f) => f.path === clean);
-      const wf = existing ?? await addWorkFolder(label, clean);
+      const wf = existing ?? await addWorkFolder(baseName(clean), clean);
       setFolders((prev) => (existing ? prev : [...prev, wf]));
       onChange(wf.path);
-      setOpen(false);
     } catch { /* RLS/duplicado — silencioso */ }
   };
 
@@ -77,13 +76,20 @@ export function WorkFolderBar({ workingDir, onChange }: { workingDir: string | n
               })}
             </div>
             <div className="mt-1 pt-1.5 border-t border-default">
-              <button onClick={addNew} className="w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 text-creme-mute hover:bg-surface-hover hover:text-creme transition-colors">
+              <button onClick={() => { setOpen(false); setBrowsing(true); }} className="w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2 text-creme-mute hover:bg-surface-hover hover:text-creme transition-colors">
                 <Plus size={13} className="text-brand-bright" />
                 <span className="text-[12.5px] font-medium">Abrir pasta…</span>
               </button>
             </div>
           </div>
         </>
+      )}
+
+      {browsing && (
+        <FolderBrowserModal
+          onClose={() => setBrowsing(false)}
+          onSelect={(path) => { pickFolder(path); }}
+        />
       )}
     </div>
   );
