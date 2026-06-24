@@ -10,7 +10,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { AlertTriangle, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronRight, FileText } from 'lucide-react';
 import { CodeViewer } from '@/components/shared/CodeViewer';
 
 // URL aceita parênteses balanceados (ex.: .../Foo_(bar)) sem cortar no 1º ')'.
@@ -174,6 +174,29 @@ function CardList({ items, onAction }: { items: CardItem[]; onAction?: (t: strin
   );
 }
 
+// Artefato (bloco ```artifact): documento/relatório longo que abre num painel
+// lateral (canvas) em vez de rolar no chat. Sem handler (ex: orbe/voz), cai pro
+// conteúdo inline pra não perder nada.
+interface ArtifactInfo { title?: string; type?: string; content: string }
+function ArtifactChip({ data, onOpen }: { data: ArtifactInfo; onOpen?: (a: { title: string; type?: string; content: string }) => void }) {
+  const title = String(data.title || 'Documento');
+  if (!onOpen) return <div className="my-2">{/* fallback inline */}<Markdown text={data.content} /></div>;
+  return (
+    <button
+      onClick={() => onOpen({ title, type: data.type, content: data.content })}
+      className="my-2 w-full flex items-center gap-3 rounded-xl border border-default bg-surface-1/70 px-3.5 py-3 text-left transition-colors hover:bg-surface-hover hover:border-brand/50"
+      title="Abrir no painel"
+    >
+      <span className="w-9 h-9 rounded-lg bg-brand/12 text-brand-bright flex items-center justify-center shrink-0"><FileText size={17} /></span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px] font-semibold text-creme truncate">{title}</div>
+        <div className="text-[11.5px] text-creme-faint">{data.type ? `${data.type} · ` : ''}abrir no painel</div>
+      </div>
+      <ChevronRight size={17} className="shrink-0 text-creme-faint" />
+    </button>
+  );
+}
+
 interface ConfirmData { action?: string; detail?: string; danger?: boolean; confirm?: string; cancel?: string }
 function ConfirmCard({ data, onAction }: { data: ConfirmData; onAction?: (t: string) => void }) {
   const [done, setDone] = useState<null | 'ok' | 'no'>(null);
@@ -201,7 +224,7 @@ function ConfirmCard({ data, onAction }: { data: ConfirmData; onAction?: (t: str
   );
 }
 
-export function Markdown({ text, className, onAction }: { text: string; className?: string; onAction?: (t: string) => void }) {
+export function Markdown({ text, className, onAction, onOpenArtifact }: { text: string; className?: string; onAction?: (t: string) => void; onOpenArtifact?: (a: { title: string; type?: string; content: string }) => void }) {
   const lines = text.replace(/\r/g, '').split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -218,15 +241,17 @@ export function Markdown({ text, className, onAction }: { text: string; classNam
       if (j < lines.length) {
         const body = lines.slice(i + 1, j).join('\n');
         const lk = lang.toLowerCase();
-        // Blocos especiais: cards ricos e confirmação de ação.
-        if (lk === 'cards' || lk === 'confirm') {
+        // Blocos especiais: cards ricos, confirmação de ação e artefato (canvas).
+        if (lk === 'cards' || lk === 'confirm' || lk === 'artifact') {
           try {
             const data = JSON.parse(body);
             if (lk === 'cards') {
               const its = Array.isArray(data) ? data : data?.items;
               if (Array.isArray(its) && its.length) { blocks.push(<CardList key={key++} items={its} onAction={onAction} />); i = j + 1; continue; }
-            } else {
+            } else if (lk === 'confirm') {
               blocks.push(<ConfirmCard key={key++} data={data} onAction={onAction} />); i = j + 1; continue;
+            } else if (data && typeof data.content === 'string') {
+              blocks.push(<ArtifactChip key={key++} data={data} onOpen={onOpenArtifact} />); i = j + 1; continue;
             }
           } catch { /* JSON inválido → cai pro CodeViewer abaixo */ }
         }

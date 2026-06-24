@@ -306,7 +306,12 @@ const GUARD =
   '{"action":"Criar cobrança PIX de R$ 1.200 pro TexNet","detail":"vencimento 25/06","danger":false}. ' +
   'O painel mostra botões Confirmar/Cancelar; só execute quando o Charles confirmar na mensagem seguinte. ' +
   'Use danger:true pra ações destrutivas (deletar, derrubar serviço).\n\n' +
-  '(NÃO use cards/confirm em modo voz — ali a resposta é só fala natural.)\n\n' +
+  'ARTEFATO: pra entregas LONGAS e estruturadas (relatório, dossiê, plano de ação, análise extensa, ' +
+  'documento) — em vez de despejar tudo no chat, devolva um bloco ```artifact JSON: ' +
+  '{"title":"Relatório de recall — Dra Aloma","type":"relatório","content":"<markdown completo do documento>"}. ' +
+  'O painel mostra um cartão clicável que abre o conteúdo num painel lateral (canvas). Use pra textos longos/' +
+  'documentos; resposta curta vai direto no chat normal. Pode acompanhar de 1 frase de contexto antes do bloco.\n\n' +
+  '(NÃO use cards/confirm/artifact em modo voz — ali a resposta é só fala natural.)\n\n' +
   'EFICIÊNCIA DE CONTEXTO (importante): a sessão é mantida entre turnos e TUDO que você lê fica na memória e ' +
   'pesa nos próximos turnos. Ao consultar banco/IXC/arquivos: NUNCA traga tabela inteira nem dump gigante pro ' +
   'contexto. Use queries com LIMIT e filtros, SELECT só das colunas necessárias, e prefira AGREGAR/CONTAR a ' +

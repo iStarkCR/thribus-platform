@@ -4,7 +4,7 @@ import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
-  PanelLeftClose, PanelLeft, GitBranch, Activity, AlertTriangle,
+  PanelLeftClose, PanelLeft, GitBranch, Activity, AlertTriangle, FileText,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -27,6 +27,7 @@ import { listStatusComponents, platformConfigured } from '@/services/platform';
 import { RoutineModal } from '@/components/routines/RoutineModal';
 import { SessionUsageModal } from '@/components/chat/SessionUsageModal';
 import { SessionContextMenu } from '@/components/chat/SessionContextMenu';
+import { ArtifactPanel, type ArtifactData } from '@/components/chat/ArtifactPanel';
 import { TranscriptModal } from '@/components/chat/TranscriptModal';
 import {
   listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession, setSessionArchived, setSessionColor, setSessionPinned, setSessionWorkingDir, forkSession,
@@ -113,6 +114,7 @@ export function TalkPage() {
   const [menuFor, setMenuFor] = useState<string | null>(null); // pasta com menu (engrenagem) aberto
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [sessMenu, setSessMenu] = useState<{ id: string; x: number; y: number } | null>(null); // menu (…) de uma conversa
+  const [artifact, setArtifact] = useState<ArtifactData | null>(null); // painel lateral (canvas)
   const [showArchived, setShowArchived] = useState(false);
   const [transcriptFor, setTranscriptFor] = useState<ChatSession | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null); // folder id ou 'root'
@@ -1329,7 +1331,7 @@ export function TalkPage() {
                     <div className="min-w-0 flex-1">
                       <div className="text-[12px] font-semibold text-creme-mute mb-1.5 tracking-wide">{agent.name}</div>
                       <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[17px] leading-[1.7] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
-                        <Markdown text={m.content} onAction={(t) => send(t)} />
+                        <Markdown text={m.content} onAction={(t) => send(t)} onOpenArtifact={setArtifact} />
                         {/* Streaming: cursor piscando enquanto a resposta ainda chega */}
                         {(m.status === 'pending' || m.status === 'processing') && <span className="inline-block w-[2px] h-[1.05em] -mb-[2px] ml-0.5 bg-brand-bright align-middle animate-pulse" />}
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
@@ -1349,6 +1351,13 @@ export function TalkPage() {
                               <span className="max-w-0 group-hover/act:max-w-[150px] group-hover/act:ml-1.5 overflow-hidden whitespace-nowrap text-[11px] font-semibold transition-all duration-200">{a.label}</span>
                             </button>
                           ))}
+                          {/* Respostas longas → abrir no painel lateral (canvas) */}
+                          {m.content.length > 1200 && (
+                            <button onClick={() => setArtifact({ title: 'Resposta do ' + agent.name, type: 'análise', content: m.content })} title="Abrir no painel" className="group/act h-7 px-1.5 rounded-lg border bg-surface-3 border-brand/30 text-brand-bright hover:bg-brand/10 flex items-center transition-all">
+                              <FileText size={13} className="shrink-0" />
+                              <span className="max-w-0 group-hover/act:max-w-[150px] group-hover/act:ml-1.5 overflow-hidden whitespace-nowrap text-[11px] font-semibold transition-all duration-200">Abrir no painel</span>
+                            </button>
+                          )}
                         </div>
                       )}
                       {/* Sugestões de próximo passo (só na última resposta) */}
@@ -1605,6 +1614,8 @@ export function TalkPage() {
       {transcriptFor && agent && (
         <TranscriptModal sessionId={transcriptFor.id} title={transcriptFor.title} agentName={agent.name} onClose={() => setTranscriptFor(null)} />
       )}
+
+      <ArtifactPanel artifact={artifact} onClose={() => setArtifact(null)} />
 
       {/* Modo voz — tela cheia imersiva (estilo CORTEX) */}
       {voiceMode && (
