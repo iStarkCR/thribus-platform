@@ -24,14 +24,17 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
   }, [pathname, setSidebarCollapsed]);
 
-  // No chat (/talk), a coluna ocupa exatamente a viewport (altura travada via
-  // flex, sem padding) pra a tela inicial NÃO rolar e nada ser cortado. Demais
-  // páginas seguem com padding + min-h-screen (rolam quando o conteúdo é longo).
+  // No chat (/talk) o shell é PINADO ao viewport VISÍVEL com `fixed inset-0` —
+  // não `h-screen`. Em painel/webview (app Bukowiski) `100vh` pode ser MAIOR que
+  // a área visível, jogando o composer abaixo da dobra (e, depois de rolar, o
+  // header pra fora do topo). `fixed inset-0` casa exatamente com a janela: header
+  // e composer sempre visíveis, zero scroll de documento. Demais páginas seguem
+  // com padding + min-h-screen (rolam quando o conteúdo é longo).
   const isChat = pathname.startsWith('/talk');
   return (
-    <div className={`flex ${isChat ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
+    <div className={isChat ? 'fixed inset-0 flex overflow-hidden' : 'flex min-h-screen'}>
       <Sidebar />
-      <main className={`flex-1 flex flex-col transition-[margin] duration-200 ${collapsed ? 'ml-[64px]' : 'ml-[244px]'} ${isChat ? 'h-screen min-h-0 overflow-hidden' : 'min-h-screen'}`}>
+      <main className={`flex-1 flex flex-col transition-[margin] duration-200 ${collapsed ? 'ml-[64px]' : 'ml-[244px]'} ${isChat ? 'h-full min-h-0 overflow-hidden' : 'min-h-screen'}`}>
         <div className={isChat ? 'flex-1 min-h-0 flex flex-col' : 'flex-1 p-6'}>{children}</div>
       </main>
     </div>
