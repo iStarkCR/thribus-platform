@@ -32,7 +32,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     <div className={`flex ${isChat ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
       <Sidebar />
       <main className={`flex-1 flex flex-col transition-[margin] duration-200 ${collapsed ? 'ml-[64px]' : 'ml-[244px]'} ${isChat ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
-        <div className={`flex-1 ${isChat ? 'min-h-0' : 'p-6'}`}>{children}</div>
+        <div className={`flex-1 ${isChat ? 'min-h-0 flex flex-col' : 'p-6'}`}>{children}</div>
       </main>
     </div>
   );
