@@ -386,6 +386,17 @@ export function TalkPage() {
   // há sessão ativa E ela tem mensagens. Senão o orbe é a tela — nunca branco/fantasma.
   const inChat = view === 'chat' && activeId != null && messages.length > 0;
 
+  // Trava o scroll do DOCUMENTO no chat: a coluna já ocupa 100vh (cadeia flex),
+  // então sobra no máx. arredondamento — overflow:hidden garante zero scroll de
+  // página (composer sempre visível). Sem -m-6 agora, o topo NÃO é cortado.
+  useEffect(() => {
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, []);
+
   // Ponte offline? A ponte marca a msg como 'processing' ao pegá-la (poll de 3s).
   // Se ficar 'pending' por ~15s, provavelmente está fora do ar → avisa + reenviar.
   const lastMsg = messages[messages.length - 1];
