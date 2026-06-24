@@ -56,7 +56,7 @@
     --border-active-alpha:  0.45;
 
     /* Scrollbar */
-    --scrollbar-thumb: 30 43 30; /* #1e2b1e */
+    --scrollbar-thumb: 58 79 58; /* #3a4f3a — visível no fundo escuro */
   }
 
   /* ─── Light theme — invertendo superfícies e texto, mantendo brand ────── */
@@ -112,12 +112,18 @@
     background-color: rgb(var(--surface-0));
     color: rgb(var(--creme));
     transition: background-color 0.2s ease, color 0.2s ease;
+    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--scrollbar-thumb)) transparent;
   }
   body {
     background-color: rgb(var(--surface-0));
   }
+  /* WebKit — gutter de 11px com thumb arredondado e inset (background-clip),
+     mais visível no hover. Some quando não há overflow. */
   ::-webkit-scrollbar {
-    width: 4px;
+    width: 11px;
+    height: 11px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -125,6 +131,15 @@
   ::-webkit-scrollbar-thumb {
     background: rgb(var(--scrollbar-thumb));
     border-radius: 99px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--brand) / 0.6);
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }
 

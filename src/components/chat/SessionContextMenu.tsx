@@ -2,7 +2,7 @@
  * Menu de contexto de uma conversa (estilo Claude): renomear, fixar, cor,
  * mover pra pasta, duplicar, transcrição, arquivar e apagar.
  */
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Pencil, Pin, PinOff, Palette, FolderInput, Files, FileText, Archive, ArchiveRestore, Trash2, ChevronRight, Check } from 'lucide-react';
 import type { ChatSession, ChatFolder } from '@/services/chatSessions';
 
@@ -25,14 +25,30 @@ export function SessionContextMenu({
   onDelete: () => void;
 }) {
   const [sub, setSub] = useState<'color' | 'folder' | null>(null);
-  const top = Math.min(pos.y + 4, window.innerHeight - 380);
-  const left = Math.max(8, pos.x - 208);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState({ left: Math.max(8, pos.x - 208), top: pos.y + 4 });
+  // Mede o menu DEPOIS de renderizar e o reposiciona pra caber inteiro na tela —
+  // sobe quando abre perto da borda de baixo, pra "Apagar" nunca ficar cortado.
+  // Recalcula quando um submenu (cor/pasta) expande e muda a altura.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = pos.x - width;                       // abre à esquerda do clique
+    if (left < 8) left = Math.min(pos.x + 4, vw - width - 8); // sem espaço → à direita
+    left = Math.max(8, Math.min(left, vw - width - 8));
+    let top = pos.y + 4;
+    if (top + height > vh - 8) top = Math.max(8, vh - height - 8); // não cabe embaixo → sobe
+    setCoords({ left, top });
+  }, [pos.x, pos.y, sub]);
   const run = (fn: () => void) => () => { fn(); onClose(); };
 
   return (
     <>
       <div className="fixed inset-0 z-[58]" onClick={onClose} />
-      <div className="fixed z-[59] w-52 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px] max-h-[360px] overflow-y-auto" style={{ left, top }}>
+      <div ref={menuRef} className="fixed z-[59] w-52 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px] max-h-[calc(100vh-16px)] overflow-y-auto" style={{ left: coords.left, top: coords.top }}>
         <Row icon={<Pencil size={14} />} label="Renomear" onClick={run(onRename)} />
         <Row icon={session.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />} label={session.pinnedAt ? 'Desafixar' : 'Fixar no topo'} onClick={run(onTogglePin)} />
 
