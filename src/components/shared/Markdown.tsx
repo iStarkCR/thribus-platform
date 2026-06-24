@@ -58,7 +58,14 @@ function renderInline(text: string): ReactNode[] {
     } else if (m[5]) {
       out.push(<strong key={key++} className="font-semibold text-creme">{m[6]}</strong>);
     } else if (m[7]) {
-      out.push(<code key={key++} className="font-mono text-[0.88em] bg-surface-3 text-brand-bright px-1.5 py-0.5 rounded-md">{m[8]}</code>);
+      const code = m[8];
+      // URL dentro de crases → link clicável (mantém o visual mono). Resolve o
+      // caso comum do agente colar o link entre ` `.
+      if (/^https?:\/\/\S+$/.test(code.trim())) {
+        out.push(<a key={key++} href={code.trim()} target="_blank" rel="noopener noreferrer" className="font-mono text-[0.88em] bg-surface-3 text-brand-bright px-1.5 py-0.5 rounded-md underline underline-offset-2 hover:text-brand break-all">{code}</a>);
+      } else {
+        out.push(<code key={key++} className="font-mono text-[0.88em] bg-surface-3 text-brand-bright px-1.5 py-0.5 rounded-md">{code}</code>);
+      }
     }
     last = INLINE.lastIndex;
   }
