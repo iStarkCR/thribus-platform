@@ -39,7 +39,7 @@ const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 // por execução. O default vem do env (fallback); o painel sobrescreve via a
 // tabela cortex_brain_config (scope='global'). Recarregada a cada ~15s no loop.
 const DEFAULT_MODEL = process.env.BRIDGE_MODEL || 'opus'; // alias do CLI — resolve sozinho pro modelo atual
-let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0 };
+let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0, contextLimitTokens: 250000 };
 // Modo voz: modelo leve/rápido (conversa falada), independente do Brain global.
 const VOICE_MODEL = process.env.BRIDGE_VOICE_MODEL || 'sonnet';
 const VOICE_EFFORT = process.env.BRIDGE_VOICE_EFFORT || 'low';
@@ -54,8 +54,15 @@ const cliEffort = (e) => (e === 'ultra' ? 'max' : e);
 // os ignora pra que um cliente nunca execute nada na sua máquina.
 const TEAM_CLIENT = process.env.BRIDGE_TEAM_CLIENT || 'Thribus Tech (Interno)';
 const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 3000);
-const TIMEOUT_MS = Number(process.env.BRIDGE_TIMEOUT_MS || 180_000); // chat interativo: 3min
+const TIMEOUT_MS = Number(process.env.BRIDGE_TIMEOUT_MS || 900_000); // chat: 15min (processos longos — o paralelismo por raia evita travar a fila)
 const DEMAND_TIMEOUT_MS = Number(process.env.BRIDGE_DEMAND_TIMEOUT_MS || 1_500_000); // demandas: 25min (tarefas longas: relatórios, etc.)
+// Unificação de cérebro (Caminho A): SÓ as conversas do Bukowiski rodam no cwd do
+// daemon, pra compartilharem a sessão Claude (--resume) entre WhatsApp/Telegram/
+// painel. Os outros 14 colaboradores seguem no cwd neutro do bridge (senão o
+// CLAUDE.md do Bukowiski contaminaria a persona deles). Desligar: aponte
+// BRIDGE_BUKOWISKI_CWD pro cwd do bridge.
+const BUKOWISKI_AGENT = 'bukowiski-thribus';
+const BUKOWISKI_CWD = process.env.BRIDGE_BUKOWISKI_CWD || '/Users/charlesandrade/projects/Bukowiski';
 const HISTORY = 20; // últimas N msgs do thread como contexto
 // Anti-bloat de contexto: a sessão do claude é resumida a cada turno e ACUMULA
 // (dumps de tool, etc.). Quando passa de ~70% da janela (1M no Max), reiniciamos
@@ -70,6 +77,42 @@ if (!URL || !KEY) {
 
 const sb = createClient(URL, KEY, { auth: { persistSession: false } });
 
+// ── Concorrência: semáforo global + raias por conversa (portado do daemon) ────
+// Conversas/demandas DIFERENTES rodam EM PARALELO (até MAX_CONCURRENCY); a MESMA
+// conversa fica serial na sua raia, pra não corromper a sessão Claude (--resume +
+// claude_session_id). Antes a ponte era 100% serial — 1 msg longa travava o painel
+// inteiro. Agora uma tarefa de 10min numa conversa não bloqueia as outras.
+const MAX_CONCURRENCY = Number(process.env.BRIDGE_MAX_CONCURRENCY || 3);
+let _slots = MAX_CONCURRENCY;
+const _waiters = [];
+function _acquire() {
+  if (_slots > 0) { _slots--; return Promise.resolve(); }
+  return new Promise((res) => _waiters.push(res));
+}
+function _release() {
+  _slots++;
+  const next = _waiters.shift();
+  if (next) { _slots--; next(); }
+}
+const _laneTails = new Map();
+function runOnLane(laneKey, fn) {
+  const prev = _laneTails.get(laneKey) || Promise.resolve();
+  const tail = prev.then(async () => {
+    await _acquire();
+    try { return await fn(); } finally { _release(); }
+  });
+  _laneTails.set(laneKey, tail);
+  tail.catch(() => {}).finally(() => { if (_laneTails.get(laneKey) === tail) _laneTails.delete(laneKey); });
+  return tail;
+}
+// Claim atômico: marca o item como em-processamento; só 1 poll ganha a corrida
+// (evita processar a mesma msg/demanda 2x agora que os ticks não são mais serial).
+async function claimRow(table, id, fromStatus, toStatus) {
+  const { data } = await sb.from(table).update({ status: toStatus })
+    .eq('id', id).eq('status', fromStatus).select('id');
+  return !!(data && data.length);
+}
+
 // Lê a config do painel (modelo + esforço + teto). Cacheia 15s pra não consultar
 // o banco a cada poll. Em erro, mantém o último valor conhecido.
 async function loadBrainConfig() {
@@ -77,7 +120,7 @@ async function loadBrainConfig() {
   try {
     const { data } = await sb
       .from('cortex_brain_config')
-      .select('model,effort,max_budget_usd')
+      .select('model,effort,max_budget_usd,context_limit_tokens')
       .eq('scope', 'global')
       .maybeSingle();
     if (data) {
@@ -85,6 +128,7 @@ async function loadBrainConfig() {
         model: data.model || DEFAULT_MODEL,
         effort: data.effort || 'high',
         maxBudgetUsd: Number(data.max_budget_usd) || 0,
+        contextLimitTokens: Number(data.context_limit_tokens) || BRAIN.contextLimitTokens || 250000,
       };
     }
     brainLoadedAt = Date.now();
@@ -151,13 +195,15 @@ async function loadWorkFolders() {
   } catch (e) { console.error('[work folders]', e.message); }
   return _wfPaths;
 }
-// cwd da conversa: a pasta escolhida no painel, só se estiver na allowlist.
-async function cwdForSession(workingDir) {
-  if (!workingDir) return undefined;
-  const allowed = await loadWorkFolders();
-  if (allowed.has(workingDir)) return workingDir;
-  console.error('[cwd] pasta fora da allowlist, ignorando:', workingDir);
-  return undefined;
+// cwd da conversa: a pasta escolhida no painel (se estiver na allowlist), senão
+// o default do colaborador (Bukowiski no cwd dele; os outros no cwd neutro).
+async function cwdForSession(agentId, workingDir) {
+  if (workingDir) {
+    const allowed = await loadWorkFolders();
+    if (allowed.has(workingDir)) return workingDir;
+    console.error('[cwd] pasta fora da allowlist, ignorando:', workingDir);
+  }
+  return agentId === BUKOWISKI_AGENT ? BUKOWISKI_CWD : undefined;
 }
 
 // Navegador de pastas pro painel: o painel (web) não acessa o filesystem; aqui
@@ -195,6 +241,7 @@ async function tickFsBrowse() {
       }
       await sb.from('fs_browse_requests').update(patch).eq('id', req.id);
     }
+    // limpeza: descarta pedidos resolvidos há mais de 5min
     await sb.from('fs_browse_requests').delete().lt('resolved_at', new Date(Date.now() - 5 * 60_000).toISOString());
   } catch (e) {
     console.error('[fs browse]', e.message);
@@ -445,7 +492,7 @@ function runClaude(prompt, opts = {}) {
         delete env[k];
       }
     }
-    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env });
+    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env, cwd: opts.cwd || undefined });
     if (opts.onSpawn) { try { opts.onSpawn(child); } catch { /* noop */ } }
     let buf = '';
     let err = '';
@@ -541,10 +588,12 @@ async function processMessage(msg) {
     .eq('id', msg.session_id)
     .maybeSingle();
   let resumeId = sess?.claude_session_id || null;
-  // Anti-bloat: se o contexto acumulado passou de ~70% da janela, NÃO resume —
-  // reinicia a sessão limpa (re-seed persona + histórico recente) e zera o acúmulo.
-  if (resumeId && (sess?.context_tokens || 0) > CONTEXT_RESET_TOKENS) {
-    console.log(`[contexto ${sess.context_tokens} > ${CONTEXT_RESET_TOKENS} (${Math.round((sess.context_tokens / CONTEXT_WINDOW) * 100)}%) → reinicia sessão limpa]`);
+  // Anti-bloat: se o contexto acumulado passou do teto (cortex_brain_config — o
+  // Charles controla em /cortex-brain, 250k a 1M), NÃO resume — reinicia a sessão
+  // limpa (re-seed persona + histórico recente) e zera o acúmulo.
+  const ctxLimit = BRAIN.contextLimitTokens || CONTEXT_RESET_TOKENS;
+  if (resumeId && (sess?.context_tokens || 0) > ctxLimit) {
+    console.log(`[contexto ${sess.context_tokens} > teto ${ctxLimit} → reinicia sessão limpa]`);
     resumeId = null;
   }
 
@@ -565,12 +614,14 @@ async function processMessage(msg) {
   // Modo voz → modelo leve/rápido (conversa falada). A execução normal (texto/
   // painel/demandas) segue no modelo forte do cortex_brain_config global.
   const voice = msg.is_voice ? { model: VOICE_MODEL, effort: VOICE_EFFORT } : {};
-  const opts = { model: BRAIN.model, effort: BRAIN.effort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
-    cwd: await cwdForSession(sess?.working_dir) };
+  const cwd = await cwdForSession(msg.agent_id, sess?.working_dir);
+  const opts = { model: BRAIN.model, effort: BRAIN.effort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent, cwd };
 
-  // ── Streaming: a msg do assistente nasce no 1º token de texto e cresce em
-  // chunks (throttle ~400ms). Antes do texto, o indicador "pensando/executando"
-  // segue. Modo voz não faz streaming. O write final (done) é o autoritativo.
+  // ── Streaming ──────────────────────────────────────────────────────────────
+  // A msg do assistente NASCE no 1º token de texto e o conteúdo cresce em chunks
+  // (throttle ~400ms). Antes do texto, o indicador "pensando/executando" segue
+  // (a msg só existe quando o texto começa). Modo voz não faz streaming (curto +
+  // falado). Tudo best-effort: o write final (done) é o autoritativo.
   let asstId = null;
   let lastFlush = 0;
   let finalized = false;
@@ -636,7 +687,8 @@ async function processMessage(msg) {
     const reply = r.text;
     if (!reply && !asstId) throw new Error('resposta vazia do claude');
 
-    // Finaliza: insere (se nunca streamou) ou consolida o conteúdo + status done.
+    // Finaliza: insere (se nunca streamou) ou consolida o conteúdo com o texto
+    // autoritativo do 'result' + status done (aí o painel mostra as ações).
     await writeStream(reply || '', true);
     await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', msg.id);
 
@@ -656,8 +708,8 @@ async function processMessage(msg) {
         `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,
     );
   } catch (e) {
-    // Streaming parcial já gravado → finaliza como 'done' pra não deixar a msg
-    // pela metade em 'processing'.
+    // Streaming parcial já gravado → finaliza como 'done' (mantém o que foi dito)
+    // pra não deixar mensagem pela metade em 'processing'.
     if (asstId && !finalized) { try { await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', asstId); } catch { /* noop */ } }
     if (ctl.cancelled) { console.log(`[parado] msg ${msg.id} cancelada pelo usuário`); return; }
     throw e;
@@ -687,15 +739,16 @@ async function tick(teamIds) {
   for (const msg of pending ?? []) {
     // Agente de cliente → respondido pela API (worker), não pela ponte do Mac.
     if (!teamIds.has(msg.agent_id)) continue;
-    try {
-      await processMessage(msg);
-    } catch (e) {
+    // Claim atômico + dispara na raia da conversa: conversas diferentes em paralelo,
+    // a mesma conversa serial. O loop NÃO espera aqui (não-bloqueante).
+    if (!(await claimRow('collaborator_messages', msg.id, 'pending', 'processing'))) continue;
+    runOnLane(`chat:${msg.session_id || msg.id}`, () => processMessage(msg)).catch(async (e) => {
       console.error(`[erro] msg ${msg.id}:`, e.message);
       await sb
         .from('collaborator_messages')
         .update({ status: 'error', error: String(e.message).slice(0, 500) })
         .eq('id', msg.id);
-    }
+    });
   }
 }
 
@@ -772,15 +825,16 @@ async function tickDemands(teamIds) {
   }
   for (const d of queue ?? []) {
     if (!teamIds.has(d.agent_id)) continue; // só o time interno executa pela ponte
-    try {
-      await processDemand(d);
-    } catch (e) {
+    // Claim atômico + raia da demanda — não bloqueia o loop (senão uma demanda
+    // longa de 25min travaria o re-poll do chat).
+    if (!(await claimRow('team_demands', d.id, 'todo', 'doing'))) continue;
+    runOnLane(`demand:${d.id}`, () => processDemand(d)).catch(async (e) => {
       console.error(`[erro] demanda ${d.id}:`, e.message);
       await sb
         .from('team_demands')
         .update({ status: 'error', error: String(e.message).slice(0, 500) })
         .eq('id', d.id);
-    }
+    });
   }
 }
 
@@ -860,13 +914,14 @@ async function tickDemandReplies(teamIds) {
     // só processa se a demanda é de um agente do time interno
     const { data: d } = await sb.from('team_demands').select('agent_id').eq('id', m.demand_id).single();
     if (!d || !teamIds.has(d.agent_id)) continue;
-    try {
-      await processDemandReply(m);
-    } catch (e) {
+    // Claim atômico + raia da demanda (mesma raia da demanda-mãe — não roda a
+    // demanda e sua resposta em paralelo, pois compartilham contexto).
+    if (!(await claimRow('demand_messages', m.id, 'pending', 'processing'))) continue;
+    runOnLane(`demand:${m.demand_id}`, () => processDemandReply(m)).catch(async (e) => {
       console.error(`[erro] thread ${m.id}:`, e.message);
       await sb.from('demand_messages').update({ status: 'error', error: String(e.message).slice(0, 500) }).eq('id', m.id);
       await sb.from('team_demands').update({ status: 'done' }).eq('id', m.demand_id); // não deixa travada em 'doing'
-    }
+    });
   }
 }
 
@@ -1007,7 +1062,8 @@ async function loop() {
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 }
-// Navegador de pastas: poller próprio e rápido (independe do loop pesado).
+// Navegador de pastas: poller próprio e rápido (independe do loop pesado) pra
+// navegar fluido no seletor "Abrir pasta…" do painel.
 setInterval(tickFsBrowse, 700);
 loop().catch((e) => {
   console.error('fatal:', e);
