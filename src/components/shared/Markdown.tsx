@@ -10,7 +10,7 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { CodeViewer } from '@/components/shared/CodeViewer';
 
 // URL aceita parênteses balanceados (ex.: .../Foo_(bar)) sem cortar no 1º ')'.
@@ -127,24 +127,46 @@ function statusTone(s: string): string {
   return '--semantic-blue';
 }
 
-interface CardItem { title?: string; subtitle?: string; value?: string | number; status?: string; accent?: string }
-function CardList({ items }: { items: CardItem[] }) {
+// `action` (opcional): texto enviado ao chat quando o card é clicado — vira uma
+// opção selecionável (ex: escolher canal A/B). Sem action, o card é informativo.
+interface CardItem { title?: string; subtitle?: string; value?: string | number; status?: string; accent?: string; action?: string }
+function CardList({ items, onAction }: { items: CardItem[]; onAction?: (t: string) => void }) {
   return (
     <div className="my-3 flex flex-col gap-2">
       {items.map((it, i) => {
         const acc = it.accent ? accentVar(it.accent) : it.status ? statusTone(String(it.status)) : '--brand-bright';
-        return (
-          <div key={i} className="flex items-center justify-between gap-3 rounded-xl border border-default bg-surface-1/70 px-3.5 py-2.5 transition-colors hover:bg-surface-hover/40" style={{ borderLeft: `3px solid rgb(var(${acc}))` }}>
+        const clickable = Boolean(it.action && onAction);
+        const inner = (
+          <>
             <div className="min-w-0">
               <div className="text-[14px] font-semibold text-creme truncate">{renderInline(String(it.title ?? ''))}</div>
               {it.subtitle != null && <div className="text-[12px] text-creme-mute truncate">{renderInline(String(it.subtitle))}</div>}
             </div>
-            <div className="text-right shrink-0">
-              {it.value != null && it.value !== '' && <div className="font-mono tabular-nums text-[14px] font-bold text-creme leading-tight">{String(it.value)}</div>}
-              {it.status != null && it.status !== '' && (
-                <span className="inline-block mt-0.5 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md" style={{ background: `rgb(var(${acc}) / 0.14)`, color: `rgb(var(${acc}))` }}>{String(it.status)}</span>
-              )}
+            <div className="flex items-center gap-2 text-right shrink-0">
+              <div>
+                {it.value != null && it.value !== '' && <div className="font-mono tabular-nums text-[14px] font-bold text-creme leading-tight">{String(it.value)}</div>}
+                {it.status != null && it.status !== '' && (
+                  <span className="inline-block mt-0.5 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md" style={{ background: `rgb(var(${acc}) / 0.14)`, color: `rgb(var(${acc}))` }}>{String(it.status)}</span>
+                )}
+              </div>
+              {clickable && <ChevronRight size={16} className="shrink-0 text-creme-faint" />}
             </div>
+          </>
+        );
+        const base = 'w-full flex items-center justify-between gap-3 rounded-xl border bg-surface-1/70 px-3.5 py-2.5 transition-colors';
+        return clickable ? (
+          <button
+            key={i}
+            onClick={() => onAction!(it.action!)}
+            className={`${base} border-default text-left hover:bg-surface-hover hover:border-brand/50 cursor-pointer`}
+            style={{ borderLeft: `3px solid rgb(var(${acc}))` }}
+            title="Selecionar esta opção"
+          >
+            {inner}
+          </button>
+        ) : (
+          <div key={i} className={`${base} border-default hover:bg-surface-hover/40`} style={{ borderLeft: `3px solid rgb(var(${acc}))` }}>
+            {inner}
           </div>
         );
       })}
@@ -202,7 +224,7 @@ export function Markdown({ text, className, onAction }: { text: string; classNam
             const data = JSON.parse(body);
             if (lk === 'cards') {
               const its = Array.isArray(data) ? data : data?.items;
-              if (Array.isArray(its) && its.length) { blocks.push(<CardList key={key++} items={its} />); i = j + 1; continue; }
+              if (Array.isArray(its) && its.length) { blocks.push(<CardList key={key++} items={its} onAction={onAction} />); i = j + 1; continue; }
             } else {
               blocks.push(<ConfirmCard key={key++} data={data} onAction={onAction} />); i = j + 1; continue;
             }

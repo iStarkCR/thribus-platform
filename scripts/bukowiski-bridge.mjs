@@ -296,7 +296,11 @@ const GUARD =
   'status/valor — em vez de tabela, devolva um bloco ```cards com um array JSON: ' +
   '[{"title":"TexNet · Mensalidade","subtitle":"vence 25/06","value":"R$ 1.200","status":"a receber","accent":"green"}]. ' +
   'O painel renderiza como cards. status = texto curto; accent opcional = green|gold|blue|red|amber ' +
-  '(se omitir, a cor sai do status). Use cards pra 2–8 itens; acima disso, tabela.\n\n' +
+  '(se omitir, a cor sai do status). Use cards pra 2–8 itens; acima disso, tabela. ' +
+  'Pra OPÇÕES/ESCOLHAS (o Charles vai escolher UMA — ex: canal, conta, plano), inclua "action" em cada ' +
+  'card = a frase exata que o painel envia quando ele CLICAR no card (ex: ' +
+  '{"title":"WhatsApp ...8912-1001","status":"Opção A","action":"Pode usar o canal ...8912-1001 (opção A)"}). ' +
+  'Com "action" o card fica clicável e o Charles escolhe num toque, sem digitar.\n\n' +
   'CONFIRMAR: antes de QUALQUER ação que mexa em dinheiro, produção/deploy, DNS, exclusão de dados ou envio ' +
   'a externos — NÃO execute direto. Descreva e peça confirmação com um bloco ```confirm JSON: ' +
   '{"action":"Criar cobrança PIX de R$ 1.200 pro TexNet","detail":"vencimento 25/06","danger":false}. ' +
