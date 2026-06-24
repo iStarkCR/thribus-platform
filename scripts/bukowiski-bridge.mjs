@@ -400,6 +400,7 @@ function runClaude(prompt, opts = {}) {
       '--append-system-prompt', GUARD,
       '--output-format', 'stream-json',
       '--verbose',
+      '--include-partial-messages', // deltas de texto → streaming ao vivo no painel
       '--model', model,
       '--permission-mode', 'bypassPermissions',
     ];
@@ -430,6 +431,7 @@ function runClaude(prompt, opts = {}) {
     let buf = '';
     let err = '';
     let result = null;
+    let streamedText = ''; // texto acumulado dos deltas (streaming ao vivo)
     // Uso da ÚLTIMA mensagem do assistant — reflete a janela de contexto real do
     // último turno (input+cache da chamada final), ao contrário do uso do evento
     // 'result', que SOMA todos os round-trips de tool calls e infla o número.
@@ -445,6 +447,12 @@ function runClaude(prompt, opts = {}) {
       if (!s) return;
       let evt;
       try { evt = JSON.parse(s); } catch { return; }
+      // Delta de texto (--include-partial-messages) → acumula e emite pro painel.
+      if (evt.type === 'stream_event' && evt.event?.type === 'content_block_delta' && evt.event.delta?.type === 'text_delta') {
+        streamedText += evt.event.delta.text || '';
+        if (opts.onText) { try { opts.onText(streamedText); } catch { /* nunca derruba o parse */ } }
+        return;
+      }
       if (evt.type === 'assistant' && evt.message) {
         if (evt.message.usage) lastAssistantUsage = evt.message.usage;
       }
@@ -487,7 +495,7 @@ function runClaude(prompt, opts = {}) {
           const contextTokens = lu
             ? (lu.input_tokens || 0) + (lu.cache_creation_input_tokens || 0) + (lu.cache_read_input_tokens || 0) + (lu.output_tokens || 0)
             : null;
-          resolve({ text: result.text, usage: result.usage, sessionId: result.sessionId, contextTokens });
+          resolve({ text: result.text || streamedText, usage: result.usage, sessionId: result.sessionId, contextTokens });
         }
         return;
       }
@@ -541,6 +549,33 @@ async function processMessage(msg) {
   const opts = { model: BRAIN.model, effort: BRAIN.effort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
     cwd: await cwdForSession(sess?.working_dir) };
 
+  // ── Streaming: a msg do assistente nasce no 1º token de texto e cresce em
+  // chunks (throttle ~400ms). Antes do texto, o indicador "pensando/executando"
+  // segue. Modo voz não faz streaming. O write final (done) é o autoritativo.
+  let asstId = null;
+  let lastFlush = 0;
+  let finalized = false;
+  async function writeStream(text, done) {
+    if (finalized && !done) return;
+    if (done) finalized = true;
+    if (!asstId) {
+      const { data } = await sb.from('collaborator_messages')
+        .insert({ session_id: msg.session_id, agent_id: msg.agent_id, user_id: msg.user_id, role: 'assistant', content: text, status: done ? 'done' : 'processing', channel: msg.channel })
+        .select('id').single();
+      asstId = data?.id ?? null;
+    } else {
+      await sb.from('collaborator_messages').update(done ? { content: text, status: 'done' } : { content: text }).eq('id', asstId);
+    }
+  }
+  if (!msg.is_voice) {
+    opts.onText = (text) => {
+      const now = Date.now();
+      if (now - lastFlush < 400) return;
+      lastFlush = now;
+      writeStream(text, false).catch(() => { /* chunk best-effort */ });
+    };
+  }
+
   // Botão "Parar" do chat: o front marca a msg como 'cancelled'. Um poller detecta
   // e MATA o claude; aí não escrevemos resposta e a msg fica como 'cancelled'.
   const ctl = { child: null, cancelled: false };
@@ -580,17 +615,10 @@ async function processMessage(msg) {
     if (ctl.cancelled) throw new Error('cancelado');
 
     const reply = r.text;
-    if (!reply) throw new Error('resposta vazia do claude');
+    if (!reply && !asstId) throw new Error('resposta vazia do claude');
 
-    await sb.from('collaborator_messages').insert({
-      session_id: msg.session_id,
-      agent_id: msg.agent_id,
-      user_id: msg.user_id,
-      role: 'assistant',
-      content: reply,
-      status: 'done',
-      channel: msg.channel,
-    });
+    // Finaliza: insere (se nunca streamou) ou consolida o conteúdo + status done.
+    await writeStream(reply || '', true);
     await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', msg.id);
 
     // grava a sessão do claude + a janela de contexto (pro painel mostrar X/1M).
@@ -609,6 +637,9 @@ async function processMessage(msg) {
         `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,
     );
   } catch (e) {
+    // Streaming parcial já gravado → finaliza como 'done' pra não deixar a msg
+    // pela metade em 'processing'.
+    if (asstId && !finalized) { try { await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', asstId); } catch { /* noop */ } }
     if (ctl.cancelled) { console.log(`[parado] msg ${msg.id} cancelada pelo usuário`); return; }
     throw e;
   } finally {
