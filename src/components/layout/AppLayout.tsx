@@ -24,11 +24,15 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
   }, [pathname, setSidebarCollapsed]);
 
+  // No chat (/talk), a coluna ocupa exatamente a viewport (altura travada via
+  // flex, sem padding) pra a tela inicial NÃO rolar e nada ser cortado. Demais
+  // páginas seguem com padding + min-h-screen (rolam quando o conteúdo é longo).
+  const isChat = pathname.startsWith('/talk');
   return (
-    <div className="flex min-h-screen">
+    <div className={`flex ${isChat ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
       <Sidebar />
-      <main className={`flex-1 flex flex-col min-h-screen transition-[margin] duration-200 ${collapsed ? 'ml-[64px]' : 'ml-[244px]'}`}>
-        <div className="flex-1 p-6">{children}</div>
+      <main className={`flex-1 flex flex-col transition-[margin] duration-200 ${collapsed ? 'ml-[64px]' : 'ml-[244px]'} ${isChat ? 'h-screen min-h-0 overflow-hidden' : 'min-h-screen'}`}>
+        <div className={isChat ? 'flex-1 min-h-0 flex flex-col' : 'flex-1 p-6'}>{children}</div>
       </main>
     </div>
   );

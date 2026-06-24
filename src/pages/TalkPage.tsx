@@ -408,19 +408,6 @@ export function TalkPage() {
   // mensagem do usuário em processamento → chave dos passos "por trás"
   const lastUserMsgId = waiting ? messages[messages.length - 1].id : null;
 
-  // Trava definitiva: o chat ocupa exatamente a viewport, então o documento NÃO
-  // rola (a tela inicial fica fixa). Restaura ao sair pro resto do painel rolar.
-  useEffect(() => {
-    const prevBody = document.body.style.overflow;
-    const prevHtml = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prevBody;
-      document.documentElement.style.overflow = prevHtml;
-    };
-  }, []);
-
   // Aurora reativa — o fundo (tema glass) pulsa quando o Bukowiski pensa e ganha
   // vida quando ele FALA (TTS). Limpa as classes ao desmontar.
   useEffect(() => {
@@ -856,7 +843,7 @@ export function TalkPage() {
   const runSlash = (c: { run: () => void }) => { c.run(); setInput(''); setCmdIdx(0); };
 
   return (
-    <div className={`-m-6 h-screen grid overflow-hidden ${navCollapsed ? 'grid-cols-[1fr]' : 'grid-cols-[300px_1fr]'}`}>
+    <div className={`flex-1 min-h-0 grid overflow-hidden ${navCollapsed ? 'grid-cols-[1fr]' : 'grid-cols-[300px_1fr]'}`}>
       {/* Sessões + pastas */}
       {!navCollapsed && (
       <div className="glass-strong border-r border-default flex flex-col bg-surface-1 min-h-0">
