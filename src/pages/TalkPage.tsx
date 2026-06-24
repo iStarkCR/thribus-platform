@@ -925,10 +925,10 @@ export function TalkPage() {
   const insertMention = (c: { name: string }) => { setInput((prev) => prev.replace(/(^|\s)@([\p{L}\d_-]*)$/u, `$1@${c.name} `)); setMenIdx(0); };
 
   return (
-    <div className={`flex-1 min-h-0 grid overflow-hidden ${navCollapsed ? 'grid-cols-[1fr]' : 'grid-cols-[300px_1fr]'}`}>
+    <div className="flex-1 min-h-0 flex overflow-hidden">
       {/* Sessões + pastas */}
       {!navCollapsed && (
-      <div className="glass-strong border-r border-default flex flex-col bg-surface-1 min-h-0">
+      <div className="glass-strong border-r border-default flex flex-col bg-surface-1 min-h-0 w-[300px] shrink-0">
         <div className="p-3.5 border-b border-default space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-widest text-creme-faint">Conversas</span>
@@ -963,7 +963,7 @@ export function TalkPage() {
         </div>
 
         <div
-          className={`flex-1 overflow-y-auto p-2 space-y-0.5 transition-colors ${dragOverId === 'root' ? 'bg-brand/[0.06]' : ''}`}
+          className={`flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5 transition-colors ${dragOverId === 'root' ? 'bg-brand/[0.06]' : ''}`}
           onDragOver={(e) => { e.preventDefault(); setDragOverId('root'); }}
           onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOverId((c) => (c === 'root' ? null : c)); }}
           onDrop={(e) => { e.preventDefault(); dropOnTarget(null); }}
@@ -1055,7 +1055,7 @@ export function TalkPage() {
       )}
 
       {/* Thread */}
-      <div className="flex flex-col bg-surface-0 min-w-0 min-h-0">
+      <div className="flex-1 flex flex-col bg-surface-0 min-w-0 min-h-0">
         <div className="glass-panel relative z-30 h-16 px-6 flex items-center justify-between gap-3 border-b border-default shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             {navCollapsed && (
