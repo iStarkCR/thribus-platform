@@ -138,6 +138,28 @@ async function fetchUsageLimits() {
   }
 }
 
+// Pastas de trabalho permitidas (allowlist + lista do seletor do painel). A
+// conversa escolhe uma; o cwd do claude vira essa pasta. Cache 30s.
+let _wfPaths = new Set();
+let _wfAt = 0;
+async function loadWorkFolders() {
+  if (Date.now() - _wfAt < 30_000) return _wfPaths;
+  try {
+    const { data } = await sb.from('cortex_work_folders').select('path').eq('active', true);
+    if (data) _wfPaths = new Set(data.map((r) => r.path));
+    _wfAt = Date.now();
+  } catch (e) { console.error('[work folders]', e.message); }
+  return _wfPaths;
+}
+// cwd da conversa: a pasta escolhida no painel, só se estiver na allowlist.
+async function cwdForSession(workingDir) {
+  if (!workingDir) return undefined;
+  const allowed = await loadWorkFolders();
+  if (allowed.has(workingDir)) return workingDir;
+  console.error('[cwd] pasta fora da allowlist, ignorando:', workingDir);
+  return undefined;
+}
+
 // Grava o custo/tokens reais de uma execução (best-effort; nunca derruba o loop).
 async function recordUsage({ userId, agentId, kind, refId, sessionId, usage }) {
   if (!usage) return;
@@ -445,7 +467,7 @@ async function processMessage(msg) {
   // Sessão do claude desta conversa (memória otimizada via --resume).
   const { data: sess } = await sb
     .from('chat_sessions')
-    .select('claude_session_id,context_tokens')
+    .select('claude_session_id,context_tokens,working_dir')
     .eq('id', msg.session_id)
     .maybeSingle();
   let resumeId = sess?.claude_session_id || null;
@@ -473,7 +495,8 @@ async function processMessage(msg) {
   // Modo voz → modelo leve/rápido (conversa falada). A execução normal (texto/
   // painel/demandas) segue no modelo forte do cortex_brain_config global.
   const voice = msg.is_voice ? { model: VOICE_MODEL, effort: VOICE_EFFORT } : {};
-  const opts = { model: BRAIN.model, effort: BRAIN.effort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent };
+  const opts = { model: BRAIN.model, effort: BRAIN.effort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
+    cwd: await cwdForSession(sess?.working_dir) };
 
   // Botão "Parar" do chat: o front marca a msg como 'cancelled'. Um poller detecta
   // e MATA o claude; aí não escrevemos resposta e a msg fica como 'cancelled'.

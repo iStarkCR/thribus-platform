@@ -16,6 +16,7 @@ import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { UsageLimitsBadge } from '@/components/cortex/UsageLimitsBadge';
+import { WorkFolderBar } from '@/components/cortex/WorkFolderBar';
 import { Markdown } from '@/components/shared/Markdown';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
 import { type RunEvent } from '@/services/runEvents';
@@ -28,7 +29,7 @@ import { SessionUsageModal } from '@/components/chat/SessionUsageModal';
 import { SessionContextMenu } from '@/components/chat/SessionContextMenu';
 import { TranscriptModal } from '@/components/chat/TranscriptModal';
 import {
-  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession, setSessionArchived, setSessionColor, setSessionPinned, forkSession,
+  listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession, setSessionArchived, setSessionColor, setSessionPinned, setSessionWorkingDir, forkSession,
   type ChatFolder, type ChatSession,
 } from '@/services/chatSessions';
 
@@ -1374,6 +1375,15 @@ export function TalkPage() {
               <CortexBrainBar />
               <CortexUsageBadge />
               <UsageLimitsBadge />
+              {active && (
+                <WorkFolderBar
+                  workingDir={active.workingDir}
+                  onChange={(path) => {
+                    patchSession(active.id, { workingDir: path });
+                    setSessionWorkingDir(active.id, path).catch(() => useAppStore.getState().addToast('Falha ao salvar a pasta', 'red'));
+                  }}
+                />
+              )}
               {planMode && (
                 <button onClick={() => setPlanMode(false)} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand/15 text-brand-bright text-[11px] shrink-0" title="Desligar modo plano">
                   <Lightbulb size={11} /> Modo plano <X size={11} />
