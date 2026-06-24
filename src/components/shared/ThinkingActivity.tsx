@@ -178,12 +178,12 @@ export function ThinkingActivity({ agentName, refId, onAct }: { agentName: strin
     return () => { on = false; unsub(); };
   }, [refId]);
 
-  // Sem tool steps ainda → não mostra "pensando…" (redundante com "digitando…").
-  // Só aparece quando há atividade real (rodando/lendo/etc), que é informativa.
-  if (events.length === 0) return null;
-
-  const latest = events[events.length - 1];
-  const status = `${verbFor(latest.label)}${latest.detail ? ` ${latest.detail}` : ''}`;
+  // Estágios do colaborador:
+  //   • sem tool steps ainda → "pensando…" (com os pontinhos animados)
+  //   • com tool steps       → o verbo real da ferramenta (rodando/lendo/…)
+  const hasSteps = events.length > 0;
+  const latest = hasSteps ? events[events.length - 1] : null;
+  const status = latest ? `${verbFor(latest.label)}${latest.detail ? ` ${latest.detail}` : ''}` : 'pensando';
 
   return (
     <div className="flex gap-2.5">
@@ -191,10 +191,12 @@ export function ThinkingActivity({ agentName, refId, onAct }: { agentName: strin
         {agentName.charAt(0).toUpperCase()}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme-mute text-[14px] max-w-full">
-          <Loader2 size={14} className="animate-spin shrink-0" />
+        <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme-mute text-[15px] max-w-full">
+          {hasSteps
+            ? <Loader2 size={15} className="animate-spin shrink-0" />
+            : <span className="flex items-center gap-1 shrink-0"><span className="typing-dot" /><span className="typing-dot" style={{ animationDelay: '.16s' }} /><span className="typing-dot" style={{ animationDelay: '.32s' }} /></span>}
           <span className="truncate">{agentName} está <span className="text-creme-dim">{status}</span>…</span>
-          {events.length > 0 && (
+          {hasSteps && (
             <button
               onClick={() => setOpen((o) => !o)}
               className="shrink-0 text-creme-faint hover:text-creme inline-flex items-center gap-0.5 text-[11px]"

@@ -1276,7 +1276,7 @@ export function TalkPage() {
                   return (
                   <div key={m.id} className="group flex flex-col items-end gap-1">
                     <div className="flex items-end gap-2.5 max-w-[82%]">
-                      <div className="px-[18px] py-3 rounded-[20px] rounded-br-md bg-brand text-white text-[16px] leading-[1.72] shadow-[0_12px_28px_-16px_rgba(0,0,0,0.55)] min-w-0">
+                      <div className="px-[18px] py-3 rounded-[20px] rounded-br-md bg-brand text-white text-[17px] leading-[1.7] shadow-[0_12px_28px_-16px_rgba(0,0,0,0.55)] min-w-0">
                         {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
                         {m.content && (
                           <span className="whitespace-pre-wrap">
@@ -1326,7 +1326,7 @@ export function TalkPage() {
                   <div key={m.id} className="group flex max-w-[88%]">
                     <div className="min-w-0 flex-1">
                       <div className="text-[12px] font-semibold text-creme-mute mb-1.5 tracking-wide">{agent.name}</div>
-                      <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[16px] leading-[1.72] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
+                      <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[17px] leading-[1.7] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
                         <Markdown text={m.content} onAction={(t) => send(t)} />
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
@@ -1360,14 +1360,6 @@ export function TalkPage() {
                     </div>
                   </div>
                 ),
-              )}
-              {waiting && (
-                <div className="flex">
-                  <div className="flex items-center gap-1.5 bg-surface-2 border border-default rounded-[20px] rounded-tl-md px-4 py-3.5">
-                    <span className="typing-dot" /><span className="typing-dot" style={{ animationDelay: '.16s' }} /><span className="typing-dot" style={{ animationDelay: '.32s' }} />
-                    <span className="text-[12.5px] text-creme-mute ml-1.5">{agent.name} está digitando…</span>
-                  </div>
-                </div>
               )}
               {waiting && <ThinkingActivity agentName={agent.name} refId={lastUserMsgId} onAct={handleStepAct} />}
             </div>

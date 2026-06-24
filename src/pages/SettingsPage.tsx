@@ -3,14 +3,14 @@ import {
   Settings, Database, Cable, ShieldCheck, HardDrive,
   CheckCircle2, XCircle, AlertTriangle, ExternalLink, Copy,
   Server, KeyRound, Bot, Wrench, Pencil, Palette,
-  Sparkles, Ear, Check, Droplets,
+  Sparkles, Ear, Check, Droplets, Type,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { isWakeWordSupported } from '@/hooks/useWakeWordListener';
 import { VoiceAssistantConfig } from '@/components/settings/VoiceAssistantConfig';
 import { WorkspaceEditModal } from '@/components/settings/WorkspaceEditModal';
 import { supabase } from '@/lib/supabase';
-import { useTheme, useGlass, useAccent, type Accent } from '@/hooks/useTheme';
+import { useTheme, useGlass, useAccent, useFontScale, type Accent, type UiScale } from '@/hooks/useTheme';
 
 /**
  * Configurações — visão operacional do sistema.
@@ -29,6 +29,7 @@ export function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { glass, toggle: toggleGlass } = useGlass();
   const { accent, setAccent } = useAccent();
+  const { scale, setScale } = useFontScale();
   const appearance: 'light' | 'dark' | 'vidro' = glass ? 'vidro' : theme;
   const selectAppearance = (id: 'light' | 'dark' | 'vidro') => {
     if (id === 'vidro') { if (!glass) toggleGlass(); return; }
@@ -170,6 +171,35 @@ export function SettingsPage() {
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        <div className="h-px bg-default my-5" />
+
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-creme-mute">
+              <Type size={13} className="text-brand" /> Tamanho da fonte
+            </div>
+            <div className="text-[12px] text-creme-faint mt-1">Escala a interface inteira — texto, botões e espaçamento.</div>
+          </div>
+          <div className="flex items-center rounded-xl border border-default overflow-hidden shrink-0">
+            {([
+              { id: 'sm', label: 'A', px: 13 },
+              { id: 'md', label: 'A', px: 15 },
+              { id: 'lg', label: 'A', px: 18 },
+              { id: 'xl', label: 'A', px: 21 },
+            ] as const).map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setScale(opt.id as UiScale)}
+                title={{ sm: 'Compacto', md: 'Padrão', lg: 'Grande', xl: 'Maior' }[opt.id]}
+                className={`w-11 h-10 flex items-center justify-center font-bold leading-none border-l first:border-l-0 border-default transition-colors ${scale === opt.id ? 'bg-brand/15 text-brand-bright' : 'text-creme-mute hover:text-creme hover:bg-surface-hover'}`}
+                style={{ fontSize: opt.px }}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>

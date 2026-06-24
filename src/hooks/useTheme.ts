@@ -162,6 +162,46 @@ export function useAccent(): { accent: Accent; setAccent: (a: Accent) => void } 
   return { accent, setAccent };
 }
 
+/* ─── Escala da interface — zoom global (afeta TUDO, inclusive px fixos) ───── */
+export type UiScale = 'sm' | 'md' | 'lg' | 'xl';
+const SCALE_KEY = 'thribus.uiScale';
+const SCALE_EVENT = 'thribus-uiscale-change';
+export const UI_SCALE_VALUE: Record<UiScale, number> = { sm: 0.92, md: 1, lg: 1.1, xl: 1.22 };
+
+function readScale(): UiScale {
+  if (typeof window === 'undefined') return 'md';
+  try {
+    const v = localStorage.getItem(SCALE_KEY);
+    if (v && v in UI_SCALE_VALUE) return v as UiScale;
+  } catch { /* ignora */ }
+  return 'md';
+}
+function applyScale(s: UiScale): void {
+  if (typeof document === 'undefined') return;
+  // `zoom` escala o sistema de coordenadas inteiro (px fixos incluídos) e
+  // mantém o posicionamento de overlays/orbe coerente — diferente de transform.
+  document.documentElement.style.setProperty('zoom', String(UI_SCALE_VALUE[s]));
+}
+/** Aplica a escala persistida ANTES do React montar (evita flash de tamanho). */
+export function initFontScale(): void { applyScale(readScale()); }
+export function useFontScale(): { scale: UiScale; setScale: (s: UiScale) => void } {
+  const [scale, setS] = useState<UiScale>(readScale);
+  useEffect(() => {
+    const onSync = (e: Event) => {
+      const d = (e as CustomEvent<{ scale: UiScale }>).detail;
+      if (d?.scale) { setS(d.scale); applyScale(d.scale); }
+    };
+    window.addEventListener(SCALE_EVENT, onSync);
+    return () => window.removeEventListener(SCALE_EVENT, onSync);
+  }, []);
+  const setScale = (s: UiScale) => {
+    setS(s); applyScale(s);
+    try { localStorage.setItem(SCALE_KEY, s); } catch { /* ignora */ }
+    window.dispatchEvent(new CustomEvent(SCALE_EVENT, { detail: { scale: s } }));
+  };
+  return { scale, setScale };
+}
+
 export function useGlass(): { glass: boolean; toggle: () => void } {
   const [glass, setGlass] = useState<boolean>(readGlass);
   useEffect(() => {
