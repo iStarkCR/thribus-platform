@@ -34,15 +34,21 @@ export function SessionContextMenu({
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el) return;
+    // Sob `zoom` (escala de fonte do sistema), getBoundingClientRect e os cliques
+    // ficam no espaço "client" (já escalado) e innerWidth/Height em CSS px. Levamos
+    // tudo pro mesmo espaço (×z) e convertemos o resultado pra style px (÷z). Com
+    // zoom 1 (padrão) z=1 e tudo vira no-op — idêntico ao cálculo simples.
+    const z = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
     const { width, height } = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const vw = window.innerWidth * z;
+    const vh = window.innerHeight * z;
+    const m = 8;
     let left = pos.x - width;                       // abre à esquerda do clique
-    if (left < 8) left = Math.min(pos.x + 4, vw - width - 8); // sem espaço → à direita
-    left = Math.max(8, Math.min(left, vw - width - 8));
+    if (left < m) left = Math.min(pos.x + 4, vw - width - m); // sem espaço → à direita
+    left = Math.max(m, Math.min(left, vw - width - m));
     let top = pos.y + 4;
-    if (top + height > vh - 8) top = Math.max(8, vh - height - 8); // não cabe embaixo → sobe
-    setCoords({ left, top });
+    if (top + height > vh - m) top = Math.max(m, vh - height - m); // não cabe embaixo → sobe
+    setCoords({ left: left / z, top: top / z });
   }, [pos.x, pos.y, sub]);
   const run = (fn: () => void) => () => { fn(); onClose(); };
 
