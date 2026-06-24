@@ -1333,7 +1333,7 @@ export function TalkPage() {
                       <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[17px] leading-[1.7] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
                         <StreamingMarkdown text={m.content} streaming={m.status === 'pending' || m.status === 'processing'} onAction={(t) => send(t)} onOpenArtifact={setArtifact} />
                         {/* Streaming: cursor piscando enquanto a resposta ainda chega */}
-                        {(m.status === 'pending' || m.status === 'processing') && <span className="inline-block w-[2px] h-[1.05em] -mb-[2px] ml-0.5 bg-brand-bright align-middle animate-pulse" />}
+                        {(m.status === 'pending' || m.status === 'processing') && <span className="inline-block w-[2px] h-[1.1em] -mb-[2px] ml-0.5 bg-brand-bright align-middle animate-[twBlink_1.05s_step-end_infinite]" />}
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
                       <MessageSteps refId={[...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null} onAct={handleStepAct} />
