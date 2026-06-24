@@ -230,6 +230,13 @@ export function Markdown({ text, className, onAction }: { text: string; classNam
       while (i < lines.length && isTableRow(lines[i])) { rows.push(splitRow(lines[i])); i++; }
       const cols = Math.max(header.length, ...rows.map((r) => r.length), 1);
       const idxs = Array.from({ length: cols }, (_, k) => k);
+      // Alinhamento POR COLUNA (cabeçalho + células juntos): coluna numérica →
+      // direita, texto → esquerda. Antes o th era sempre à esquerda e os números
+      // à direita, então o título não batia com os dados.
+      const colNumeric = idxs.map((ci) => {
+        const filled = rows.filter((r) => (r[ci] ?? '').trim() !== '');
+        return filled.length > 0 && filled.filter((r) => numeric(r[ci] ?? '')).length >= Math.ceil(filled.length * 0.6);
+      });
       const chart = miniChart(header, rows, idxs);
       blocks.push(
         <div key={key++} className="my-3">
@@ -238,7 +245,7 @@ export function Markdown({ text, className, onAction }: { text: string; classNam
             <thead>
               <tr className="bg-surface-3">
                 {idxs.map((ci) => (
-                  <th key={ci} className="text-left font-semibold text-[11.5px] uppercase tracking-[0.07em] text-creme-mute px-3.5 py-2.5 border-b border-default whitespace-nowrap">{renderInline(header[ci] ?? '')}</th>
+                  <th key={ci} className={`font-semibold text-[11.5px] uppercase tracking-[0.07em] text-creme-mute px-3.5 py-2.5 border-b border-default whitespace-nowrap ${colNumeric[ci] ? 'text-right' : 'text-left'}`}>{renderInline(header[ci] ?? '')}</th>
                 ))}
               </tr>
             </thead>
@@ -248,7 +255,7 @@ export function Markdown({ text, className, onAction }: { text: string; classNam
                   {idxs.map((ci) => {
                     const cell = r[ci] ?? '';
                     return (
-                      <td key={ci} className={`px-3.5 py-2 align-top ${numeric(cell) ? 'text-right font-mono tabular-nums whitespace-nowrap text-creme font-medium' : 'text-creme-dim'}`}>
+                      <td key={ci} className={`px-3.5 py-2 align-middle ${colNumeric[ci] ? 'text-right font-mono tabular-nums whitespace-nowrap text-creme font-medium' : 'text-creme-dim'}`}>
                         {renderInline(cell)}
                       </td>
                     );
