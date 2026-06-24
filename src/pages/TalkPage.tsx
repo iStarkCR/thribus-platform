@@ -82,6 +82,7 @@ export function TalkPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [cmdIdx, setCmdIdx] = useState(0); // item selecionado no menu de comandos "/"
+  const [menIdx, setMenIdx] = useState(0); // item selecionado no menu de @menção
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(0);
@@ -888,6 +889,13 @@ export function TalkPage() {
   const slashOpen = slashMatches.length > 0;
   const runSlash = (c: { run: () => void }) => { c.run(); setInput(''); setCmdIdx(0); };
 
+  // @menção — autocomplete de colaborador no fim do que está sendo digitado.
+  // Inserir o nome faz o Bukowiski (supervisor) delegar pra ele.
+  const mentionQuery = (() => { const m = input.match(/(?:^|\s)@([\p{L}\d_-]*)$/u); return m ? m[1].toLowerCase() : null; })();
+  const mentionMatches = mentionQuery === null ? [] : collaborators.filter((c) => c.id !== agent.id && c.name.toLowerCase().includes(mentionQuery)).slice(0, 6);
+  const mentionOpen = mentionMatches.length > 0;
+  const insertMention = (c: { name: string }) => { setInput((prev) => prev.replace(/(^|\s)@([\p{L}\d_-]*)$/u, `$1@${c.name} `)); setMenIdx(0); };
+
   return (
     <div className={`flex-1 min-h-0 grid overflow-hidden ${navCollapsed ? 'grid-cols-[1fr]' : 'grid-cols-[300px_1fr]'}`}>
       {/* Sessões + pastas */}
@@ -1532,6 +1540,25 @@ export function TalkPage() {
                 ))}
               </div>
             )}
+            {mentionOpen && (
+              <div className="absolute bottom-full mb-2 left-0 right-0 z-[61] rounded-xl border border-default bg-surface-1 shadow-2xl p-1.5 max-h-72 overflow-y-auto">
+                <div className="px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-creme-faint">Mencionar colaborador</div>
+                {mentionMatches.map((c, i) => (
+                  <button
+                    key={c.id}
+                    onMouseEnter={() => setMenIdx(i)}
+                    onClick={() => insertMention(c)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors ${i === Math.min(menIdx, mentionMatches.length - 1) ? 'bg-brand/10 text-brand-bright' : 'text-creme-mute hover:bg-surface-hover'}`}
+                  >
+                    {c.id === BUKOWISKI_ID
+                      ? <Crown size={14} className="text-gold-bright shrink-0" />
+                      : <span className="w-5 h-5 rounded-full bg-brand/15 text-brand-bright text-[10px] font-bold flex items-center justify-center shrink-0">{c.name[0]}</span>}
+                    <span className="flex-1 text-left font-medium">{c.name}</span>
+                    <span className="text-[10.5px] text-creme-faint shrink-0 truncate max-w-[150px]">{c.sector}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="relative shrink-0">
               <button
                 onClick={() => { setPlusOpen((o) => !o); setDelegateOpen(false); }}
@@ -1567,9 +1594,15 @@ export function TalkPage() {
             </div>
             <textarea
               value={input}
-              onChange={(e) => { setInput(e.target.value); setCmdIdx(0); }}
+              onChange={(e) => { setInput(e.target.value); setCmdIdx(0); setMenIdx(0); }}
               onPaste={(e) => { const fs = Array.from(e.clipboardData?.files ?? []); if (fs.length) { e.preventDefault(); addFiles(fs); } }}
               onKeyDown={(e) => {
+                if (mentionOpen) {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setMenIdx((i) => (i + 1) % mentionMatches.length); return; }
+                  if (e.key === 'ArrowUp') { e.preventDefault(); setMenIdx((i) => (i - 1 + mentionMatches.length) % mentionMatches.length); return; }
+                  if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(mentionMatches[Math.min(menIdx, mentionMatches.length - 1)]); return; }
+                  if (e.key === 'Escape') { e.preventDefault(); setInput((p) => `${p} `); return; }
+                }
                 if (slashOpen) {
                   if (e.key === 'ArrowDown') { e.preventDefault(); setCmdIdx((i) => (i + 1) % slashMatches.length); return; }
                   if (e.key === 'ArrowUp') { e.preventDefault(); setCmdIdx((i) => (i - 1 + slashMatches.length) % slashMatches.length); return; }
