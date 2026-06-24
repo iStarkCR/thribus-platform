@@ -892,7 +892,7 @@ export function TalkPage() {
   // @menção — autocomplete de colaborador no fim do que está sendo digitado.
   // Inserir o nome faz o Bukowiski (supervisor) delegar pra ele.
   const mentionQuery = (() => { const m = input.match(/(?:^|\s)@([\p{L}\d_-]*)$/u); return m ? m[1].toLowerCase() : null; })();
-  const mentionMatches = mentionQuery === null ? [] : collaborators.filter((c) => c.id !== agent.id && c.name.toLowerCase().includes(mentionQuery)).slice(0, 6);
+  const mentionMatches = mentionQuery === null ? [] : collaborators.filter((c) => c.id !== agent.id && c.name.toLowerCase().includes(mentionQuery));
   const mentionOpen = mentionMatches.length > 0;
   const insertMention = (c: { name: string }) => { setInput((prev) => prev.replace(/(^|\s)@([\p{L}\d_-]*)$/u, `$1@${c.name} `)); setMenIdx(0); };
 
