@@ -24,11 +24,15 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
   }, [pathname, setSidebarCollapsed]);
 
+  // O chat (/talk) é full-bleed e ocupa exatamente a viewport — sem padding e com
+  // altura travada, pra a tela inicial (orbe + saudação) NÃO rolar. As demais
+  // páginas seguem com padding e min-h-screen (rolam quando o conteúdo é longo).
+  const isChat = pathname.startsWith('/talk');
   return (
-    <div className="flex min-h-screen">
+    <div className={`flex ${isChat ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
       <Sidebar />
-      <main className={`flex-1 flex flex-col min-h-screen transition-[margin] duration-200 ${collapsed ? 'ml-[64px]' : 'ml-[244px]'}`}>
-        <div className="flex-1 p-6">{children}</div>
+      <main className={`flex-1 flex flex-col transition-[margin] duration-200 ${collapsed ? 'ml-[64px]' : 'ml-[244px]'} ${isChat ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
+        <div className={`flex-1 ${isChat ? 'min-h-0' : 'p-6'}`}>{children}</div>
       </main>
     </div>
   );
