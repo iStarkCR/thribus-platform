@@ -1482,7 +1482,7 @@ export function TalkPage() {
               }}
               rows={1}
               placeholder={voice.listening ? 'Ouvindo… fale agora' : `Mensagem para ${agent.name}…`}
-              className="flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[14.5px] text-creme placeholder-creme-faint focus:outline-none max-h-40"
+              className="flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[16.5px] text-creme placeholder-creme-faint focus:outline-none max-h-40"
             />
             {voice.ttsSupported && (
               <button
@@ -1815,7 +1815,7 @@ function ContextMeter({ tokens }: { tokens: number }) {
     <div className="relative shrink-0">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 text-[11px] text-creme-faint hover:text-creme-mute transition-colors"
+        className="flex items-center gap-2 text-[12.5px] text-creme-faint hover:text-creme-mute transition-colors"
         title="Teto de contexto — clique pra ajustar. Quando a conversa passa do teto, ela reseta resumindo o fio."
       >
         <span>contexto</span>
