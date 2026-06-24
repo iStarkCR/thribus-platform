@@ -131,7 +131,10 @@ const verbFor = (label: string | null) => (label && VERB[label]) || `usando ${la
  * "Executado N passos" — o processo que o colaborador fez (tool calls), expansível,
  * numa mensagem/demanda JÁ concluída. Lê os run_events do ref (msg do usuário ou demanda).
  */
-export function MessageSteps({ refId, className, onAct }: { refId?: string | null; className?: string; onAct?: OnStepAct }) {
+// `live`: enquanto a resposta ainda está sendo gerada, assina os run_events em
+// tempo real (mostra "Executando… rodando X" atualizando) — pra ver o que o
+// colaborador consulta NO MEIO da resposta. Concluída, vira estática.
+export function MessageSteps({ refId, className, onAct, live }: { refId?: string | null; className?: string; onAct?: OnStepAct; live?: boolean }) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [open, setOpen] = useState(false);
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
@@ -139,20 +142,29 @@ export function MessageSteps({ refId, className, onAct }: { refId?: string | nul
   useEffect(() => {
     if (!refId) { setEvents([]); return; }
     let on = true;
-    listRunEvents(refId).then((e) => { if (on) setEvents(e); }).catch(() => {});
+    const refetch = () => listRunEvents(refId).then((e) => { if (on) setEvents(e); }).catch(() => {});
+    refetch();
+    if (live) {
+      const unsub = subscribeRunEvents(refId, refetch);
+      return () => { on = false; unsub(); };
+    }
     return () => { on = false; };
-  }, [refId]);
+  }, [refId, live]);
 
   if (!events.length) return null;
+
+  const latest = events[events.length - 1];
+  const latestLabel = `${verbFor(latest.label)}${latest.detail ? ` ${latest.detail}` : ''}`;
 
   return (
     <div className={className ?? 'mt-1.5'}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 text-[11.5px] text-creme-faint hover:text-creme-mute transition-colors"
+        className={`flex items-center gap-1.5 text-[11.5px] transition-colors ${live ? 'text-brand-bright/90 hover:text-brand-bright' : 'text-creme-faint hover:text-creme-mute'}`}
       >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        Executado {events.length} {events.length === 1 ? 'passo' : 'passos'}
+        {live ? <Loader2 size={12} className="animate-spin shrink-0" /> : open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span>{live ? 'Executando' : 'Executado'} {events.length} {events.length === 1 ? 'passo' : 'passos'}</span>
+        {live && <span className="text-creme-faint font-normal truncate max-w-[280px]">· {latestLabel}</span>}
       </button>
       {open && (
         <div className="mt-1 ml-1 border-l border-default pl-3 space-y-0.5">

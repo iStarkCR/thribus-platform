@@ -1336,7 +1336,7 @@ export function TalkPage() {
                         {(m.status === 'pending' || m.status === 'processing') && <span className="inline-block w-[2px] h-[1.1em] -mb-[2px] ml-0.5 bg-brand-bright align-middle animate-[twBlink_1.05s_step-end_infinite]" />}
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
-                      <MessageSteps refId={[...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null} onAct={handleStepAct} />
+                      <MessageSteps refId={[...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null} live={m.status === 'pending' || m.status === 'processing'} onAct={handleStepAct} />
                       {/* Ações ao passar o mouse */}
                       {m.status === 'done' && (
                         <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
