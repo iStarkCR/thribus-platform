@@ -5,12 +5,12 @@
  */
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, X, Copy, Check, Download } from 'lucide-react';
+import { FileText, X, Copy, Check, Download, UploadCloud } from 'lucide-react';
 import { Markdown } from '@/components/shared/Markdown';
 
 export interface ArtifactData { title: string; type?: string; content: string }
 
-export function ArtifactPanel({ artifact, onClose }: { artifact: ArtifactData | null; onClose: () => void }) {
+export function ArtifactPanel({ artifact, onClose, onPublish }: { artifact: ArtifactData | null; onClose: () => void; onPublish?: (a: ArtifactData) => void }) {
   const [copied, setCopied] = useState(false);
   if (!artifact) return null;
 
@@ -44,6 +44,11 @@ export function ArtifactPanel({ artifact, onClose }: { artifact: ArtifactData | 
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            {onPublish && (
+              <button onClick={() => onPublish(artifact)} title="Publicar no Hub Thribus (link pro cliente)" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gold/15 border border-gold/40 text-[12px] font-semibold text-gold-bright hover:bg-gold/25 transition-colors">
+                <UploadCloud size={13} /> Publicar no Hub
+              </button>
+            )}
             <button onClick={copy} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-default text-[12px] text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors">
               {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? 'copiado' : 'copiar'}
             </button>

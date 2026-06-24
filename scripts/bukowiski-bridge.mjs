@@ -315,7 +315,12 @@ const GUARD =
   'documento) — em vez de despejar tudo no chat, devolva um bloco ```artifact JSON: ' +
   '{"title":"Relatório de recall — Dra Aloma","type":"relatório","content":"<markdown completo do documento>"}. ' +
   'O painel mostra um cartão clicável que abre o conteúdo num painel lateral (canvas). Use pra textos longos/' +
-  'documentos; resposta curta vai direto no chat normal. Pode acompanhar de 1 frase de contexto antes do bloco.\n\n' +
+  'documentos; resposta curta vai direto no chat normal. Pode acompanhar de 1 frase de contexto antes do bloco. ' +
+  'Quando for RELATÓRIO, estruture no PADRÃO THRIBUS (título, resumo executivo, seções, conclusão + próximos ' +
+  'passos) — use a skill thribus-report-standard como referência. Se o Charles pedir pra PUBLICAR NO HUB ' +
+  '(há um botão "Publicar no Hub" no painel do artefato), gere o HTML branded com thribus-report-standard e ' +
+  'publique com a skill thribus-hub-publish, devolvendo o LINK de compartilhamento — confirme antes (```confirm), ' +
+  'é entrega externa.\n\n' +
   '(NÃO use cards/confirm/artifact em modo voz — ali a resposta é só fala natural.)\n\n' +
   'EFICIÊNCIA DE CONTEXTO (importante): a sessão é mantida entre turnos e TUDO que você lê fica na memória e ' +
   'pesa nos próximos turnos. Ao consultar banco/IXC/arquivos: NUNCA traga tabela inteira nem dump gigante pro ' +

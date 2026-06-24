@@ -1726,7 +1726,11 @@ export function TalkPage() {
         <TranscriptModal sessionId={transcriptFor.id} title={transcriptFor.title} agentName={agent.name} onClose={() => setTranscriptFor(null)} />
       )}
 
-      <ArtifactPanel artifact={artifact} onClose={() => setArtifact(null)} />
+      <ArtifactPanel
+        artifact={artifact}
+        onClose={() => setArtifact(null)}
+        onPublish={(a) => { setArtifact(null); send(`Publica este relatório no Hub Thribus: "${a.title}" (o artefato/relatório que você acabou de me mostrar). Gera no padrão de relatório Thribus e me devolve o link de compartilhamento pro cliente.`); }}
+      />
 
       {/* Modo voz — tela cheia imersiva (estilo CORTEX) */}
       {voiceMode && (
