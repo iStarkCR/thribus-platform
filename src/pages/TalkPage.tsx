@@ -4,7 +4,7 @@ import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
-  PanelLeftClose, PanelLeft, GitBranch, Activity, AlertTriangle, FileText,
+  PanelLeftClose, PanelLeft, GitBranch, Activity, AlertTriangle, FileText, ChevronUp,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -115,6 +115,10 @@ export function TalkPage() {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [sessMenu, setSessMenu] = useState<{ id: string; x: number; y: number } | null>(null); // menu (…) de uma conversa
   const [artifact, setArtifact] = useState<ArtifactData | null>(null); // painel lateral (canvas)
+  const [convSearch, setConvSearch] = useState<string | null>(null); // busca na conversa (null = fechada)
+  const [searchIdx, setSearchIdx] = useState(0);
+  const [flashId, setFlashId] = useState<string | null>(null); // mensagem destacada ao pular
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [transcriptFor, setTranscriptFor] = useState<ChatSession | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null); // folder id ou 'root'
@@ -377,6 +381,46 @@ export function TalkPage() {
   // Só mostra a CONVERSA quando o usuário foi explicitamente pra ela (view='chat'),
   // há sessão ativa E ela tem mensagens. Senão o orbe é a tela — nunca branco/fantasma.
   const inChat = view === 'chat' && activeId != null && messages.length > 0;
+
+  // ── Busca na conversa ──────────────────────────────────────────────────────
+  const searchMatches = useMemo(() => {
+    const q = (convSearch ?? '').trim().toLowerCase();
+    if (!q) return [] as string[];
+    return messages.filter((m) => m.content.toLowerCase().includes(q)).map((m) => m.id);
+  }, [convSearch, messages]);
+  const scrollToMatch = (id: string) => {
+    const el = scrollRef.current?.querySelector(`[data-msg-id="${id}"]`);
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setFlashId(id);
+    window.setTimeout(() => setFlashId((c) => (c === id ? null : c)), 1600);
+  };
+  const navSearch = (dir: number) => {
+    if (!searchMatches.length) return;
+    const i = (searchIdx + dir + searchMatches.length) % searchMatches.length;
+    setSearchIdx(i);
+    scrollToMatch(searchMatches[i]);
+  };
+  const searchKey = searchMatches.join('|');
+  useEffect(() => {
+    if (convSearch === null) return;
+    setSearchIdx(0);
+    if (searchMatches.length) scrollToMatch(searchMatches[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchKey]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F') && inChat) {
+        e.preventDefault();
+        setConvSearch((s) => (s === null ? '' : s));
+        window.setTimeout(() => searchInputRef.current?.focus(), 30);
+      } else if (e.key === 'Escape' && convSearch !== null) {
+        setConvSearch(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [inChat, convSearch]);
+
   // Pulse/Atenção da tela inicial (dados reais, carregados async ao entrar no orbe).
   const [orbDemands, setOrbDemands] = useState<number | null>(null);
   const [orbSystems, setOrbSystems] = useState<{ ok: number; total: number; issues: { name: string; status: string }[] } | null>(null);
@@ -1030,6 +1074,16 @@ export function TalkPage() {
               </button>
             </div>
 
+            {inChat && (
+              <button
+                onClick={() => { setConvSearch((s) => (s === null ? '' : null)); window.setTimeout(() => searchInputRef.current?.focus(), 30); }}
+                title="Buscar nesta conversa (⌘F)"
+                className={`w-9 h-9 rounded-xl inline-flex items-center justify-center transition-colors shrink-0 ${convSearch !== null ? 'bg-brand/15 text-brand-bright' : 'text-creme-mute hover:text-creme hover:bg-surface-hover'}`}
+              >
+                <Search size={16} />
+              </button>
+            )}
+
             {/* Trocar colaborador */}
             <div className="relative">
             <button
@@ -1097,6 +1151,30 @@ export function TalkPage() {
             </div>
           </div>
         </div>
+
+        {/* Busca dentro da conversa (⌘F) */}
+        {convSearch !== null && inChat && (
+          <div className="shrink-0 flex items-center gap-2 px-6 py-2 border-b border-default bg-surface-1/90">
+            <Search size={15} className="text-creme-faint shrink-0" />
+            <input
+              ref={searchInputRef}
+              value={convSearch}
+              onChange={(e) => setConvSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); navSearch(e.shiftKey ? -1 : 1); }
+                else if (e.key === 'Escape') { e.preventDefault(); setConvSearch(null); }
+              }}
+              placeholder="Buscar nesta conversa…"
+              className="flex-1 bg-transparent text-[14px] text-creme placeholder-creme-faint focus:outline-none"
+            />
+            <span className="text-[12px] font-mono text-creme-faint shrink-0 tabular-nums">
+              {searchMatches.length ? `${searchIdx + 1}/${searchMatches.length}` : (convSearch.trim() ? 'nada' : '')}
+            </span>
+            <button onClick={() => navSearch(-1)} disabled={!searchMatches.length} title="Anterior (Shift+Enter)" className="w-7 h-7 rounded-lg flex items-center justify-center text-creme-mute hover:text-creme hover:bg-surface-hover disabled:opacity-30 transition-colors"><ChevronUp size={15} /></button>
+            <button onClick={() => navSearch(1)} disabled={!searchMatches.length} title="Próximo (Enter)" className="w-7 h-7 rounded-lg flex items-center justify-center text-creme-mute hover:text-creme hover:bg-surface-hover disabled:opacity-30 transition-colors"><ChevronDown size={15} /></button>
+            <button onClick={() => setConvSearch(null)} title="Fechar (Esc)" className="w-7 h-7 rounded-lg flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><X size={16} /></button>
+          </div>
+        )}
 
         <div className="flex-1 relative overflow-hidden">
           {!inChat ? (
@@ -1278,7 +1356,7 @@ export function TalkPage() {
                   const shown = isLong && !open ? m.content.slice(0, COLLAPSE_AT).trimEnd() : m.content;
                   const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
                   return (
-                  <div key={m.id} className="group flex flex-col items-end gap-1">
+                  <div key={m.id} data-msg-id={m.id} className={`group flex flex-col items-end gap-1 scroll-mt-4 rounded-[20px] transition-shadow ${flashId === m.id ? 'ring-2 ring-brand/60' : ''}`}>
                     <div className="flex items-end gap-2.5 max-w-[82%]">
                       <div className="px-[18px] py-3 rounded-[20px] rounded-br-md bg-brand text-white text-[17px] leading-[1.7] shadow-[0_12px_28px_-16px_rgba(0,0,0,0.55)] min-w-0">
                         {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
@@ -1327,7 +1405,7 @@ export function TalkPage() {
                   </div>
                   );
                 })() : (
-                  <div key={m.id} className="group flex max-w-[88%]">
+                  <div key={m.id} data-msg-id={m.id} className={`group flex max-w-[88%] scroll-mt-4 rounded-[20px] transition-shadow ${flashId === m.id ? 'ring-2 ring-brand/60' : ''}`}>
                     <div className="min-w-0 flex-1">
                       <div className="text-[12px] font-semibold text-creme-mute mb-1.5 tracking-wide">{agent.name}</div>
                       <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[17px] leading-[1.7] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
