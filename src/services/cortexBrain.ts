@@ -287,3 +287,47 @@ export function subscribeUsage(onChange: () => void): () => void {
     .subscribe();
   return () => { sb.removeChannel(ch); };
 }
+
+// ─── Limites do plano (5h + semana) — espelho do /usage do Claude ───────────
+// A ponte sonda os headers anthropic-ratelimit-unified-* e grava em
+// cortex_brain_limits. Aqui o painel lê pra mostrar quanto resta de cada janela.
+export interface BrainLimits {
+  fiveHUtil: number | null;   // 0..1
+  fiveHReset: string | null;  // ISO
+  fiveHStatus: string | null;
+  sevenDUtil: number | null;
+  sevenDReset: string | null;
+  sevenDStatus: string | null;
+  updatedAt: string | null;
+}
+
+export async function getBrainLimits(): Promise<BrainLimits | null> {
+  const sb = supabase;
+  if (!sb) return null;
+  const { data } = await sb
+    .from('cortex_brain_limits')
+    .select('five_h_utilization,five_h_reset,five_h_status,seven_d_utilization,seven_d_reset,seven_d_status,updated_at')
+    .eq('id', 'global')
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    fiveHUtil: data.five_h_utilization == null ? null : Number(data.five_h_utilization),
+    fiveHReset: data.five_h_reset,
+    fiveHStatus: data.five_h_status,
+    sevenDUtil: data.seven_d_utilization == null ? null : Number(data.seven_d_utilization),
+    sevenDReset: data.seven_d_reset,
+    sevenDStatus: data.seven_d_status,
+    updatedAt: data.updated_at,
+  };
+}
+
+let limitsSeq = 0;
+export function subscribeBrainLimits(onChange: () => void): () => void {
+  const sb = supabase;
+  if (!sb) return () => {};
+  const ch = sb
+    .channel(`cortex-limits:${++limitsSeq}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'cortex_brain_limits' }, () => onChange())
+    .subscribe();
+  return () => { sb.removeChannel(ch); };
+}

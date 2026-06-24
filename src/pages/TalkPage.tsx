@@ -15,6 +15,7 @@ import { AudioRecorderBar } from '@/components/voice/AudioRecorderBar';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
+import { UsageLimitsBadge } from '@/components/cortex/UsageLimitsBadge';
 import { Markdown } from '@/components/shared/Markdown';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
 import { type RunEvent } from '@/services/runEvents';
@@ -1372,6 +1373,7 @@ export function TalkPage() {
             <div className="flex items-center gap-2 min-w-0">
               <CortexBrainBar />
               <CortexUsageBadge />
+              <UsageLimitsBadge />
               {planMode && (
                 <button onClick={() => setPlanMode(false)} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand/15 text-brand-bright text-[11px] shrink-0" title="Desligar modo plano">
                   <Lightbulb size={11} /> Modo plano <X size={11} />

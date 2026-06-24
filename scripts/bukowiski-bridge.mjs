@@ -94,6 +94,50 @@ async function loadBrainConfig() {
   return BRAIN;
 }
 
+// Limites do plano (janela de 5h + semanal). O CLI não expõe os headers
+// `anthropic-ratelimit-unified-*`, então fazemos uma chamada-sonda mínima (1
+// token haiku, custo desprezível) a cada ~2min e gravamos a utilização/reset de
+// cada janela em cortex_brain_limits — o painel mostra quanto resta no rodapé.
+let limitsCheckedAt = 0;
+const LIMITS_EVERY_MS = Number(process.env.BRIDGE_LIMITS_MS || 120_000);
+async function fetchUsageLimits() {
+  if (Date.now() - limitsCheckedAt < LIMITS_EVERY_MS) return;
+  limitsCheckedAt = Date.now();
+  const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  if (!token) return; // sem token OAuth → não dá pra ler os limites do plano
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'anthropic-beta': 'oauth-2025-04-20',
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+    });
+    await res.text().catch(() => {}); // drena o corpo (não precisamos dele)
+    const h = res.headers;
+    const num = (k) => { const v = h.get(k); return v == null || v === '' ? null : Number(v); };
+    const iso = (k) => { const v = num(k); return v ? new Date(v * 1000).toISOString() : null; };
+    const fiveH = num('anthropic-ratelimit-unified-5h-utilization');
+    if (fiveH == null) return; // proxy não repassou os headers → não regrava
+    await sb.from('cortex_brain_limits').upsert({
+      id: 'global',
+      five_h_utilization: fiveH,
+      five_h_reset: iso('anthropic-ratelimit-unified-5h-reset'),
+      five_h_status: h.get('anthropic-ratelimit-unified-5h-status'),
+      seven_d_utilization: num('anthropic-ratelimit-unified-7d-utilization'),
+      seven_d_reset: iso('anthropic-ratelimit-unified-7d-reset'),
+      seven_d_status: h.get('anthropic-ratelimit-unified-7d-status'),
+      overall_status: h.get('anthropic-ratelimit-unified-status'),
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error('[limits]', e.message);
+  }
+}
+
 // Grava o custo/tokens reais de uma execução (best-effort; nunca derruba o loop).
 async function recordUsage({ userId, agentId, kind, refId, sessionId, usage }) {
   if (!usage) return;
@@ -837,6 +881,7 @@ async function loop() {
   for (;;) {
     const teamIds = await loadTeamIds();
     await loadBrainConfig();        // modelo/esforço/teto vindos do painel (cache 15s)
+    await fetchUsageLimits();       // limites do plano (5h + semana) → painel (cache 2min)
     await importSkills();           // espelha as skills reais no painel (1x)
     await materializeSkills();      // skills do painel → ~/.claude/skills (cache 15s)
     await tick(teamIds);            // chat interativo primeiro
