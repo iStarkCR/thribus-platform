@@ -120,6 +120,7 @@ export function TalkPage() {
   const [searchIdx, setSearchIdx] = useState(0);
   const [flashId, setFlashId] = useState<string | null>(null); // mensagem destacada ao pular
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [bridgeStale, setBridgeStale] = useState(false); // msg parada em 'pending' → ponte provavelmente offline
   const composerRef = useRef<HTMLTextAreaElement>(null); // textarea do chat (auto-cresce até 3 linhas)
   const landingComposerRef = useRef<HTMLTextAreaElement>(null); // textarea do orbe (mesmo auto-cresce)
   const [showArchived, setShowArchived] = useState(false);
@@ -384,6 +385,17 @@ export function TalkPage() {
   // Só mostra a CONVERSA quando o usuário foi explicitamente pra ela (view='chat'),
   // há sessão ativa E ela tem mensagens. Senão o orbe é a tela — nunca branco/fantasma.
   const inChat = view === 'chat' && activeId != null && messages.length > 0;
+
+  // Ponte offline? A ponte marca a msg como 'processing' ao pegá-la (poll de 3s).
+  // Se ficar 'pending' por ~15s, provavelmente está fora do ar → avisa + reenviar.
+  const lastMsg = messages[messages.length - 1];
+  const lastPending = lastMsg?.role === 'user' && lastMsg.status === 'pending';
+  useEffect(() => {
+    if (!lastPending) { setBridgeStale(false); return; }
+    setBridgeStale(false);
+    const t = window.setTimeout(() => setBridgeStale(true), 15000);
+    return () => window.clearTimeout(t);
+  }, [lastMsg?.id, lastPending]);
 
   // Composer auto-cresce até 3 linhas; passou disso, rola interno. (chat + orbe)
   useEffect(() => {
@@ -1477,7 +1489,19 @@ export function TalkPage() {
                   </div>
                 ),
               )}
-              {waiting && <ThinkingActivity agentName={agent.name} refId={lastUserMsgId} onAct={handleStepAct} />}
+              {waiting && !bridgeStale && <ThinkingActivity agentName={agent.name} refId={lastUserMsgId} onAct={handleStepAct} />}
+              {waiting && bridgeStale && (
+                <div className="flex">
+                  <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl rounded-tl-md bg-semantic-amber/10 border border-semantic-amber/30 max-w-full">
+                    <AlertTriangle size={15} className="text-semantic-amber shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-semibold text-creme">Sem resposta da ponte</div>
+                      <div className="text-[12.5px] text-creme-mute mt-0.5 leading-snug">O {agent.name} roda por uma ponte no seu Mac — ela pode estar offline. A mensagem fica na fila e é respondida quando a ponte voltar.</div>
+                      {lastUserMsgId && <button onClick={() => cancelTurn(lastUserMsgId)} className="mt-2 text-[12.5px] font-semibold text-semantic-amber hover:underline">Cancelar envio</button>}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
