@@ -120,6 +120,8 @@ export function TalkPage() {
   const [searchIdx, setSearchIdx] = useState(0);
   const [flashId, setFlashId] = useState<string | null>(null); // mensagem destacada ao pular
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null); // textarea do chat (auto-cresce até 3 linhas)
+  const landingComposerRef = useRef<HTMLTextAreaElement>(null); // textarea do orbe (mesmo auto-cresce)
   const [showArchived, setShowArchived] = useState(false);
   const [transcriptFor, setTranscriptFor] = useState<ChatSession | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null); // folder id ou 'root'
@@ -382,6 +384,20 @@ export function TalkPage() {
   // Só mostra a CONVERSA quando o usuário foi explicitamente pra ela (view='chat'),
   // há sessão ativa E ela tem mensagens. Senão o orbe é a tela — nunca branco/fantasma.
   const inChat = view === 'chat' && activeId != null && messages.length > 0;
+
+  // Composer auto-cresce até 3 linhas; passou disso, rola interno. (chat + orbe)
+  useEffect(() => {
+    for (const el of [composerRef.current, landingComposerRef.current]) {
+      if (!el) continue;
+      el.style.height = 'auto';
+      const cs = getComputedStyle(el);
+      const lh = parseFloat(cs.lineHeight) || 24;
+      const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+      const max = lh * 3 + pad;
+      el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+      el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+    }
+  }, [input, inChat]);
 
   // ── Busca na conversa ──────────────────────────────────────────────────────
   const searchMatches = useMemo(() => {
@@ -1279,12 +1295,13 @@ export function TalkPage() {
                   ) : (
                     <div className="glass-panel flex items-center gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 focus-within:border-brand transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]">
                       <textarea
+                        ref={landingComposerRef}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                         rows={1}
                         placeholder={`Mensagem para ${agent.name}…`}
-                        className="flex-1 resize-none bg-transparent py-1 text-[15px] text-creme placeholder-creme-faint focus:outline-none max-h-32"
+                        className="flex-1 resize-none bg-transparent py-1 text-[15px] leading-[1.5] text-creme placeholder-creme-faint focus:outline-none"
                       />
                       <button onClick={() => startPanelVoice()} title="Modo voz" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Headphones size={17} /></button>
                       <button onClick={() => setRecording(true)} title="Gravar áudio" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Mic size={17} /></button>
@@ -1593,6 +1610,7 @@ export function TalkPage() {
               )}
             </div>
             <textarea
+              ref={composerRef}
               value={input}
               onChange={(e) => { setInput(e.target.value); setCmdIdx(0); setMenIdx(0); }}
               onPaste={(e) => { const fs = Array.from(e.clipboardData?.files ?? []); if (fs.length) { e.preventDefault(); addFiles(fs); } }}
@@ -1616,7 +1634,7 @@ export function TalkPage() {
               }}
               rows={1}
               placeholder={voice.listening ? 'Ouvindo… fale agora' : `Mensagem para ${agent.name}…`}
-              className="flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[16.5px] text-creme placeholder-creme-faint focus:outline-none max-h-40"
+              className="flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[16.5px] leading-[1.5] text-creme placeholder-creme-faint focus:outline-none"
             />
             {voice.ttsSupported && (
               <button
