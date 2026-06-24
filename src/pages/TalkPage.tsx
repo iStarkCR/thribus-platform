@@ -4,7 +4,7 @@ import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
-  PanelLeftClose, PanelLeft, GitBranch, Activity, AlertTriangle, FileText, ChevronUp,
+  PanelLeftClose, PanelLeft, GitBranch, Activity, AlertTriangle, FileText, ChevronUp, Monitor, MessageCircle,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -1076,7 +1076,7 @@ export function TalkPage() {
                 {agent.isSupervisor && <Crown size={15} className="text-gold-bright" />}
               </div>
               <div className="text-[12.5px] text-creme-faint truncate">
-                {agent.sector} · {agent.status}{active ? ` · ${active.title}` : ''}
+                {agent.sector} · {agent.status}{active ? ` · ${sessionSource(active.title).clean}` : ''}
               </div>
             </button>
           </div>
@@ -1942,7 +1942,23 @@ function Typewriter({ phrases, className, once = false, speed = 65 }: { phrases:
   return <span className={className}>{txt}<span className="tw-caret">|</span></span>;
 }
 
+// Origem da conversa pelo título (o mirror usa 💻/🖥️, o daemon "WhatsApp"/"Telegram").
+// Tira o emoji/prefixo pro título ficar limpo; o badge mostra o canal.
+const DESKTOP_RE = /^(\u{1F4BB}|\u{1F5A5})️?\s*/u; // 💻 🖥️
+function sessionSource(title: string): { source: 'desktop' | 'whatsapp' | 'telegram' | 'panel'; clean: string } {
+  const t = (title || '').trim();
+  if (DESKTOP_RE.test(t)) return { source: 'desktop', clean: t.replace(DESKTOP_RE, '') };
+  if (/^whatsapp\b/i.test(t)) return { source: 'whatsapp', clean: t.replace(/^whatsapp\s*[·:–—-]?\s*/i, '') };
+  if (/^telegram\b/i.test(t)) return { source: 'telegram', clean: t.replace(/^telegram\s*[·:–—-]?\s*/i, '') };
+  const clean = t.replace(/^\p{Extended_Pictographic}️?\s*/u, ''); // remove emoji decorativo (✨ etc.)
+  return { source: 'panel', clean: clean || t };
+}
+
 function SessionItem({ session, active, depth = 0, onClick, onMenu, onDragStartItem }: { session: ChatSession; active: boolean; depth?: number; onClick: () => void; onMenu: (pos: { x: number; y: number }) => void; onDragStartItem: () => void }) {
+  const { source, clean } = sessionSource(session.title);
+  const SrcIcon = source === 'desktop' ? Monitor : source === 'whatsapp' ? MessageCircle : source === 'telegram' ? Send : MessageSquare;
+  const srcColor = source === 'whatsapp' ? 'text-semantic-green' : source === 'telegram' ? 'text-semantic-blue' : source === 'desktop' ? 'text-creme-mute' : (session.color ? '' : 'text-creme-faint');
+  const srcLabel = source === 'desktop' ? 'Claude Code (desktop)' : source === 'whatsapp' ? 'WhatsApp' : source === 'telegram' ? 'Telegram' : 'Painel';
   const openMenu = (e: React.MouseEvent) => { e.stopPropagation(); e.preventDefault(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); onMenu({ x: r.right, y: r.bottom }); };
   return (
     <div
@@ -1955,9 +1971,9 @@ function SessionItem({ session, active, depth = 0, onClick, onMenu, onDragStartI
     >
       {session.archivedAt
         ? <Archive size={14} className="text-creme-faint shrink-0" />
-        : <MessageSquare size={15} className={`shrink-0 ${session.color ? '' : 'text-creme-faint'}`} style={session.color ? { color: session.color } : undefined} />}
+        : <span title={srcLabel} className="shrink-0 inline-flex"><SrcIcon size={15} className={srcColor} style={session.color && source === 'panel' ? { color: session.color } : undefined} /></span>}
       {session.pinnedAt && !session.archivedAt && <Pin size={11} className="text-brand-bright shrink-0 -ml-1" />}
-      <span className={`flex-1 min-w-0 text-[14.5px] truncate ${active ? 'text-creme font-medium' : 'text-creme-mute'}`}>{session.title}</span>
+      <span className={`flex-1 min-w-0 text-[14.5px] truncate ${active ? 'text-creme font-medium' : 'text-creme-mute'}`} title={clean}>{clean}</span>
       <button onClick={openMenu} className="opacity-0 group-hover:opacity-100 text-creme-faint hover:text-creme p-1 shrink-0" title="Opções da conversa">
         <MoreVertical size={14} />
       </button>
