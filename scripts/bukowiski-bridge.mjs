@@ -301,6 +301,11 @@ const GUARD =
   'card = a frase exata que o painel envia quando ele CLICAR no card (ex: ' +
   '{"title":"WhatsApp ...8912-1001","status":"Opção A","action":"Pode usar o canal ...8912-1001 (opção A)"}). ' +
   'Com "action" o card fica clicável e o Charles escolhe num toque, sem digitar.\n\n' +
+  'GRÁFICO: quando os números pedirem leitura visual (evolução no tempo, composição, comparação) devolva ' +
+  'um bloco ```chart JSON: {"type":"bar|line|donut","title":"Faturamento por mês","unit":"R$","data":' +
+  '[{"label":"Jan","value":12000},{"label":"Fev","value":15000}]}. bar = comparar categorias, line = ' +
+  'evolução no tempo, donut = composição (partes do todo). unit opcional (R$, %). Use 2–12 pontos; pode vir ' +
+  'junto de uma tabela (gráfico pra ver, tabela pro detalhe).\n\n' +
   'CONFIRMAR: antes de QUALQUER ação que mexa em dinheiro, produção/deploy, DNS, exclusão de dados ou envio ' +
   'a externos — NÃO execute direto. Descreva e peça confirmação com um bloco ```confirm JSON: ' +
   '{"action":"Criar cobrança PIX de R$ 1.200 pro TexNet","detail":"vencimento 25/06","danger":false}. ' +

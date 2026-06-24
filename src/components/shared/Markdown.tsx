@@ -12,6 +12,7 @@
 import { useState, type ReactNode } from 'react';
 import { AlertTriangle, ChevronRight, FileText } from 'lucide-react';
 import { CodeViewer } from '@/components/shared/CodeViewer';
+import { Chart } from '@/components/shared/Chart';
 
 // URL aceita parênteses balanceados (ex.: .../Foo_(bar)) sem cortar no 1º ')'.
 const URLCORE = 'https?:\\/\\/(?:[^\\s()]+|\\([^\\s()]*\\))+';
@@ -20,6 +21,20 @@ const INLINE = new RegExp(
   'g',
 );
 const linkCls = 'text-brand-bright underline underline-offset-2 hover:text-brand break-words';
+
+// Previews: imagem (thumbnail) e PDF (chip). Só http(s) — arquivo local não tem URL.
+const isImageUrl = (u: string) => /\.(png|jpe?g|gif|webp|svg|avif)(\?|#|$)/i.test(u);
+const isPdfUrl = (u: string) => /\.pdf(\?|#|$)/i.test(u);
+const fileName = (u: string) => { try { return decodeURIComponent(u.split(/[?#]/)[0].split('/').pop() || u); } catch { return u; } };
+// Linha que é SÓ uma imagem (markdown ![alt](url) ou URL de imagem nua) → bloco.
+const IMG_LINE = new RegExp('^\\s*(?:!\\[[^\\]]*\\]\\((' + URLCORE + ')\\)|(' + URLCORE + '))\\s*$');
+function PdfChip({ url }: { url: string }) {
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-3 border border-default text-[12.5px] text-creme-dim hover:text-creme hover:border-brand/40 transition-colors align-middle no-underline">
+      <FileText size={13} className="text-semantic-red shrink-0" /> <span className="truncate max-w-[220px]">{fileName(url)}</span>
+    </a>
+  );
+}
 
 function renderInline(text: string): ReactNode[] {
   const out: ReactNode[] = [];
@@ -30,13 +45,15 @@ function renderInline(text: string): ReactNode[] {
   while ((m = INLINE.exec(text)) !== null) {
     if (m.index > last) out.push(text.slice(last, m.index));
     if (m[1]) {
-      out.push(<a key={key++} href={m[3]} target="_blank" rel="noopener noreferrer" className={linkCls}>{m[2]}</a>);
+      if (isPdfUrl(m[3])) out.push(<PdfChip key={key++} url={m[3]} />);
+      else out.push(<a key={key++} href={m[3]} target="_blank" rel="noopener noreferrer" className={linkCls}>{m[2]}</a>);
     } else if (m[4]) {
       let url = m[4];
       let trail = '';
       const t = url.match(/[.,;:]+$/);
       if (t) { trail = t[0]; url = url.slice(0, -trail.length); }
-      out.push(<a key={key++} href={url} target="_blank" rel="noopener noreferrer" className={linkCls}>{url}</a>);
+      if (isPdfUrl(url)) out.push(<PdfChip key={key++} url={url} />);
+      else out.push(<a key={key++} href={url} target="_blank" rel="noopener noreferrer" className={linkCls}>{url}</a>);
       if (trail) out.push(trail);
     } else if (m[5]) {
       out.push(<strong key={key++} className="font-semibold text-creme">{m[6]}</strong>);
@@ -241,6 +258,13 @@ export function Markdown({ text, className, onAction, onOpenArtifact }: { text: 
       if (j < lines.length) {
         const body = lines.slice(i + 1, j).join('\n');
         const lk = lang.toLowerCase();
+        // Gráfico (bar/line/donut).
+        if (lk === 'chart') {
+          try {
+            const spec = JSON.parse(body);
+            if (spec && Array.isArray(spec.data) && spec.data.length) { blocks.push(<Chart key={key++} spec={spec} />); i = j + 1; continue; }
+          } catch { /* JSON inválido → cai pro CodeViewer abaixo */ }
+        }
         // Blocos especiais: cards ricos, confirmação de ação e artefato (canvas).
         if (lk === 'cards' || lk === 'confirm' || lk === 'artifact') {
           try {
@@ -315,6 +339,19 @@ export function Markdown({ text, className, onAction, onOpenArtifact }: { text: 
         {chart}
         </div>,
       );
+      continue;
+    }
+
+    // ── imagem (linha que é só uma imagem) → thumbnail clicável ────────────
+    const imgM = line.match(IMG_LINE);
+    if (imgM && (imgM[1] || (imgM[2] && isImageUrl(imgM[2])))) {
+      const url = imgM[1] || imgM[2];
+      blocks.push(
+        <a key={key++} href={url} target="_blank" rel="noopener noreferrer" className="block my-2 w-fit">
+          <img src={url} alt="" loading="lazy" className="max-h-72 max-w-full rounded-xl border border-default object-contain bg-surface-2" />
+        </a>,
+      );
+      i++;
       continue;
     }
 
