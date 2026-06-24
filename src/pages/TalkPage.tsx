@@ -856,7 +856,7 @@ export function TalkPage() {
   const runSlash = (c: { run: () => void }) => { c.run(); setInput(''); setCmdIdx(0); };
 
   return (
-    <div className={`flex-1 min-h-0 h-full grid overflow-hidden ${navCollapsed ? 'grid-cols-[1fr]' : 'grid-cols-[300px_1fr]'}`}>
+    <div className={`-m-6 h-screen grid overflow-hidden ${navCollapsed ? 'grid-cols-[1fr]' : 'grid-cols-[300px_1fr]'}`}>
       {/* Sessões + pastas */}
       {!navCollapsed && (
       <div className="glass-strong border-r border-default flex flex-col bg-surface-1 min-h-0">
