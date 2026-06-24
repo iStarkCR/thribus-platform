@@ -9,17 +9,14 @@ import { useEffect, useState } from 'react';
 import { Gauge } from 'lucide-react';
 import { getBrainLimits, subscribeBrainLimits, type BrainLimits } from '@/services/cortexBrain';
 
-// Faltam X pro reset → "2h14" / "8min" / "agora".
-function untilReset(iso: string | null): string {
+// Mesmo formato do /usage do Claude: "Renova 23:00" (hoje) ou "Renova qua., 02:00".
+function renova(iso: string | null): string {
   if (!iso) return '';
-  const ms = new Date(iso).getTime() - Date.now();
-  if (ms <= 0) return 'agora';
-  const min = Math.round(ms / 60000);
-  if (min < 60) return `${min}min`;
-  const h = Math.floor(min / 60);
-  const d = Math.floor(h / 24);
-  if (d >= 1) return `${d}d${h % 24 ? ` ${h % 24}h` : ''}`;
-  return `${h}h${min % 60 ? String(min % 60).padStart(2, '0') : ''}`;
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === new Date().toDateString()) return `Renova ${time}`;
+  const wd = d.toLocaleDateString('pt-BR', { weekday: 'short' }); // "qua."
+  return `Renova ${wd}, ${time}`;
 }
 
 const pctOf = (u: number | null) => (u == null ? 0 : Math.round(u * 100));
@@ -36,13 +33,14 @@ const barOf = (u: number | null, status: string | null) => {
 
 function LimitRow({ label, util, reset, status }: { label: string; util: number | null; reset: string | null; status: string | null }) {
   const p = pctOf(util);
-  const eta = untilReset(reset);
+  const blocked = !!status && status !== 'allowed';
   return (
     <div>
-      <div className="flex items-center justify-between text-[12px] mb-1">
-        <span className="text-creme-mute">{label}</span>
-        <span className="font-mono text-creme-faint">
-          {status && status !== 'allowed' ? 'esgotado' : `${p}%`}{eta && <span className="text-creme-faint"> · reseta {eta}</span>}
+      <div className="flex items-baseline justify-between gap-2 text-[12px] mb-1">
+        <span className="text-creme-mute truncate">{label}</span>
+        <span className="shrink-0 text-creme-faint">
+          {reset && <span>{renova(reset)} </span>}
+          <span className={`font-mono font-semibold ${blocked ? 'text-semantic-red' : 'text-creme-dim'}`}>{blocked ? 'esgotado' : `${p}%`}</span>
         </span>
       </div>
       <div className="h-1.5 rounded-full bg-surface-3 overflow-hidden">
@@ -89,12 +87,12 @@ export function UsageLimitsBadge() {
           <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
           <div className="absolute bottom-full mb-2 left-0 z-[61] w-72 rounded-xl border border-default bg-surface-1 shadow-2xl p-3 space-y-3">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-creme-faint">
-              <Gauge size={12} className="text-brand-bright" /> Limites do plano
+              <Gauge size={12} className="text-brand-bright" /> Uso do plano
             </div>
-            <LimitRow label="Janela de 5 horas" util={lim.fiveHUtil} reset={lim.fiveHReset} status={lim.fiveHStatus} />
-            <LimitRow label="Janela semanal" util={lim.sevenDUtil} reset={lim.sevenDReset} status={lim.sevenDStatus} />
+            <LimitRow label="Limite de 5 horas" util={lim.fiveHUtil} reset={lim.fiveHReset} status={lim.fiveHStatus} />
+            <LimitRow label="Semanal · todos os modelos" util={lim.sevenDUtil} reset={lim.sevenDReset} status={lim.sevenDStatus} />
             <p className="text-[10.5px] text-creme-faint/80 leading-snug pt-1 border-t border-default">
-              Uso do plano Claude do time (Max), compartilhado por todos os colaboradores. Atualiza a cada ~2min.
+              Plano Claude do time (Max), compartilhado por todos os colaboradores. Atualiza a cada ~2min.
             </p>
           </div>
         </>
