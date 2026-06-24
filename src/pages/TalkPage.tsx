@@ -17,7 +17,6 @@ import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { UsageLimitsBadge } from '@/components/cortex/UsageLimitsBadge';
 import { WorkFolderBar } from '@/components/cortex/WorkFolderBar';
-import { Markdown } from '@/components/shared/Markdown';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
 import { type RunEvent } from '@/services/runEvents';
 import { listMessages, sendMessage, cancelMessage, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
@@ -28,6 +27,7 @@ import { RoutineModal } from '@/components/routines/RoutineModal';
 import { SessionUsageModal } from '@/components/chat/SessionUsageModal';
 import { SessionContextMenu } from '@/components/chat/SessionContextMenu';
 import { ArtifactPanel, type ArtifactData } from '@/components/chat/ArtifactPanel';
+import { StreamingMarkdown } from '@/components/chat/StreamingMarkdown';
 import { TranscriptModal } from '@/components/chat/TranscriptModal';
 import {
   listFolders, createFolder, updateFolder, deleteFolder, listSessions, createSession, renameSession, deleteSession, touchSession, moveSession, setSessionArchived, setSessionColor, setSessionPinned, setSessionWorkingDir, forkSession,
@@ -1331,7 +1331,7 @@ export function TalkPage() {
                     <div className="min-w-0 flex-1">
                       <div className="text-[12px] font-semibold text-creme-mute mb-1.5 tracking-wide">{agent.name}</div>
                       <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[17px] leading-[1.7] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
-                        <Markdown text={m.content} onAction={(t) => send(t)} onOpenArtifact={setArtifact} />
+                        <StreamingMarkdown text={m.content} streaming={m.status === 'pending' || m.status === 'processing'} onAction={(t) => send(t)} onOpenArtifact={setArtifact} />
                         {/* Streaming: cursor piscando enquanto a resposta ainda chega */}
                         {(m.status === 'pending' || m.status === 'processing') && <span className="inline-block w-[2px] h-[1.05em] -mb-[2px] ml-0.5 bg-brand-bright align-middle animate-pulse" />}
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
