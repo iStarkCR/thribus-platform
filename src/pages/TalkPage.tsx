@@ -4,7 +4,7 @@ import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
-  PanelLeftClose, PanelLeft, GitBranch, Activity, AlertTriangle, FileText, ChevronUp, Monitor, MessageCircle,
+  PanelLeftClose, PanelLeft, GitBranch, AlertTriangle, FileText, ChevronUp, Monitor, MessageCircle,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -21,7 +21,7 @@ import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/sh
 import { type RunEvent } from '@/services/runEvents';
 import { listMessages, sendMessage, cancelMessage, deleteMessagesFrom, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
-import { createDemand, listDemands } from '@/services/demands';
+import { createDemand } from '@/services/demands';
 import { listStatusComponents, platformConfigured } from '@/services/platform';
 import { RoutineModal } from '@/components/routines/RoutineModal';
 import { SessionUsageModal } from '@/components/chat/SessionUsageModal';
@@ -49,7 +49,6 @@ const BUKOWISKI_ID = 'bukowiski-thribus';
  */
 export function TalkPage() {
   const agents = useAppStore((s) => s.agents);
-  const metrics = useAppStore((s) => s.metrics);
   const escalations = useAppStore((s) => s.escalations);
   const setVoiceModeActive = useAppStore((s) => s.setVoiceModeActive);
   const setSttBusy = useAppStore((s) => s.setSttBusy);
@@ -458,19 +457,12 @@ export function TalkPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [inChat, convSearch]);
 
-  // Pulse/Atenção da tela inicial (dados reais, carregados async ao entrar no orbe).
-  const [orbDemands, setOrbDemands] = useState<number | null>(null);
+  // Atenção da tela inicial (sistemas com problema, carregado async ao entrar no orbe).
   const [orbSystems, setOrbSystems] = useState<{ ok: number; total: number; issues: { name: string; status: string }[] } | null>(null);
   useEffect(() => {
     if (inChat) return;
     let alive = true;
     (async () => {
-      if (userId) {
-        try {
-          const ds = await listDemands(userId);
-          if (alive) setOrbDemands(ds.filter((d) => d.status === 'todo' || d.status === 'doing' || d.status === 'waiting').length);
-        } catch { /* silencioso */ }
-      }
       if (platformConfigured) {
         try {
           const comps = await listStatusComponents();
@@ -1344,27 +1336,6 @@ export function TalkPage() {
                   );
                 })()}
 
-                {/* Pulse do dia — KPIs reais (store + async), clicáveis. Só pro supervisor. */}
-                {agent.isSupervisor && (
-                  <div className="flex items-center justify-center gap-2 flex-wrap mb-5">
-                    {[
-                      { icon: Activity, value: String(metrics?.activeAgents ?? agents.filter((a) => a.status === 'online').length), label: 'online', on: () => send('Como tá o time agora? Quem está online e com o quê.') },
-                      { icon: BarChart3, value: String(metrics?.totalToday ?? 0), label: 'hoje', on: () => send('Resumo do que rolou hoje até agora.') },
-                      { icon: ListChecks, value: orbDemands == null ? '—' : String(orbDemands), label: 'demandas', on: () => navigate('/demands') },
-                      { icon: Cog, value: orbSystems ? `${orbSystems.ok}/${orbSystems.total}` : '—', label: 'sistemas', on: () => navigate('/status') },
-                    ].map((k) => (
-                      <button
-                        key={k.label}
-                        onClick={k.on}
-                        className="flex items-center gap-2 pl-3 pr-3.5 py-2 rounded-2xl bg-surface-2/80 border border-default hover:border-brand/50 hover:bg-surface-hover transition-all shadow-[0_10px_28px_-18px_rgba(0,0,0,0.7)]"
-                      >
-                        <k.icon size={15} className="text-brand-bright shrink-0" />
-                        <span className="text-[15px] font-bold text-creme tabular-nums leading-none">{k.value}</span>
-                        <span className="text-[12.5px] font-medium text-creme-mute leading-none">{k.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
 
                 {/* Composer no MEIO (igual à referência) — onde estava */}
                 <div className="w-full">
