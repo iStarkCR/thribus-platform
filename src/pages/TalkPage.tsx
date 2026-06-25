@@ -1440,10 +1440,19 @@ export function TalkPage() {
                       <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-creme-faint shrink-0"><Pin size={11} className="text-brand-bright" /> Contexto compactado</span>
                       <div className="flex-1 h-px bg-default" />
                     </div>
-                    <button onClick={() => toggleExpanded(m.id)} className="max-w-[82%] text-left glass-panel bg-surface-2/70 border border-default rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed text-creme-dim hover:border-brand/40 transition-colors">
-                      <div className="flex items-center gap-2 mb-1 text-[11px] font-semibold text-brand-bright"><History size={12} /> Resumo da conversa {expandedMsgs.has(m.id) ? '· recolher' : '· ver'}</div>
-                      <div className={expandedMsgs.has(m.id) ? 'whitespace-pre-wrap' : 'whitespace-pre-wrap line-clamp-3'}>{m.content}</div>
-                    </button>
+                    <div className="w-full max-w-[88%] glass-panel bg-surface-2/70 border border-default rounded-2xl px-4 py-3">
+                      <button onClick={() => toggleExpanded(m.id)} className="flex items-center gap-2 mb-1 text-[11px] font-semibold text-brand-bright hover:text-brand transition-colors">
+                        <History size={12} /> Resumo da conversa {expandedMsgs.has(m.id) ? '· recolher' : '· ver'}
+                      </button>
+                      {expandedMsgs.has(m.id) ? (
+                        /* Mesmo renderizador rico das mensagens (markdown: títulos, tabelas, código, negrito) */
+                        <StreamingMarkdown text={m.content} streaming={false} onAction={(t) => send(t)} onOpenArtifact={setArtifact} />
+                      ) : (
+                        <button onClick={() => toggleExpanded(m.id)} className="text-left w-full">
+                          <div className="whitespace-pre-wrap line-clamp-3 text-[13.5px] leading-relaxed text-creme-dim">{m.content}</div>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ) : m.role === 'user' ? (() => {
                   const COLLAPSE_AT = 440;
