@@ -786,11 +786,10 @@ const COMPACT_PROMPT =
 const clearCompactFlag = (id) => sb.from('chat_sessions').update({ compact_requested: false }).eq('id', id);
 
 async function compactSession(sess, agent) {
-  // Espelho do Claude Code (source='claude_code'): a sessão REAL vive no CC desktop
-  // (outro cwd) — não dá pra resumir/compactar daqui (o --resume falha noutro cwd).
-  // Pula. Sem isso, o auto tentava em loop toda hora que o contexto passava do teto.
-  if (sess.source === 'claude_code') { await clearCompactFlag(sess.id); return; }
-
+  // Espelho do Claude Code (source='claude_code'): o --resume falha (sessão vive em
+  // outro cwd), mas o FALLBACK por histórico resume mesmo assim. Por isso o MANUAL
+  // funciona aqui também; só o AUTO (teto) é restrito a 'panel' (ver tickCompaction).
+  const isMirror = sess.source === 'claude_code';
   const cwd = await cwdForSession(sess.agent_id, sess.working_dir);
   let summary = '';
   let usage = null;
@@ -842,13 +841,18 @@ async function compactSession(sess, agent) {
   const { data: marker } = await sb.from('collaborator_messages')
     .insert({ session_id: sess.id, agent_id: sess.agent_id, user_id: sess.user_id, role: 'system', content: summary, status: 'done', channel: 'thribus' })
     .select('id').single();
-  await sb.from('chat_sessions').update({
+  const patch = {
     context_seed: summary,
-    claude_session_id: null,
     context_tokens: 0,
     compacted_at: new Date().toISOString(),
     compact_requested: false,
-  }).eq('id', sess.id);
+  };
+  // Conversa digitada: zera o ponteiro → próxima msg reinicia a sessão semeada com o
+  // resumo. Espelho: NÃO mexe no claude_session_id — senão o cc-mirror perde o vínculo
+  // e recria uma gêmea na próxima atividade no Claude Code desktop. O reseed via
+  // context_seed acontece igual (o --resume da sessão do CC falha → cai no resumo).
+  if (!isMirror) patch.claude_session_id = null;
+  await sb.from('chat_sessions').update(patch).eq('id', sess.id);
   await recordUsage({ userId: sess.user_id, agentId: sess.agent_id, kind: 'chat', refId: marker?.id, sessionId: sess.id, usage });
   console.log(`[compactado] ${agent.name} · sessão ${sess.id} → resumo ${summary.length} chars`);
 }
@@ -861,11 +865,13 @@ async function tickCompaction(teamIds) {
   // Manual (botão "Compactar" → compact_requested) OU automático (contexto passou
   // do teto do painel). Em ambos, gera resumo curado em vez do corte cego.
   const ctxLimit = BRAIN.contextLimitTokens || CONTEXT_RESET_TOKENS;
+  // MANUAL (botão → compact_requested) funciona pra qualquer conversa, inclusive
+  // espelho. AUTO (passou do teto) só nas DIGITADAS (source='panel') — não dispara
+  // sozinho nas sessões do Claude Code (que o Charles controla no próprio CC).
   const { data: rows, error } = await sb
     .from('chat_sessions')
     .select('id,agent_id,user_id,claude_session_id,working_dir,context_tokens,compact_requested,source')
-    .neq('source', 'claude_code') // espelhos do Claude Code não são compactáveis daqui
-    .or(`compact_requested.eq.true,context_tokens.gt.${ctxLimit}`)
+    .or(`compact_requested.eq.true,and(context_tokens.gt.${ctxLimit},source.eq.panel)`)
     .limit(3);
   if (error) { console.error('[compact poll erro]', error.message); return; }
   for (const sess of rows ?? []) {

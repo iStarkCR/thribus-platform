@@ -1416,7 +1416,7 @@ export function TalkPage() {
               {/* Compactar conversa — flutua no topo em conversas longas. Gera um
                   resumo (TL;DR) e recomeça o contexto a partir dele; o histórico
                   visual fica intacto. Ver requestCompaction / ponte (caminho C). */}
-              {messages.length >= 8 && !waiting && active?.source !== 'claude_code' && (
+              {messages.length >= 8 && !waiting && (
                 <div className="sticky top-0 z-20 flex justify-center pointer-events-none -mt-2 mb-1">
                   <button
                     onClick={compactConversation}
