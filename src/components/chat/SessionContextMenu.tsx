@@ -27,32 +27,30 @@ export function SessionContextMenu({
 }) {
   const [sub, setSub] = useState<'color' | 'folder' | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [coords, setCoords] = useState({ left: Math.max(8, pos.x - 208), top: pos.y + 4 });
-  // Mede o menu DEPOIS de renderizar e o reposiciona pra caber inteiro na tela —
-  // sobe quando abre perto da borda de baixo, pra "Apagar" nunca ficar cortado.
-  // Recalcula quando um submenu (cor/pasta) expande e muda a altura.
+  const [coords, setCoords] = useState({ left: Math.max(8, pos.x - 208), top: pos.y + 4, maxH: 0 });
+  // Reposiciona o menu pra caber INTEIRO na tela (sobe perto da borda de baixo).
+  // O pulo do gato: sob CSS `zoom`, `getBoundingClientRect`/`clientHeight`/`pos`
+  // estão no espaço FÍSICO (renderizado), mas `offsetHeight`/`style.top` no de
+  // LAYOUT (pré-zoom). Misturar = corte. Então fazemos TUDO no espaço físico
+  // (rect + clientHeight + pos) e só no fim dividimos por z pro style. Cap a altura
+  // ao viewport físico → se o menu não couber, ele ROLA em vez de cortar.
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el) return;
-    // Sob `zoom` (escala da UI) o getBoundingClientRect já mudou de comportamento
-    // entre versões do Chrome. Em vez de adivinhar, derivamos o zoom REAL da razão
-    // entre a altura RENDERIZADA (rect) e a de LAYOUT (offset): se o rect não vier
-    // escalado, z=1 e tudo vira no-op. Robusto a qualquer versão.
-    const rect = el.getBoundingClientRect();
-    const z = el.offsetHeight ? rect.height / el.offsetHeight : 1;
-    const w = el.offsetWidth;                          // CSS px (layout)
-    const h = el.offsetHeight;                         // CSS px (layout)
-    const vw = document.documentElement.clientWidth;   // viewport em CSS px
-    const vh = document.documentElement.clientHeight;
-    const x = pos.x / z;                               // pos (espaço do rect) → CSS px
-    const y = pos.y / z;
-    const m = 8;
-    let left = x - w;                                  // abre à esquerda do gatilho
-    if (left < m) left = Math.min(x + 4, vw - w - m);  // sem espaço → à direita
-    left = Math.max(m, Math.min(left, vw - w - m));
-    let top = y + 4;
-    if (top + h > vh - m) top = Math.max(m, vh - h - m); // não cabe embaixo → sobe
-    setCoords({ left, top });
+    const rect = el.getBoundingClientRect();           // físico (pós-zoom)
+    const z = el.offsetHeight ? rect.height / el.offsetHeight : 1; // zoom real
+    const vw = document.documentElement.clientWidth;   // físico
+    const vh = document.documentElement.clientHeight;  // físico
+    const m = 8 * z;
+    const wR = rect.width;                              // físico
+    const hR = Math.min(rect.height, vh - m * 2);       // físico, capado ao viewport
+    let left = pos.x - wR;                              // pos = rect do gatilho (físico)
+    if (left < m) left = Math.min(pos.x + 4 * z, vw - wR - m);
+    left = Math.max(m, Math.min(left, vw - wR - m));
+    let top = pos.y + 4 * z;
+    if (top + hR > vh - m) top = Math.max(m, vh - hR - m);
+    // físico → style (layout px): o browser re-aplica o zoom ao renderizar.
+    setCoords({ left: left / z, top: top / z, maxH: hR / z });
   }, [pos.x, pos.y, sub]);
   const run = (fn: () => void) => () => { fn(); onClose(); };
 
@@ -62,7 +60,7 @@ export function SessionContextMenu({
   return createPortal(
     <>
       <div className="fixed inset-0 z-[58]" onClick={onClose} />
-      <div ref={menuRef} className="fixed z-[59] w-52 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px] max-h-[calc(100vh-16px)] overflow-y-auto" style={{ left: coords.left, top: coords.top }}>
+      <div ref={menuRef} className="fixed z-[59] w-52 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px] overflow-y-auto" style={{ left: coords.left, top: coords.top, maxHeight: coords.maxH || undefined }}>
         <Row icon={<Pencil size={14} />} label="Renomear" onClick={run(onRename)} />
         <Row icon={session.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />} label={session.pinnedAt ? 'Desafixar' : 'Fixar no topo'} onClick={run(onTogglePin)} />
 
