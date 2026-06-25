@@ -28,6 +28,7 @@
 
 import { spawn, execFile } from 'node:child_process';
 import { homedir } from 'node:os';
+import net from 'node:net';
 import pg from 'pg';
 
 const cfg = {
@@ -64,17 +65,37 @@ function containerIp() {
   });
 }
 
+// Espera a porta local do forward REALMENTE aceitar conexão (poll), em vez de um
+// timeout fixo — o túnel SSH pode levar alguns segundos pra subir.
+function waitPort(port, timeoutMs = 15000) {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const tryOnce = () => {
+      const sock = net.connect({ host: '127.0.0.1', port }, () => { sock.end(); resolve(); });
+      sock.once('error', () => {
+        sock.destroy();
+        if (Date.now() - start > timeoutMs) reject(new Error('porta do túnel não abriu a tempo'));
+        else setTimeout(tryOnce, 300);
+      });
+    };
+    tryOnce();
+  });
+}
+
 function openTunnel(ip) {
   return new Promise((resolve, reject) => {
-    // -N: sem comando remoto; -L: forward local→container:5432
-    const child = spawn('ssh', sshArgs(['-N', '-L', `${cfg.localPort}:${ip}:5432`, `${cfg.sshUser}@${cfg.sshHost}`]), {
-      stdio: ['ignore', 'ignore', 'pipe'],
-    });
-    let settled = false;
-    child.stderr.on('data', (d) => { if (!settled) console.error('[memory ssh]', String(d).trim()); });
-    child.on('exit', (code) => { if (!settled) { settled = true; reject(new Error(`túnel ssh saiu (code ${code})`)); } ready = false; });
-    // dá um tempinho pro forward subir antes de tentar conectar
-    setTimeout(() => { if (!settled) { settled = true; resolve(child); } }, 1200);
+    // -N: sem comando remoto; ExitOnForwardFailure: morre se o forward falhar (porta
+    // local ocupada etc.); ServerAlive: derruba túnel morto pra reconectar no boot.
+    const child = spawn('ssh', sshArgs([
+      '-N', '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
+      '-L', `${cfg.localPort}:${ip}:5432`, `${cfg.sshUser}@${cfg.sshHost}`,
+    ]), { stdio: ['ignore', 'ignore', 'pipe'] });
+    let exited = false;
+    child.stderr.on('data', (d) => console.error('[memory ssh]', String(d).trim()));
+    child.on('exit', () => { exited = true; ready = false; });
+    waitPort(cfg.localPort)
+      .then(() => { if (exited) reject(new Error('túnel ssh saiu antes de abrir')); else resolve(child); })
+      .catch(reject);
   });
 }
 
