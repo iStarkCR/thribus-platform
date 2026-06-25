@@ -19,7 +19,7 @@ import { UsageLimitsBadge } from '@/components/cortex/UsageLimitsBadge';
 import { WorkFolderBar } from '@/components/cortex/WorkFolderBar';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
 import { type RunEvent } from '@/services/runEvents';
-import { listMessages, sendMessage, cancelMessage, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
+import { listMessages, sendMessage, cancelMessage, deleteMessagesFrom, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import { createDemand, listDemands } from '@/services/demands';
 import { listStatusComponents, platformConfigured } from '@/services/platform';
@@ -81,6 +81,8 @@ export function TalkPage() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  // "Editar & reenviar": a partir desta msg (inclusive) tudo é apagado ao reenviar.
+  const [editingFrom, setEditingFrom] = useState<{ id: string; sessionId: string; createdAt: string } | null>(null);
   const [cmdIdx, setCmdIdx] = useState(0); // item selecionado no menu de comandos "/"
   const [menIdx, setMenIdx] = useState(0); // item selecionado no menu de @menção
   const [sending, setSending] = useState(false);
@@ -192,6 +194,8 @@ export function TalkPage() {
   }, [voice.listening, voiceMode, setSttBusy]);
   useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  // troca de conversa cancela edição pendente (evita truncar a sessão errada)
+  useEffect(() => { setEditingFrom((e) => (e && e.sessionId !== activeId ? null : e)); }, [activeId]);
 
   // ─── Modo voz do painel (VoiceController na sessão ativa) ────────────────────
   // Manda o texto falado p/ a conversa ATIVA (is_voice) e resolve com a resposta
@@ -840,6 +844,8 @@ export function TalkPage() {
     if ((!raw && atts.length === 0) || !agent || !userId || sending || uploading > 0) return;
     setSending(true);
     setHistOpen(false);
+    const edit = editingFrom;
+    setEditingFrom(null);
     if (textArg === undefined) { setInput(''); setAttachments([]); }
 
     let sessionId = activeId;
@@ -852,6 +858,20 @@ export function TalkPage() {
       isFirst = true;
     } else {
       isFirst = messages.length === 0;
+    }
+
+    // Editar & reenviar: apaga a msg editada e tudo depois antes de inserir a nova.
+    if (edit && edit.createdAt && sessionId && edit.sessionId === sessionId) {
+      try {
+        await deleteMessagesFrom(sessionId, edit.createdAt);
+        setMessages((m) => m.filter((x) => !x.createdAt || x.createdAt < edit.createdAt));
+      } catch (e) {
+        setSending(false);
+        setInput(text);
+        setEditingFrom(edit);
+        useAppStore.getState().addToast('Falha ao editar: ' + (e as Error).message, 'red');
+        return;
+      }
     }
 
     setMessages((m) => [
@@ -1487,7 +1507,7 @@ export function TalkPage() {
                     <div className="flex items-center gap-1 mr-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       {time && <span className="text-[10.5px] text-creme-faint mr-1">{time}</span>}
                       {[
-                        { icon: Pencil, label: 'Editar & reenviar', on: () => { setInput(m.content); useAppStore.getState().addToast('Mensagem no campo — ajuste e reenvie', 'green'); } },
+                        { icon: Pencil, label: 'Editar & reenviar', on: () => { if (!m.sessionId) return; setInput(m.content); setEditingFrom({ id: m.id, sessionId: m.sessionId, createdAt: m.createdAt }); requestAnimationFrame(() => composerRef.current?.focus()); useAppStore.getState().addToast('Editando — ao reenviar, esta e as mensagens seguintes são substituídas', 'green'); } },
                         { icon: Copy, label: 'Copiar', on: () => copyMsg(m.content) },
                         { icon: GitBranch, label: 'Bifurcar a conversa', on: () => { if (active) forkSessionAction(active); } },
                         { icon: ListChecks, label: 'Virar demanda', on: () => msgToDemand(m.content) },
@@ -1598,6 +1618,14 @@ export function TalkPage() {
             </div>
             {active && active.contextTokens > 0 && <ContextMeter tokens={active.contextTokens} />}
           </div>
+
+          {editingFrom && (
+            <div className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-lg bg-brand/10 border border-brand/30 text-[12px] text-brand-bright">
+              <Pencil size={13} className="shrink-0" />
+              <span className="flex-1 truncate">Editando — ao reenviar, esta mensagem e as seguintes serão substituídas.</span>
+              <button onClick={() => { setEditingFrom(null); setInput(''); }} title="Cancelar edição" className="shrink-0 text-creme-faint hover:text-creme"><X size={14} /></button>
+            </div>
+          )}
 
           {(attachments.length > 0 || uploading > 0) && (
             <div className="flex flex-wrap gap-2 mb-2 px-1">

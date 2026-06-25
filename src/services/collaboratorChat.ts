@@ -119,6 +119,20 @@ export async function sendMessage(
   return toMsg(data as Row);
 }
 
+/**
+ * "Editar & reenviar": apaga a mensagem a partir de `fromCreatedAt` (inclusive) e
+ * tudo que veio depois nela, pra não duplicar a conversa ao reenviar editado.
+ */
+export async function deleteMessagesFrom(sessionId: string, fromCreatedAt: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('collaborator_messages')
+    .delete()
+    .eq('session_id', sessionId)
+    .gte('created_at', fromCreatedAt);
+  if (error) throw error;
+}
+
 /** Botão "Parar": marca a msg do usuário como cancelada → a ponte mata o claude. */
 export async function cancelMessage(messageId: string): Promise<void> {
   if (!supabase) return;
