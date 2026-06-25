@@ -380,6 +380,14 @@ const GUARD =
   'publique com a skill thribus-hub-publish, devolvendo o LINK de compartilhamento — confirme antes (```confirm), ' +
   'é entrega externa.\n\n' +
   '(NÃO use cards/confirm/artifact em modo voz — ali a resposta é só fala natural.)\n\n' +
+  'MEMÓRIA: você tem memória de longo prazo (lembra entre conversas). Quando o Charles ' +
+  'pedir pra GUARDAR/LEMBRAR algo ("guarda na memória que…", "lembra que…"), OU quando ele ' +
+  'revelar um fato claramente DURÁVEL e reutilizável (preferência fixa, decisão firme, fato ' +
+  'estável sobre a Thribus/pessoas/sistemas/processos), emita um bloco ```remember com array ' +
+  'JSON: [{"fact":"frase curta auto-contida","category":"preferencia|decisao|projeto|pessoa|sistema|fato",' +
+  '"entity":"opcional"}]. A ponte grava sozinha e remove o bloco — você só confirma em 1 frase ' +
+  'natural ("Guardado: …"). Seja PARCIMONIOSO: nada de tarefa pontual, estado efêmero, óbvio, ' +
+  'nem repetir fato que você já sabe. Qualidade, não volume.\n\n' +
   'EFICIÊNCIA DE CONTEXTO (importante): a sessão é mantida entre turnos e TUDO que você lê fica na memória e ' +
   'pesa nos próximos turnos. Ao consultar banco/IXC/arquivos: NUNCA traga tabela inteira nem dump gigante pro ' +
   'contexto. Use queries com LIMIT e filtros, SELECT só das colunas necessárias, e prefira AGREGAR/CONTAR a ' +
@@ -724,7 +732,18 @@ async function processMessage(msg) {
     }
     if (ctl.cancelled) throw new Error('cancelado');
 
-    const reply = r.text;
+    let reply = r.text;
+    // Comando de memória: o colaborador emite um bloco ```remember pra gravar fatos
+    // de longo prazo sob comando ("guarda na memória que X") ou proativamente. A ponte
+    // salva e remove o bloco do texto — a confirmação natural dele permanece.
+    if (memoryReady() && /```remember/i.test(reply)) {
+      const { facts, clean } = extractRememberBlocks(reply);
+      if (facts.length) {
+        const n = await saveFacts(agent.id, facts).catch(() => 0);
+        if (n) console.log(`[memory] +${n} fato(s) sob comando (${agent.name})`);
+      }
+      reply = clean || 'Guardado na memória.';
+    }
     if (!reply && !asstId) throw new Error('resposta vazia do claude');
 
     // Finaliza: insere (se nunca streamou) ou consolida o conteúdo com o texto
@@ -886,6 +905,25 @@ async function compactSession(sess, agent) {
   // Memória de longo prazo pega carona: extrai fatos duráveis do RESUMO (input curto)
   // com modelo barato. Fire-and-forget — nunca segura a compactação.
   extractAndSaveMemory(sess.agent_id, agent, summary, cwd).catch((e) => console.error('[memory] extract falhou:', e.message));
+}
+
+// Extrai blocos ```remember [...] da resposta → fatos pra memória + texto limpo (sem o
+// bloco). Aceita array ou objeto único; bloco malformado é só removido do texto.
+function extractRememberBlocks(text) {
+  const facts = [];
+  const clean = String(text || '')
+    .replace(/```remember\s*([\s\S]*?)```/gi, (_, body) => {
+      try {
+        const parsed = JSON.parse(body.trim());
+        for (const f of (Array.isArray(parsed) ? parsed : [parsed])) {
+          if (f && typeof f.fact === 'string' && f.fact.trim()) facts.push(f);
+        }
+      } catch { /* malformado: ignora os fatos, mas remove o bloco do texto */ }
+      return '';
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { facts, clean };
 }
 
 // Extrai fatos duráveis do resumo da conversa e grava na memória de longo prazo.
