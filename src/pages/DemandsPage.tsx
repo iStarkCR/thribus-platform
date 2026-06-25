@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ListChecks, Plus, Loader2, Trash2, Folder, AlertTriangle, RefreshCw, Search,
-  LayoutGrid, Clock, BarChart3, DollarSign, Link2,
+  LayoutGrid, Clock, BarChart3, DollarSign, Link2, Layers,
 } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -41,6 +41,7 @@ export function DemandsPage() {
   const [search, setSearch] = useState('');
   const [filterAgent, setFilterAgent] = useState('');
   const [filterProject, setFilterProject] = useState('');
+  const [groupByProject, setGroupByProject] = useState(false);
 
   const agentName = useCallback((id: string) => agents.find((a) => a.id === id)?.name ?? id, [agents]);
 
@@ -153,6 +154,15 @@ export function DemandsPage() {
                 {projects.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
             )}
+            {projects.length > 0 && (
+              <button
+                onClick={() => setGroupByProject((v) => !v)}
+                title="Agrupar os cards por projeto dentro de cada coluna"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold border transition-colors ${groupByProject ? 'border-brand bg-brand/10 text-brand-bright' : 'border-default text-creme-mute hover:bg-surface-hover'}`}
+              >
+                <Layers size={13} /> Agrupar por projeto
+              </button>
+            )}
             {(search || filterAgent || filterProject) && (
               <button onClick={() => { setSearch(''); setFilterAgent(''); setFilterProject(''); }} className="text-[12px] text-creme-faint hover:text-creme">limpar</button>
             )}
@@ -161,29 +171,41 @@ export function DemandsPage() {
           {loading ? (
             <div className="flex items-center gap-2 text-creme-faint text-[13px]"><Loader2 size={14} className="animate-spin" /> Carregando…</div>
           ) : (
-            <div className="flex gap-3 min-h-[60vh] overflow-x-auto pb-2 [scrollbar-width:thin]">
-              {COLUMNS.map((col) => (
+            <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin] h-[calc(100vh-13.5rem)]">
+              {COLUMNS.map((col) => {
+                const card = (d: Demand) => (
+                  <DemandCard key={d.id} d={d} agentName={agentName} onOpen={() => setDetailId(d.id)} onRemove={() => remove(d.id)} onRetry={() => retry(d.id)} onDragStart={() => { dragId.current = d.id; }} />
+                );
+                return (
                 <div
                   key={col.key}
                   onDragOver={(e) => { e.preventDefault(); setDragOver(col.key); }}
                   onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver((c) => (c === col.key ? null : c)); }}
                   onDrop={(e) => { e.preventDefault(); setDragOver(null); if (dragId.current) { move(dragId.current, col.key); dragId.current = null; } }}
-                  className={`flex-1 min-w-[240px] rounded-xl border p-2.5 transition-colors ${dragOver === col.key ? 'border-brand/50 bg-brand/[0.04]' : col.key === 'waiting' && byStatus.waiting.length > 0 ? 'border-semantic-amber/30 bg-semantic-amber/[0.03]' : 'border-default bg-surface-1/40'}`}
+                  className={`flex-1 min-w-[260px] rounded-xl border p-2.5 flex flex-col min-h-0 transition-colors ${dragOver === col.key ? 'border-brand/50 bg-brand/[0.04]' : col.key === 'waiting' && byStatus.waiting.length > 0 ? 'border-semantic-amber/30 bg-semantic-amber/[0.03]' : 'border-default bg-surface-1/40'}`}
                 >
-                  <div className="flex items-center justify-between px-1 pb-2.5">
+                  <div className="flex items-center justify-between px-1 pb-2.5 shrink-0">
                     <div className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider ${col.accent}`}>
                       <span className="w-2 h-2 rounded-full" style={{ background: col.dot }} /> {col.label}
                     </div>
                     <span className="text-[11px] text-creme-faint font-mono">{byStatus[col.key].length}</span>
                   </div>
-                  <div className="space-y-2">
-                    {byStatus[col.key].map((d) => (
-                      <DemandCard key={d.id} d={d} agentName={agentName} onOpen={() => setDetailId(d.id)} onRemove={() => remove(d.id)} onRetry={() => retry(d.id)} onDragStart={() => { dragId.current = d.id; }} />
-                    ))}
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 [scrollbar-width:thin] space-y-2">
+                    {groupByProject
+                      ? groupCardsByProject(byStatus[col.key]).map(([proj, cards]) => (
+                          <div key={proj} className="space-y-2">
+                            <div className="flex items-center gap-1 px-1 pt-1 text-[10px] font-bold uppercase tracking-wider text-creme-faint/80">
+                              <Folder size={9} className="shrink-0" /> <span className="truncate">{proj}</span> <span className="font-mono">{cards.length}</span>
+                            </div>
+                            {cards.map(card)}
+                          </div>
+                        ))
+                      : byStatus[col.key].map(card)}
                     {byStatus[col.key].length === 0 && <div className="text-[11px] text-creme-faint/60 italic px-1 py-2">—</div>}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>
@@ -209,6 +231,17 @@ export function DemandsPage() {
       )}
     </div>
   );
+}
+
+// Agrupa os cards de uma coluna por projeto, preservando a ordem (1ª aparição).
+function groupCardsByProject(cards: Demand[]): [string, Demand[]][] {
+  const groups = new Map<string, Demand[]>();
+  for (const d of cards) {
+    const key = d.project || 'Sem projeto';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(d);
+  }
+  return [...groups.entries()];
 }
 
 function DemandCard({ d, agentName, onOpen, onRemove, onRetry, onDragStart }: {
