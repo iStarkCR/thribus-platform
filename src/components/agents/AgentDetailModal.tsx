@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Trash2, Save, AlertTriangle } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
+import { AgentMemoryTab } from './AgentMemoryTab';
 import { useAppStore } from '@/hooks/useAppStore';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
 import type { Agent, AgentType, AIModel } from '@/types';
@@ -12,7 +13,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = 'config' | 'prompt' | 'tools';
+type Tab = 'config' | 'prompt' | 'tools' | 'memory';
 
 export function AgentDetailModal({ agent, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('config');
@@ -148,6 +149,7 @@ export function AgentDetailModal({ agent, onClose }: Props) {
             { id: 'config', label: 'Configuração' },
             { id: 'prompt', label: 'System Prompt' },
             { id: 'tools', label: `Ferramentas (${tools.length})` },
+            { id: 'memory', label: 'Memória' },
           ] as Array<{ id: Tab; label: string }>
         ).map((t) => (
           <button
@@ -295,6 +297,8 @@ export function AgentDetailModal({ agent, onClose }: Props) {
           <ToolSelector client={client} selected={tools} onChange={setTools} />
         </div>
       )}
+
+      {tab === 'memory' && <AgentMemoryTab agentId={agent.id} />}
 
       {showSaveAsTemplate && (
         <SaveAsTemplateModal

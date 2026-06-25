@@ -166,6 +166,54 @@ export async function saveFacts(agentId, facts) {
   return n;
 }
 
+/** Todos os fatos (pra o espelho cortex_memory no Supabase do painel). */
+export async function listAllFacts() {
+  if (!ready || !pool) return null; // null = indisponível (não confundir com "vazio")
+  try {
+    const { rows } = await pool.query(
+      `select id, agent_id, category, entity, fact, confidence, active, updated_at
+         from memory_facts order by id`,
+    );
+    return rows;
+  } catch (e) {
+    console.error('[memory] listAllFacts falhou:', e.message);
+    return null;
+  }
+}
+
+/**
+ * Aplica uma op vinda do painel (cortex_memory.pending_op) na VPS.
+ * op: { pending_op, remote_id, agent_id, category, entity, fact, confidence, active }
+ * Devolve { remoteId } no create; {} nos demais. Lança se falhar (o caller trata).
+ */
+export async function applyOp(op) {
+  if (!ready || !pool) throw new Error('memória indisponível');
+  if (op.pending_op === 'create') {
+    const { rows } = await pool.query(
+      `insert into memory_facts (agent_id, category, entity, fact, confidence, active)
+       values ($1,$2,$3,$4,$5,$6) returning id`,
+      [op.agent_id, op.category || null, op.entity || null, String(op.fact || '').trim(),
+       Number(op.confidence) || 0.8, op.active !== false],
+    );
+    return { remoteId: rows[0].id };
+  }
+  if (op.pending_op === 'update') {
+    if (!op.remote_id) return {};
+    await pool.query(
+      `update memory_facts set category=$2, entity=$3, fact=$4, confidence=$5, active=$6, updated_at=now()
+        where id=$1`,
+      [op.remote_id, op.category || null, op.entity || null, String(op.fact || '').trim(),
+       Number(op.confidence) || 0.8, op.active !== false],
+    );
+    return {};
+  }
+  if (op.pending_op === 'delete') {
+    if (op.remote_id) await pool.query('delete from memory_facts where id=$1', [op.remote_id]);
+    return {};
+  }
+  throw new Error(`op desconhecida: ${op.pending_op}`);
+}
+
 export async function closeMemory() {
   try { await pool?.end(); } catch { /* ok */ }
   try { tunnel?.kill('SIGTERM'); } catch { /* ok */ }

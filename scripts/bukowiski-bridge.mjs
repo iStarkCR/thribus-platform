@@ -34,7 +34,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { initMemory, recall, saveFacts, memoryReady } from './memory.mjs';
+import { initMemory, recall, saveFacts, memoryReady, listAllFacts, applyOp } from './memory.mjs';
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -1241,6 +1241,59 @@ console.log(
     '  chat + demandas (Kanban) + respostas no thread · uso em cortex_usage\n' +
     '  agentes de cliente: ignorados',
 );
+// Espelho da memória de longo prazo pro painel (padrão fs_browse_requests): PUSH das
+// ops que o painel marcou (pending_op) → VPS, e PULL (throttle 30s) dos fatos → mirror.
+let _lastMemPull = 0;
+async function tickMemorySync() {
+  if (!memoryReady()) return;
+  // PUSH — ops do painel (add/edit/delete) → VPS
+  try {
+    const { data: ops } = await sb.from('cortex_memory').select('*').not('pending_op', 'is', null).limit(50);
+    for (const op of ops ?? []) {
+      try {
+        const res = await applyOp(op);
+        if (op.pending_op === 'delete') {
+          await sb.from('cortex_memory').delete().eq('id', op.id);
+        } else {
+          const patch = { pending_op: null, synced_at: new Date().toISOString() };
+          if (res.remoteId) patch.remote_id = res.remoteId;
+          await sb.from('cortex_memory').update(patch).eq('id', op.id);
+        }
+      } catch (e) { console.error('[memory] push op falhou (fica pendente):', e.message); }
+    }
+  } catch (e) { console.error('[memory] push falhou:', e.message); }
+
+  // PULL — espelha os fatos da VPS no mirror (throttle 30s)
+  if (Date.now() - _lastMemPull < 30000) return;
+  _lastMemPull = Date.now();
+  try {
+    const facts = await listAllFacts();
+    if (!facts) return; // indisponível: não mexe no mirror
+    const { data: mirror } = await sb.from('cortex_memory').select('id,remote_id,pending_op');
+    const byRemote = new Map((mirror ?? []).filter((m) => m.remote_id != null).map((m) => [String(m.remote_id), m]));
+    const pendingRemote = new Set((mirror ?? []).filter((m) => m.pending_op).map((m) => String(m.remote_id)));
+    const seen = new Set();
+    for (const f of facts) {
+      seen.add(String(f.id));
+      if (pendingRemote.has(String(f.id))) continue; // não sobrescreve edição local pendente
+      const row = {
+        remote_id: f.id, agent_id: f.agent_id, category: f.category, entity: f.entity,
+        fact: f.fact, confidence: f.confidence, active: f.active,
+        pending_op: null, synced_at: new Date().toISOString(),
+      };
+      const existing = byRemote.get(String(f.id));
+      if (existing) await sb.from('cortex_memory').update(row).eq('id', existing.id);
+      else await sb.from('cortex_memory').insert(row);
+    }
+    // some da VPS (e sem op local) → remove do espelho
+    for (const m of mirror ?? []) {
+      if (m.remote_id != null && !seen.has(String(m.remote_id)) && !m.pending_op) {
+        await sb.from('cortex_memory').delete().eq('id', m.id);
+      }
+    }
+  } catch (e) { console.error('[memory] pull falhou:', e.message); }
+}
+
 async function loop() {
   for (;;) {
     const teamIds = await loadTeamIds();
@@ -1250,6 +1303,7 @@ async function loop() {
     await materializeSkills();      // skills do painel → ~/.claude/skills (cache 15s)
     await tick(teamIds);            // chat interativo primeiro
     await tickCompaction(teamIds);  // compacta conversas (botão ou teto) → semente
+    await tickMemorySync();         // memória de longo prazo: espelho ↔ VPS (best-effort)
     await tickDemandReplies(teamIds); // respostas no thread (conversa ativa) têm prioridade
     await tickRoutines(teamIds);    // rotinas vencidas viram demanda
     await tickDemands(teamIds);     // depois 1 demanda nova da fila
