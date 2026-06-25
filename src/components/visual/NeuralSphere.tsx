@@ -156,8 +156,10 @@ export function NeuralSphere({
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     camera.position.z = 6;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power' });
+    // Retina renderiza 4× os pixels (dpr 2). Cap em 1.5 corta ~44% da carga de GPU
+    // por frame sem borrar perceptível — é o que mantém o movimento fluido leve.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 
     const parallaxGroup = new THREE.Group();
     const outerGroup = new THREE.Group();
@@ -315,11 +317,9 @@ export function NeuralSphere({
     const baseHSL = { h: 0, s: 0, l: 0 };
     baseColor.getHSL(baseHSL);
     let raf = 0;
-    // Performance: a esfera é contemplativa — limita a ~30fps (em vez de 60–120 no
-    // rAF nativo, que em telas ProMotion fritava o compositor) e PAUSA quando sai da
-    // tela (IntersectionObserver). Corta a maior parte da carga GPU sem perda visual.
-    let lastFrameT = 0;
-    const FRAME_MS = 1000 / 30;
+    // Performance: mantém o movimento FLUIDO (rAF nativo — sem cap, que picotava em
+    // ProMotion), mas PAUSA quando sai da tela (IntersectionObserver). A carga é
+    // contida pelo pixelRatio menor (ver setPixelRatio) em vez de cortar frames.
     let visible = true;
     const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0.01 });
     io.observe(container);
@@ -407,11 +407,9 @@ export function NeuralSphere({
       geomLines.setDrawRange(0, writeIdx / 3);
     };
 
-    const animate = (tNow = 0) => {
+    const animate = () => {
       raf = requestAnimationFrame(animate);
-      if (!visible) return;                       // fora da tela → não gasta GPU
-      if (tNow - lastFrameT < FRAME_MS) return;   // cap de ~30fps
-      lastFrameT = tNow;
+      if (!visible) return; // fora da tela → não gasta GPU
       const now = performance.now() * 0.001;
       const ambientPulse = ambient ? 0.18 + Math.sin(now * 0.5) * 0.06 : 0;
       // attack rápido / decay lento — sensação de respiração natural

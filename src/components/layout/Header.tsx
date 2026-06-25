@@ -36,7 +36,7 @@ export function Header({ onNewAgent, onTestAgent }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-40 h-14 px-7 bg-surface-0/[0.88] backdrop-blur-xl border-b border-default flex items-center justify-between">
+    <header className="sticky top-0 z-40 h-14 px-7 bg-surface-0/[0.88] backdrop-blur-md border-b border-default flex items-center justify-between">
       <div className="flex items-center gap-4">
         <span className="text-sm font-bold text-creme tracking-tight">{meta.title}</span>
         <span className="w-px h-4 bg-default" />
