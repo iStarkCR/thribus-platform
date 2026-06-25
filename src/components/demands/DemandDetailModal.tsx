@@ -109,8 +109,8 @@ export function DemandDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-[70] p-4" onClick={onClose}>
-      <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-[70] p-3 md:p-6" onClick={onClose}>
+      <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-[1200px] h-[92vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Cabeçalho */}
         <div className="flex items-start justify-between px-5 py-3.5 border-b border-default shrink-0 gap-3">
           <div className="min-w-0">
@@ -180,7 +180,7 @@ export function DemandDetailModal({
           </div>
 
           {/* Painel de ações */}
-          <div className="w-full md:w-72 shrink-0 overflow-y-auto p-4 space-y-4 bg-surface-1/40">
+          <div className="w-full md:w-80 shrink-0 overflow-y-auto p-4 space-y-4 bg-surface-1/40">
             {/* Execução */}
             <Section title="Execução">
               <div className="grid grid-cols-3 gap-2">
