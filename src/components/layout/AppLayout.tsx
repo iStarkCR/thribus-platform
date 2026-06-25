@@ -52,7 +52,8 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Menu size={18} />
           </button>
         )}
-        <div className={isChat ? 'flex-1 min-h-0 flex flex-col' : 'flex-1 p-6'}>{children}</div>
+        {/* max-md:pt-16 abre espaço pro hamburger flutuante não cobrir o título em mobile */}
+        <div className={isChat ? 'flex-1 min-h-0 flex flex-col' : 'flex-1 p-6 max-md:pt-16'}>{children}</div>
       </main>
     </div>
   );
