@@ -83,6 +83,9 @@ export function TalkPage() {
   const [input, setInput] = useState('');
   // "Editar & reenviar": a partir desta msg (inclusive) tudo é apagado ao reenviar.
   const [editingFrom, setEditingFrom] = useState<{ id: string; sessionId: string; createdAt: string } | null>(null);
+  // Pasta de trabalho escolhida na landing → vira o working_dir da 1ª conversa criada.
+  const [pendingWorkingDir, setPendingWorkingDir] = useState<string | null>(null);
+  const pendingWorkingDirRef = useRef<string | null>(null);
   const [cmdIdx, setCmdIdx] = useState(0); // item selecionado no menu de comandos "/"
   const [menIdx, setMenIdx] = useState(0); // item selecionado no menu de @menção
   const [sending, setSending] = useState(false);
@@ -194,6 +197,7 @@ export function TalkPage() {
   }, [voice.listening, voiceMode, setSttBusy]);
   useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  useEffect(() => { pendingWorkingDirRef.current = pendingWorkingDir; }, [pendingWorkingDir]);
   // troca de conversa cancela edição pendente (evita truncar a sessão errada)
   useEffect(() => { setEditingFrom((e) => (e && e.sessionId !== activeId ? null : e)); }, [activeId]);
 
@@ -204,7 +208,7 @@ export function TalkPage() {
     if (!agent || !userId) return '';
     let sid = activeIdRef.current;
     if (!sid) {
-      const s = await createSession(agent.id, userId, {}).catch(() => null);
+      const s = await createSession(agent.id, userId, { workingDir: pendingWorkingDirRef.current }).catch(() => null);
       if (!s) return '';
       sid = s.id;
       activeIdRef.current = sid;
@@ -851,7 +855,7 @@ export function TalkPage() {
     let sessionId = activeId;
     let isFirst = false;
     if (!sessionId) {
-      const s = await createSession(agent.id, userId, {});
+      const s = await createSession(agent.id, userId, { workingDir: pendingWorkingDir });
       setSessions((prev) => [s, ...prev]);
       setActiveId(s.id);
       sessionId = s.id;
@@ -1382,6 +1386,20 @@ export function TalkPage() {
                       <button onClick={() => send()} disabled={sending || !input.trim()} className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors">{sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}</button>
                     </div>
                   )}
+                  {/* Pasta de trabalho da 1ª mensagem — onde o colaborador vai rodar.
+                      Se já houver sessão ativa (vazia), aplica nela; senão guarda pra criação. */}
+                  <div className="mt-2 flex justify-start px-1">
+                    <WorkFolderBar
+                      workingDir={active ? active.workingDir : pendingWorkingDir}
+                      onChange={(path) => {
+                        setPendingWorkingDir(path);
+                        if (active) {
+                          patchSession(active.id, { workingDir: path });
+                          setSessionWorkingDir(active.id, path).catch(() => useAppStore.getState().addToast('Falha ao salvar a pasta', 'red'));
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
 
                 {/* Modo de fala — briefing falado, ABAIXO da barra. Texto adaptado ao colaborador. */}
