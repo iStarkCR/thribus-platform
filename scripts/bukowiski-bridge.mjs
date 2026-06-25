@@ -779,29 +779,59 @@ const COMPACT_PROMPT =
   'próximos passos; (5) fatos e identificadores importantes (paths, nomes, ' +
   'números, IDs). Sem saudação, sem firula — só o resumo.';
 
+const clearCompactFlag = (id) => sb.from('chat_sessions').update({ compact_requested: false }).eq('id', id);
+
 async function compactSession(sess, agent) {
-  if (!sess.claude_session_id) {
-    // Sessão já limpa: nada pra resumir — só baixa a flag do botão.
-    if (sess.compact_requested) await sb.from('chat_sessions').update({ compact_requested: false }).eq('id', sess.id);
-    return;
-  }
+  // Espelho do Claude Code (💻): a sessão REAL vive no CC desktop (outro cwd) — não
+  // dá pra resumir/compactar daqui (o --resume falha noutro cwd). Pula. Sem isso, o
+  // auto ficava tentando em loop toda hora que o contexto passava do teto.
+  if ((sess.title || '').startsWith('💻')) { await clearCompactFlag(sess.id); return; }
+
   const cwd = await cwdForSession(sess.agent_id, sess.working_dir);
   let summary = '';
   let usage = null;
-  try {
-    const r = await runClaude(COMPACT_PROMPT, {
-      resumeSessionId: sess.claude_session_id,
-      model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, cwd,
-    });
-    summary = (r.text || '').trim();
-    usage = r.usage;
-  } catch (e) {
-    console.error(`[compact falhou] sessão ${sess.id}: ${e.message}`);
+  // 1ª tentativa: --resume (barato — o modelo já tem o contexto na sessão).
+  if (sess.claude_session_id) {
+    try {
+      const r = await runClaude(COMPACT_PROMPT, {
+        resumeSessionId: sess.claude_session_id,
+        model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, cwd,
+      });
+      summary = (r.text || '').trim();
+      usage = r.usage;
+    } catch (e) {
+      console.error(`[compact resume falhou] sessão ${sess.id}: ${e.message} → fallback histórico`);
+    }
+  }
+  // Fallback: sessão expirada / --resume falhou → resume a partir do histórico cru
+  // (sessão nova, sem --resume). Funciona pra qualquer conversa.
+  if (!summary) {
+    const { data: hist } = await sb
+      .from('collaborator_messages')
+      .select('role,content')
+      .eq('session_id', sess.id)
+      .in('status', ['done'])
+      .order('created_at', { ascending: true })
+      .limit(200);
+    const transcript = (hist ?? [])
+      .filter((m) => m.role !== 'system')
+      .map((m) => `${m.role === 'user' ? 'Charles' : agent.name}: ${m.content}`)
+      .join('\n');
+    if (transcript.trim()) {
+      try {
+        const r = await runClaude(`${COMPACT_PROMPT}\n\nConversa a resumir:\n${transcript}`, {
+          model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, cwd,
+        });
+        summary = (r.text || '').trim();
+        usage = r.usage;
+      } catch (e) {
+        console.error(`[compact fallback falhou] sessão ${sess.id}: ${e.message}`);
+      }
+    }
   }
   if (!summary) {
-    // Sem resumo (erro/sessão expirada): baixa a flag e deixa o reset cego antigo
-    // agir no teto. Não corrompe nada.
-    if (sess.compact_requested) await sb.from('chat_sessions').update({ compact_requested: false }).eq('id', sess.id);
+    // Nada deu certo: baixa a flag (não fica em loop) e deixa o reset cego agir no teto.
+    await clearCompactFlag(sess.id);
     return;
   }
   // Marcador visual (role='system') + semente, e zera o ponteiro de contexto.
@@ -825,8 +855,8 @@ async function tickCompaction(teamIds) {
   const ctxLimit = BRAIN.contextLimitTokens || CONTEXT_RESET_TOKENS;
   const { data: rows, error } = await sb
     .from('chat_sessions')
-    .select('id,agent_id,user_id,claude_session_id,working_dir,context_tokens,compact_requested')
-    .not('claude_session_id', 'is', null)
+    .select('id,agent_id,user_id,claude_session_id,working_dir,context_tokens,compact_requested,title')
+    .not('title', 'like', '💻%') // espelhos do Claude Code não são compactáveis daqui
     .or(`compact_requested.eq.true,context_tokens.gt.${ctxLimit}`)
     .limit(3);
   if (error) { console.error('[compact poll erro]', error.message); return; }

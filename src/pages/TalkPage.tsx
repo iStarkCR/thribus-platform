@@ -579,6 +579,16 @@ export function TalkPage() {
     }
     prevSysCount.current = sysCount;
   }, [sysCount, compacting]);
+  // Timeout de segurança: se a ponte falhar/estiver offline, não deixa o spinner
+  // preso pra sempre — solta em 90s com aviso (a flag no banco é best-effort).
+  useEffect(() => {
+    if (!compacting) return;
+    const t = window.setTimeout(() => {
+      setCompacting(false);
+      useAppStore.getState().addToast('A compactação demorou demais — confira a ponte e tente de novo', 'red');
+    }, 90000);
+    return () => window.clearTimeout(t);
+  }, [compacting]);
   async function compactConversation() {
     if (!activeId) return;
     const ok = await useAppStore.getState().askConfirm({
@@ -1406,7 +1416,7 @@ export function TalkPage() {
               {/* Compactar conversa — flutua no topo em conversas longas. Gera um
                   resumo (TL;DR) e recomeça o contexto a partir dele; o histórico
                   visual fica intacto. Ver requestCompaction / ponte (caminho C). */}
-              {messages.length >= 8 && !waiting && (
+              {messages.length >= 8 && !waiting && !active?.title.startsWith('💻') && (
                 <div className="sticky top-0 z-20 flex justify-center pointer-events-none -mt-2 mb-1">
                   <button
                     onClick={compactConversation}
