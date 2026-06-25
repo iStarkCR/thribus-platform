@@ -501,6 +501,10 @@ function runClaude(prompt, opts = {}) {
         delete env[k];
       }
     }
+    // Marca esta invocação pro cc-mirror PULAR — senão o hook criaria uma conversa
+    // "💻 <projeto>" gêmea da conversa do painel (mesmo claude_session_id). Ver
+    // ~/.claude/hooks/lib/cc-mirror.mjs (guard CC_MIRROR_SKIP).
+    env.CC_MIRROR_SKIP = '1';
     const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env, cwd: opts.cwd || undefined });
     if (opts.onSpawn) { try { opts.onSpawn(child); } catch { /* noop */ } }
     let buf = '';

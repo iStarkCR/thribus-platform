@@ -34,21 +34,25 @@ export function SessionContextMenu({
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el) return;
-    // Sob `zoom` (escala de fonte do sistema), getBoundingClientRect e os cliques
-    // ficam no espaço "client" (já escalado) e innerWidth/Height em CSS px. Levamos
-    // tudo pro mesmo espaço (×z) e convertemos o resultado pra style px (÷z). Com
-    // zoom 1 (padrão) z=1 e tudo vira no-op — idêntico ao cálculo simples.
-    const z = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
-    const { width, height } = el.getBoundingClientRect();
-    const vw = window.innerWidth * z;
-    const vh = window.innerHeight * z;
+    // Sob `zoom` (escala da UI) o getBoundingClientRect já mudou de comportamento
+    // entre versões do Chrome. Em vez de adivinhar, derivamos o zoom REAL da razão
+    // entre a altura RENDERIZADA (rect) e a de LAYOUT (offset): se o rect não vier
+    // escalado, z=1 e tudo vira no-op. Robusto a qualquer versão.
+    const rect = el.getBoundingClientRect();
+    const z = el.offsetHeight ? rect.height / el.offsetHeight : 1;
+    const w = el.offsetWidth;                          // CSS px (layout)
+    const h = el.offsetHeight;                         // CSS px (layout)
+    const vw = document.documentElement.clientWidth;   // viewport em CSS px
+    const vh = document.documentElement.clientHeight;
+    const x = pos.x / z;                               // pos (espaço do rect) → CSS px
+    const y = pos.y / z;
     const m = 8;
-    let left = pos.x - width;                       // abre à esquerda do clique
-    if (left < m) left = Math.min(pos.x + 4, vw - width - m); // sem espaço → à direita
-    left = Math.max(m, Math.min(left, vw - width - m));
-    let top = pos.y + 4;
-    if (top + height > vh - m) top = Math.max(m, vh - height - m); // não cabe embaixo → sobe
-    setCoords({ left: left / z, top: top / z });
+    let left = x - w;                                  // abre à esquerda do gatilho
+    if (left < m) left = Math.min(x + 4, vw - w - m);  // sem espaço → à direita
+    left = Math.max(m, Math.min(left, vw - w - m));
+    let top = y + 4;
+    if (top + h > vh - m) top = Math.max(m, vh - h - m); // não cabe embaixo → sobe
+    setCoords({ left, top });
   }, [pos.x, pos.y, sub]);
   const run = (fn: () => void) => () => { fn(); onClose(); };
 
