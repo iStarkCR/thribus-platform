@@ -22,12 +22,19 @@
  *     # A ponte atende SÓ o time interno (acesso total). Clientes vão pela API.
  *     # Marcador do time (default já correto):
  *     #   export BRIDGE_TEAM_CLIENT="Thribus Tech (Interno)"
+ *     # Memória de longo prazo (bukowiski_memory @ postgres-thribus na VPS, via túnel SSH):
+ *     export MEMORY_ENABLED="1"
+ *     export MEMORY_PG_PASSWORD="..."        # senha do postgres-thribus (printenv POSTGRES_PASSWORD no container)
+ *     #   defaults já corretos: MEMORY_SSH_HOST/USER/KEY, MEMORY_PG_CONTAINER=postgres-thribus,
+ *     #   MEMORY_PG_DB=bukowiski_memory, MEMORY_PG_USER=postgres, MEMORY_LOCAL_PORT=6543.
+ *     #   Recall: MEMORY_RECALL_LIMIT=40, MEMORY_RECALL_MAXCHARS=2000 (teto cacheável no seed).
  *
  * Uso:
  *   source ~/.thribus/bukowiski-bridge.env && node scripts/bukowiski-bridge.mjs
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { initMemory, recall, saveFacts, memoryReady } from './memory.mjs';
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -392,7 +399,7 @@ function bukowiskiPersona() {
   return bukowiskiCmd;
 }
 
-function buildPrompt(agent, history, content, seed = null) {
+function buildPrompt(agent, history, content, seed = null, memoryBlock = '') {
   let ctx = '';
   if (seed) {
     // Sessão compactada: o modelo NÃO tem o histórico completo — o resumo curado
@@ -406,7 +413,8 @@ function buildPrompt(agent, history, content, seed = null) {
       .join('\n');
     ctx = transcript ? `Histórico recente da conversa:\n${transcript}\n\n` : '';
   }
-  const task = `${ctx}Nova mensagem do Charles:\n${content}`;
+  const mem = memoryBlock ? `${memoryBlock}\n\n` : '';
+  const task = `${mem}${ctx}Nova mensagem do Charles:\n${content}`;
 
   if (agent.id === BUKOWISKI_ID) {
     return bukowiskiPersona().replace('$ARGUMENTS', task);
@@ -710,7 +718,9 @@ async function processMessage(msg) {
           .limit(HISTORY);
         recent = (history ?? []).reverse(); // mais recentes, em ordem cronológica
       }
-      r = await runClaude(buildPrompt(agent, recent, content, sess?.context_seed || null), opts);
+      // Recall só no (re)seed → entra 1x e fica cacheado na sessão (custo ~zero/turno).
+      const memoryBlock = await recall(agent.id).catch(() => '');
+      r = await runClaude(buildPrompt(agent, recent, content, sess?.context_seed || null, memoryBlock), opts);
     }
     if (ctl.cancelled) throw new Error('cancelado');
 
@@ -873,6 +883,36 @@ async function compactSession(sess, agent) {
   await sb.from('chat_sessions').update(patch).eq('id', sess.id);
   await recordUsage({ userId: sess.user_id, agentId: sess.agent_id, kind: 'chat', refId: marker?.id, sessionId: sess.id, usage });
   console.log(`[compactado] ${agent.name} · sessão ${sess.id} → resumo ${summary.length} chars`);
+  // Memória de longo prazo pega carona: extrai fatos duráveis do RESUMO (input curto)
+  // com modelo barato. Fire-and-forget — nunca segura a compactação.
+  extractAndSaveMemory(sess.agent_id, agent, summary, cwd).catch((e) => console.error('[memory] extract falhou:', e.message));
+}
+
+// Extrai fatos duráveis do resumo da conversa e grava na memória de longo prazo.
+// Roda só se a memória estiver no ar; usa Haiku (centavos) sobre texto curto.
+const EXTRACT_FACTS_PROMPT =
+  'Do RESUMO abaixo, extraia apenas FATOS DURÁVEIS que valha a pena LEMBRAR em conversas ' +
+  'futuras: preferências do Charles, decisões firmes, fatos sobre a Thribus/produtos/pessoas/' +
+  'sistemas, configurações. NÃO inclua tarefas pontuais, estado efêmero ("estamos debugando X") ' +
+  'nem nada que expire rápido. Devolva SÓ um array JSON puro (sem ```, sem texto fora): ' +
+  '[{"fact":"frase curta auto-contida","category":"preferencia|decisao|projeto|pessoa|sistema|fato",' +
+  '"entity":"opcional","confidence":0.5-1.0}]. Máx 8 itens. Se não houver nada durável, devolva [].';
+
+async function extractAndSaveMemory(agentId, agent, summary, cwd) {
+  if (!memoryReady() || !summary || summary.length < 80) return;
+  let r;
+  try {
+    r = await runClaude(`${EXTRACT_FACTS_PROMPT}\n\nRESUMO:\n${summary}`, {
+      model: 'haiku', maxBudgetUsd: 0.1, cwd, timeoutMs: 60000,
+    });
+  } catch (e) { console.error('[memory] extract claude falhou:', e.message); return; }
+  const m = String(r?.text || '').match(/\[[\s\S]*\]/); // primeiro array JSON
+  if (!m) return;
+  let facts;
+  try { facts = JSON.parse(m[0]); } catch { return; }
+  if (!Array.isArray(facts) || !facts.length) return;
+  const n = await saveFacts(agentId, facts);
+  if (n) console.log(`[memory] +${n} fato(s) de ${agent.name} (sessão compactada)`);
 }
 
 // Sessões com compactação EM ANDAMENTO — a compactação leva ~10-30s (chamada ao
@@ -1219,6 +1259,7 @@ async function loop() {
 // Navegador de pastas: poller próprio e rápido (independe do loop pesado) pra
 // navegar fluido no seletor "Abrir pasta…" do painel.
 setInterval(tickFsBrowse, 700);
+await initMemory(); // memória de longo prazo (best-effort: se falhar, segue sem)
 loop().catch((e) => {
   console.error('fatal:', e);
   process.exit(1);
