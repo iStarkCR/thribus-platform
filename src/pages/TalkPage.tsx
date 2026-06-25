@@ -1118,7 +1118,7 @@ export function TalkPage() {
                 {agent.isSupervisor && <Crown size={15} className="text-gold-bright" />}
               </div>
               <div className="text-[12.5px] text-creme-faint truncate">
-                {agent.sector} · {agent.status}{active ? ` · ${sessionSource(active.title).clean}` : ''}
+                {agent.sector} · {agent.status}{active ? ` · ${sessionSource(active.title, active.source).clean}` : ''}
               </div>
             </button>
           </div>
@@ -1416,7 +1416,7 @@ export function TalkPage() {
               {/* Compactar conversa — flutua no topo em conversas longas. Gera um
                   resumo (TL;DR) e recomeça o contexto a partir dele; o histórico
                   visual fica intacto. Ver requestCompaction / ponte (caminho C). */}
-              {messages.length >= 8 && !waiting && !active?.title.startsWith('💻') && (
+              {messages.length >= 8 && !waiting && active?.source !== 'claude_code' && (
                 <div className="sticky top-0 z-20 flex justify-center pointer-events-none -mt-2 mb-1">
                   <button
                     onClick={compactConversation}
@@ -2001,11 +2001,13 @@ function Typewriter({ phrases, className, once = false, speed = 65 }: { phrases:
   return <span className={className}>{txt}<span className="tw-caret">|</span></span>;
 }
 
-// Origem da conversa pelo título (o mirror usa 💻/🖥️, o daemon "WhatsApp"/"Telegram").
-// Tira o emoji/prefixo pro título ficar limpo; o badge mostra o canal.
-const DESKTOP_RE = /^(\u{1F4BB}|\u{1F5A5})️?\s*/u; // 💻 🖥️
-function sessionSource(title: string): { source: 'desktop' | 'whatsapp' | 'telegram' | 'panel'; clean: string } {
+// Origem da conversa: 'claude_code' vem da coluna `source` (espelho cc-mirror); o
+// daemon usa prefixo "WhatsApp"/"Telegram" no título. Sem emoji — o badge é um
+// ícone limpo (Monitor). Mantém o strip de emoji legado pra títulos antigos.
+const DESKTOP_RE = /^(\u{1F4BB}|\u{1F5A5})️?\s*/u; // 💻 🖥️ (legado)
+function sessionSource(title: string, sourceCol?: string): { source: 'desktop' | 'whatsapp' | 'telegram' | 'panel'; clean: string } {
   const t = (title || '').trim();
+  if (sourceCol === 'claude_code') return { source: 'desktop', clean: t.replace(DESKTOP_RE, '') };
   if (DESKTOP_RE.test(t)) return { source: 'desktop', clean: t.replace(DESKTOP_RE, '') };
   if (/^whatsapp\b/i.test(t)) return { source: 'whatsapp', clean: t.replace(/^whatsapp\s*[·:–—-]?\s*/i, '') };
   if (/^telegram\b/i.test(t)) return { source: 'telegram', clean: t.replace(/^telegram\s*[·:–—-]?\s*/i, '') };
@@ -2014,7 +2016,7 @@ function sessionSource(title: string): { source: 'desktop' | 'whatsapp' | 'teleg
 }
 
 function SessionItem({ session, active, depth = 0, onClick, onMenu, onDragStartItem }: { session: ChatSession; active: boolean; depth?: number; onClick: () => void; onMenu: (pos: { x: number; y: number }) => void; onDragStartItem: () => void }) {
-  const { source, clean } = sessionSource(session.title);
+  const { source, clean } = sessionSource(session.title, session.source);
   const SrcIcon = source === 'desktop' ? Monitor : source === 'whatsapp' ? MessageCircle : source === 'telegram' ? Send : MessageSquare;
   const srcColor = source === 'whatsapp' ? 'text-semantic-green' : source === 'telegram' ? 'text-semantic-blue' : source === 'desktop' ? 'text-creme-mute' : (session.color ? '' : 'text-creme-faint');
   const srcLabel = source === 'desktop' ? 'Claude Code (desktop)' : source === 'whatsapp' ? 'WhatsApp' : source === 'telegram' ? 'Telegram' : 'Painel';

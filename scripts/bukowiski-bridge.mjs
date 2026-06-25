@@ -786,10 +786,10 @@ const COMPACT_PROMPT =
 const clearCompactFlag = (id) => sb.from('chat_sessions').update({ compact_requested: false }).eq('id', id);
 
 async function compactSession(sess, agent) {
-  // Espelho do Claude Code (💻): a sessão REAL vive no CC desktop (outro cwd) — não
-  // dá pra resumir/compactar daqui (o --resume falha noutro cwd). Pula. Sem isso, o
-  // auto ficava tentando em loop toda hora que o contexto passava do teto.
-  if ((sess.title || '').startsWith('💻')) { await clearCompactFlag(sess.id); return; }
+  // Espelho do Claude Code (source='claude_code'): a sessão REAL vive no CC desktop
+  // (outro cwd) — não dá pra resumir/compactar daqui (o --resume falha noutro cwd).
+  // Pula. Sem isso, o auto tentava em loop toda hora que o contexto passava do teto.
+  if (sess.source === 'claude_code') { await clearCompactFlag(sess.id); return; }
 
   const cwd = await cwdForSession(sess.agent_id, sess.working_dir);
   let summary = '';
@@ -863,8 +863,8 @@ async function tickCompaction(teamIds) {
   const ctxLimit = BRAIN.contextLimitTokens || CONTEXT_RESET_TOKENS;
   const { data: rows, error } = await sb
     .from('chat_sessions')
-    .select('id,agent_id,user_id,claude_session_id,working_dir,context_tokens,compact_requested,title')
-    .not('title', 'like', '💻%') // espelhos do Claude Code não são compactáveis daqui
+    .select('id,agent_id,user_id,claude_session_id,working_dir,context_tokens,compact_requested,source')
+    .neq('source', 'claude_code') // espelhos do Claude Code não são compactáveis daqui
     .or(`compact_requested.eq.true,context_tokens.gt.${ctxLimit}`)
     .limit(3);
   if (error) { console.error('[compact poll erro]', error.message); return; }
