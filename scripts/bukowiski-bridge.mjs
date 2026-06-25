@@ -1351,7 +1351,7 @@ async function tickDemandReplies(teamIds) {
 }
 
 // ─── Rotinas (demandas recorrentes) ─────────────────────────────────────────
-function computeNextRun(kind, runTime, weekday) {
+function computeNextRun(kind, runTime, weekday, dayOfMonth = 1) {
   const [h, m] = String(runTime || '09:00').split(':').map(Number);
   const now = new Date();
   const next = new Date(now);
@@ -1361,6 +1361,17 @@ function computeNextRun(kind, runTime, weekday) {
     let add = (wd - next.getDay() + 7) % 7;
     if (add === 0 && next <= now) add = 7;
     next.setDate(next.getDate() + add);
+  } else if (kind === 'monthly') {
+    const dom = Number(dayOfMonth) || 1;
+    const clampDay = (y, mo) => Math.min(dom, new Date(y, mo + 1, 0).getDate());
+    let y = now.getFullYear(), mo = now.getMonth();
+    next.setFullYear(y, mo, clampDay(y, mo));
+    next.setHours(h || 0, m || 0, 0, 0);
+    if (next <= now) {
+      mo += 1; if (mo > 11) { mo = 0; y += 1; }
+      next.setFullYear(y, mo, clampDay(y, mo));
+      next.setHours(h || 0, m || 0, 0, 0);
+    }
   } else if (next <= now) {
     next.setDate(next.getDate() + 1);
   }
@@ -1385,7 +1396,7 @@ async function tickRoutines(teamIds) {
         title: rt.title, description: rt.description, project: rt.project,
         status: 'todo', priority: 3,
       });
-      const next = computeNextRun(rt.schedule_kind, rt.run_time, rt.weekday);
+      const next = computeNextRun(rt.schedule_kind, rt.run_time, rt.weekday, rt.day_of_month);
       await sb.from('team_routines').update({ last_run_at: nowIso, next_run_at: next }).eq('id', rt.id);
       console.log(`[rotina] criou demanda "${String(rt.title).slice(0, 40)}" · próximo ${next}`);
     } catch (e) {

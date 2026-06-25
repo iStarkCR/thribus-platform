@@ -59,7 +59,9 @@ export function RoutinesPanel({ userId, agents }: { userId: string; agents: { id
 }
 
 function scheduleLabel(r: Routine): string {
-  return r.scheduleKind === 'daily' ? `Todo dia às ${r.runTime}` : `Toda ${WEEKDAYS[r.weekday] ?? '?'} às ${r.runTime}`;
+  if (r.scheduleKind === 'daily') return `Todo dia às ${r.runTime}`;
+  if (r.scheduleKind === 'weekly') return `Toda ${WEEKDAYS[r.weekday] ?? '?'} às ${r.runTime}`;
+  return `Todo dia ${r.dayOfMonth} do mês às ${r.runTime}`;
 }
 function fmtNext(iso: string): string {
   try { return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
@@ -74,6 +76,7 @@ function RoutineForm({ userId, agents, onClose, onCreated }: { userId: string; a
   const [kind, setKind] = useState<ScheduleKind>('daily');
   const [runTime, setRunTime] = useState('09:00');
   const [weekday, setWeekday] = useState(1);
+  const [dayOfMonth, setDayOfMonth] = useState(1);
   const [saving, setSaving] = useState(false);
   const addToast = useAppStore((s) => s.addToast);
 
@@ -86,7 +89,7 @@ function RoutineForm({ userId, agents, onClose, onCreated }: { userId: string; a
     if (!title.trim()) { addToast('Dê um título à rotina', 'amber'); return; }
     setSaving(true);
     try {
-      await createRoutine(userId, { title: title.trim(), description: description.trim() || undefined, project: project.trim() || undefined, agentId, scheduleKind: kind, runTime, weekday });
+      await createRoutine(userId, { title: title.trim(), description: description.trim() || undefined, project: project.trim() || undefined, agentId, scheduleKind: kind, runTime, weekday, dayOfMonth });
       onCreated();
     } catch (e) { addToast((e as Error).message, 'red'); } finally { setSaving(false); }
   }
@@ -105,11 +108,17 @@ function RoutineForm({ userId, agents, onClose, onCreated }: { userId: string; a
         <select className="input" value={kind} onChange={(e) => setKind(e.target.value as ScheduleKind)}>
           <option value="daily">Diária</option>
           <option value="weekly">Semanal</option>
+          <option value="monthly">Mensal</option>
         </select>
         <input type="time" className="input" value={runTime} onChange={(e) => setRunTime(e.target.value)} />
         {kind === 'weekly' && (
           <select className="input" value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
             {WEEKDAYS.map((w, i) => <option key={w} value={i}>{w}</option>)}
+          </select>
+        )}
+        {kind === 'monthly' && (
+          <select className="input" value={dayOfMonth} onChange={(e) => setDayOfMonth(Number(e.target.value))} title="Dia do mês">
+            {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>dia {d}</option>)}
           </select>
         )}
       </div>
