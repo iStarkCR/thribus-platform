@@ -37,15 +37,19 @@ export function AppLayout({ children }: AppLayoutProps) {
   // e composer sempre visíveis, zero scroll de documento. Demais páginas seguem
   // com padding + min-h-screen (rolam quando o conteúdo é longo).
   const isChat = pathname.startsWith('/talk');
+  // Demandas (Kanban) é "altura cheia" como o chat: ocupa a viewport e rola por
+  // dentro (colunas), sem scroll de página. Demais páginas rolam normalmente.
+  const isBoard = pathname.startsWith('/demands');
+  const isFull = isChat || isBoard;
   return (
-    <div className={isChat ? 'fixed inset-0 flex overflow-hidden' : 'flex min-h-screen'}>
+    <div className={isFull ? 'fixed inset-0 flex overflow-hidden' : 'flex min-h-screen'}>
       <Sidebar />
       {/* Backdrop do drawer da nav (só mobile) */}
       {mobileNavOpen && (
         <div onClick={() => setMobileNavOpen(false)} className="fixed inset-0 bg-black/55 z-[55] md:hidden" />
       )}
       {/* Em mobile o conteúdo ocupa a tela toda (ml-0); margem só vale no desktop. */}
-      <main className={`flex-1 flex flex-col transition-[margin] duration-200 ml-0 ${collapsed ? 'md:ml-[64px]' : 'md:ml-[244px]'} ${isChat ? 'h-full min-h-0 overflow-hidden' : 'min-h-screen'}`}>
+      <main className={`flex-1 flex flex-col transition-[margin] duration-200 ml-0 ${collapsed ? 'md:ml-[64px]' : 'md:ml-[244px]'} ${isFull ? 'h-full min-h-0 overflow-hidden' : 'min-h-screen'}`}>
         {/* Páginas não-chat: hamburger flutuante pra abrir a nav (o chat tem o seu no header). */}
         {!isChat && (
           <button onClick={() => setMobileNavOpen(true)} className="md:hidden fixed top-3 left-3 z-[45] w-9 h-9 rounded-lg bg-surface-2/90 border border-default text-creme-mute hover:text-creme backdrop-blur flex items-center justify-center shadow-lg" title="Menu">
@@ -55,7 +59,11 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Páginas do sistema (não-chat) ganham um zoom leve pra ficar legíveis como o
             chat — o chat já usa tipografia grande, então fica de fora.
             max-md:pt-16 abre espaço pro hamburger flutuante não cobrir o título em mobile. */}
-        <div className={isChat ? 'flex-1 min-h-0 flex flex-col' : 'flex-1 p-6 max-md:pt-16 [zoom:1.1]'}>{children}</div>
+        <div className={
+          isChat ? 'flex-1 min-h-0 flex flex-col'
+          : isBoard ? 'flex-1 min-h-0 flex flex-col overflow-hidden [zoom:1.1]'
+          : 'flex-1 p-6 max-md:pt-16 [zoom:1.1]'
+        }>{children}</div>
       </main>
     </div>
   );

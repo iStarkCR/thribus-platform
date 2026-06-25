@@ -101,8 +101,8 @@ export function DemandsPage() {
   const detail = detailId ? demands.find((d) => d.id === detailId) ?? null : null;
 
   return (
-    <div className="p-6">
-      <header className="flex items-start justify-between gap-3 mb-4">
+    <div className="p-6 h-full flex flex-col min-h-0">
+      <header className="flex items-start justify-between gap-3 mb-4 shrink-0">
         <div>
           <h1 className="text-[19px] font-bold text-creme flex items-center gap-2">
             <ListChecks size={18} className="text-brand" /> Demandas do time
@@ -124,7 +124,7 @@ export function DemandsPage() {
       </header>
 
       {/* Abas */}
-      <div className="flex items-center gap-1 mb-4 border-b border-default">
+      <div className="flex items-center gap-1 mb-4 border-b border-default shrink-0">
         {([
           { id: 'board', label: 'Quadro', icon: <LayoutGrid size={14} /> },
           { id: 'routines', label: 'Rotinas', icon: <Clock size={14} /> },
@@ -137,9 +137,9 @@ export function DemandsPage() {
       </div>
 
       {tab === 'board' && (
-        <>
+        <div className="flex-1 min-h-0 flex flex-col">
           {/* Filtros */}
-          <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="flex flex-wrap items-center gap-2 mb-3 shrink-0">
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-creme-faint" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar…" className="input pl-8 py-1.5 text-[12.5px] w-44" />
@@ -171,7 +171,7 @@ export function DemandsPage() {
           {loading ? (
             <div className="flex items-center gap-2 text-creme-faint text-[13px]"><Loader2 size={14} className="animate-spin" /> Carregando…</div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin] items-start">
+            <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin] flex-1 min-h-0 items-stretch">
               {COLUMNS.map((col) => {
                 const card = (d: Demand) => (
                   <DemandCard key={d.id} d={d} agentName={agentName} onOpen={() => setDetailId(d.id)} onRemove={() => remove(d.id)} onRetry={() => retry(d.id)} onDragStart={() => { dragId.current = d.id; }} />
@@ -182,7 +182,7 @@ export function DemandsPage() {
                   onDragOver={(e) => { e.preventDefault(); setDragOver(col.key); }}
                   onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver((c) => (c === col.key ? null : c)); }}
                   onDrop={(e) => { e.preventDefault(); setDragOver(null); if (dragId.current) { move(dragId.current, col.key); dragId.current = null; } }}
-                  className={`flex-1 min-w-[260px] rounded-xl border p-2.5 flex flex-col transition-colors ${dragOver === col.key ? 'border-brand/50 bg-brand/[0.04]' : col.key === 'waiting' && byStatus.waiting.length > 0 ? 'border-semantic-amber/30 bg-semantic-amber/[0.03]' : 'border-default bg-surface-1/40'}`}
+                  className={`flex-1 min-w-[260px] min-h-0 rounded-xl border p-2.5 flex flex-col transition-colors ${dragOver === col.key ? 'border-brand/50 bg-brand/[0.04]' : col.key === 'waiting' && byStatus.waiting.length > 0 ? 'border-semantic-amber/30 bg-semantic-amber/[0.03]' : 'border-default bg-surface-1/40'}`}
                 >
                   <div className="flex items-center justify-between px-1 pb-2.5 shrink-0">
                     <div className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider ${col.accent}`}>
@@ -190,8 +190,8 @@ export function DemandsPage() {
                     </div>
                     <span className="text-[11px] text-creme-faint font-mono">{byStatus[col.key].length}</span>
                   </div>
-                  {/* cada coluna rola por dentro (não a página); max-h dá folga sob o zoom */}
-                  <div className="overflow-y-auto pr-0.5 [scrollbar-width:thin] space-y-2 max-h-[74vh]">
+                  {/* cada coluna rola por dentro (não a página) — flex-1 preenche a altura */}
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 [scrollbar-width:thin] space-y-2">
                     {groupByProject
                       ? groupCardsByProject(byStatus[col.key]).map(([proj, cards]) => (
                           <div key={proj} className="space-y-2">
@@ -209,11 +209,11 @@ export function DemandsPage() {
               })}
             </div>
           )}
-        </>
+        </div>
       )}
 
-      {tab === 'routines' && userId && <RoutinesPanel userId={userId} agents={agents} />}
-      {tab === 'dashboard' && <DemandsDashboard demands={demands} agentName={agentName} />}
+      {tab === 'routines' && userId && <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]"><RoutinesPanel userId={userId} agents={agents} /></div>}
+      {tab === 'dashboard' && <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-width:thin]"><DemandsDashboard demands={demands} agentName={agentName} /></div>}
 
       {addOpen && userId && (
         <AddDemandModal userId={userId} agents={agents} onClose={() => setAddOpen(false)} onCreated={(d) => { setDemands((prev) => [d, ...prev]); setAddOpen(false); }} />
