@@ -18,15 +18,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   // Fecha o drawer da nav ao trocar de rota (mobile).
   useEffect(() => { setMobileNavOpen(false); }, [pathname, setMobileNavOpen]);
 
-  // Performance: quando o app vai pra background (outra janela/aba), pausa a aurora
-  // animada (senão fica queimando o compositor à toa). A esfera já pausa via rAF.
-  useEffect(() => {
-    const onVis = () => document.documentElement.classList.toggle('app-hidden', document.hidden);
-    document.addEventListener('visibilitychange', onVis);
-    onVis();
-    return () => document.removeEventListener('visibilitychange', onVis);
-  }, []);
-
   // Recolhe ao ENTRAR no chat e expande ao SAIR — só na transição, sem brigar
   // com o toggle manual. Na 1ª carga respeita a preferência salva (localStorage).
   const wasChat = useRef<boolean | null>(null);

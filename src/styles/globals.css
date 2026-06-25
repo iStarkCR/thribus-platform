@@ -194,30 +194,22 @@
    * Material translúcido nos painéis do shell + aurora sutil ao fundo (estilo
    * Apple "Liquid Glass"). NÃO afeta o orbe nem as esferas (componentes à parte).
    * `.glass-panel` é inerte sem a classe `glass` no html — liga/desliga limpo. */
-  @keyframes glassAurora {
-    from { transform: translate3d(0, 0, 0) scale(1); }
-    to   { transform: translate3d(0, -1.8%, 0) scale(1.07); }
-  }
   html.glass #root { position: relative; z-index: 1; }
+  /* Aurora ESTÁTICA: o gradiente de vidro fica (ver regras de background abaixo),
+   * mas SEM movimento de fundo — animar a camada fullscreen forçava todos os
+   * backdrop-blur a recalcular a cada frame, fritando o compositor. Os estados
+   * reativos (pensar/falar) viram só um realce de cor estático (filter). */
   html.glass body::before {
     content: '';
     position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    animation: glassAurora 24s ease-in-out infinite alternate;
     transition: filter 0.7s ease;
   }
-  /* Aurora REATIVA — pulsa quando o Bukowiski pensa, ganha vida quando FALA.
-   * Classes ligadas/desligadas pelo TalkPage (chat-busy / chat-speaking). */
-  @keyframes auroraBreath { 0%, 100% { opacity: 0.82; } 50% { opacity: 1; } }
   html.glass.chat-busy body::before {
-    animation: glassAurora 11s ease-in-out infinite alternate, auroraBreath 3.4s ease-in-out infinite;
     filter: saturate(1.22) brightness(1.1);
   }
   html.glass.chat-speaking body::before {
-    animation: glassAurora 7s ease-in-out infinite alternate, auroraBreath 1.5s ease-in-out infinite;
     filter: saturate(1.5) brightness(1.22);
   }
-  /* App em background → congela a aurora (não desperdiça o compositor). */
-  html.app-hidden body::before { animation-play-state: paused !important; }
 
   /* DARK + glass — paleta RENOVADA: charcoal neutro (não mais verde-escuro
    * carregado); o Sage entra só como brilho/accent. Sobrescreve os tokens de
