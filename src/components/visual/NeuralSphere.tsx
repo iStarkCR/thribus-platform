@@ -524,6 +524,10 @@ export function NeuralSphere({
       inner.lineMaterial.dispose();
       dotTex.dispose();
       renderer.dispose();
+      // CRÍTICO: dispose() libera os recursos mas NÃO o contexto WebGL. Sem
+      // forceContextLoss, cada remontagem (ir pro chat e voltar pro orbe) deixa um
+      // contexto vazado — o navegador acumula até engasgar (o "fica lento com o tempo").
+      renderer.forceContextLoss();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
