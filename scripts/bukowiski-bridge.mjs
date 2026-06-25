@@ -853,6 +853,10 @@ async function compactSession(sess, agent) {
   console.log(`[compactado] ${agent.name} · sessão ${sess.id} → resumo ${summary.length} chars`);
 }
 
+// Sessões com compactação EM ANDAMENTO — a compactação leva ~10-30s (chamada ao
+// claude), mas o poll roda a cada 3s; sem isto, re-enfileirava a MESMA sessão a
+// cada poll (flag ainda não baixou) e inseria vários marcadores idênticos.
+const _compacting = new Set();
 async function tickCompaction(teamIds) {
   // Manual (botão "Compactar" → compact_requested) OU automático (contexto passou
   // do teto do painel). Em ambos, gera resumo curado em vez do corte cego.
@@ -866,10 +870,14 @@ async function tickCompaction(teamIds) {
   if (error) { console.error('[compact poll erro]', error.message); return; }
   for (const sess of rows ?? []) {
     if (!teamIds.has(sess.agent_id)) continue;
+    if (_compacting.has(sess.id)) continue; // já em andamento → não re-enfileira
+    _compacting.add(sess.id);
     const { data: agent } = await sb.from('agents').select('id,name,sector,system_prompt').eq('id', sess.agent_id).single();
-    if (!agent) continue;
+    if (!agent) { _compacting.delete(sess.id); continue; }
     // Mesma raia das mensagens da conversa → serial (não corrompe a sessão).
-    runOnLane(`chat:${sess.id}`, () => compactSession(sess, agent)).catch((e) => console.error(`[compact erro] sessão ${sess.id}:`, e.message));
+    runOnLane(`chat:${sess.id}`, () => compactSession(sess, agent))
+      .catch((e) => console.error(`[compact erro] sessão ${sess.id}:`, e.message))
+      .finally(() => _compacting.delete(sess.id));
   }
 }
 
