@@ -776,12 +776,18 @@ async function tick(teamIds) {
 // A próxima mensagem reinicia a sessão semeada com o resumo — contexto barato,
 // histórico visual intacto. Roda na raia da conversa (não colide com mensagens).
 const COMPACT_PROMPT =
-  'Compacte NOSSA conversa até aqui num resumo de contexto (TL;DR) que outra ' +
-  'instância sua possa usar pra continuar SEM o histórico completo. Cubra, em ' +
-  'bullets curtos e densos (PT-BR): (1) o que estamos fazendo e as decisões já ' +
-  'tomadas; (2) o que JÁ foi executado/entregue; (3) o que ficou pendente; (4) ' +
-  'próximos passos; (5) fatos e identificadores importantes (paths, nomes, ' +
-  'números, IDs). Sem saudação, sem firula — só o resumo.';
+  'Compacte NOSSA conversa num resumo de contexto que outra instância sua use pra ' +
+  'continuar SEM o histórico completo. PT-BR, denso mas LEGÍVEL e escaneável. ' +
+  'Siga EXATAMENTE este formato (markdown), nesta ordem:\n\n' +
+  '**Onde paramos:** uma frase — o estado atual e o que trava ou qual o próximo movimento.\n\n' +
+  '## Decisões\n- decisões firmes já tomadas (e o que foi descartado, se importa).\n\n' +
+  '## Feito\n- o que já foi executado/entregue — com paths/commits quando relevante.\n\n' +
+  '## Pendências\n- o que falta e o que está bloqueado, por quê.\n\n' +
+  '## Próximo passo\n- a(s) ação(ões) imediata(s), em ordem (1–3 itens).\n\n' +
+  '## Fatos & IDs\n- identificadores que não dá pra perder: paths, URLs, nomes, números, IDs.\n\n' +
+  'Regras de formato: bullets curtos (1 linha cada quando der); **negrito SÓ** no que é ' +
+  'decisão ou bloqueio crítico — NÃO em tudo; `code` para paths/comandos/IDs. Sem título ' +
+  'no topo (o painel já rotula), sem saudação, sem "neste resumo", sem repetir. Direto.';
 
 const clearCompactFlag = (id) => sb.from('chat_sessions').update({ compact_requested: false }).eq('id', id);
 
