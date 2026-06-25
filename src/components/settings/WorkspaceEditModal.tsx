@@ -64,7 +64,7 @@ export function WorkspaceEditModal({ workspace, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="bg-surface-1 border border-default rounded-[12px] w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
+        className="bg-surface-1 border border-default rounded-[12px] w-full max-w-2xl max-h-[86vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

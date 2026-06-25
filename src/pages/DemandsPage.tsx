@@ -171,7 +171,7 @@ export function DemandsPage() {
           {loading ? (
             <div className="flex items-center gap-2 text-creme-faint text-[13px]"><Loader2 size={14} className="animate-spin" /> Carregando…</div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin] h-[calc(100vh-13.5rem)]">
+            <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin] items-start">
               {COLUMNS.map((col) => {
                 const card = (d: Demand) => (
                   <DemandCard key={d.id} d={d} agentName={agentName} onOpen={() => setDetailId(d.id)} onRemove={() => remove(d.id)} onRetry={() => retry(d.id)} onDragStart={() => { dragId.current = d.id; }} />
@@ -182,7 +182,7 @@ export function DemandsPage() {
                   onDragOver={(e) => { e.preventDefault(); setDragOver(col.key); }}
                   onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver((c) => (c === col.key ? null : c)); }}
                   onDrop={(e) => { e.preventDefault(); setDragOver(null); if (dragId.current) { move(dragId.current, col.key); dragId.current = null; } }}
-                  className={`flex-1 min-w-[260px] rounded-xl border p-2.5 flex flex-col min-h-0 transition-colors ${dragOver === col.key ? 'border-brand/50 bg-brand/[0.04]' : col.key === 'waiting' && byStatus.waiting.length > 0 ? 'border-semantic-amber/30 bg-semantic-amber/[0.03]' : 'border-default bg-surface-1/40'}`}
+                  className={`flex-1 min-w-[260px] rounded-xl border p-2.5 flex flex-col transition-colors ${dragOver === col.key ? 'border-brand/50 bg-brand/[0.04]' : col.key === 'waiting' && byStatus.waiting.length > 0 ? 'border-semantic-amber/30 bg-semantic-amber/[0.03]' : 'border-default bg-surface-1/40'}`}
                 >
                   <div className="flex items-center justify-between px-1 pb-2.5 shrink-0">
                     <div className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider ${col.accent}`}>
@@ -190,7 +190,8 @@ export function DemandsPage() {
                     </div>
                     <span className="text-[11px] text-creme-faint font-mono">{byStatus[col.key].length}</span>
                   </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 [scrollbar-width:thin] space-y-2">
+                  {/* cada coluna rola por dentro (não a página); max-h dá folga sob o zoom */}
+                  <div className="overflow-y-auto pr-0.5 [scrollbar-width:thin] space-y-2 max-h-[74vh]">
                     {groupByProject
                       ? groupCardsByProject(byStatus[col.key]).map(([proj, cards]) => (
                           <div key={proj} className="space-y-2">

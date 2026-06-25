@@ -110,7 +110,7 @@ export function DemandDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-[70] p-3 md:p-6" onClick={onClose}>
-      <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-[1200px] h-[92vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-[1200px] h-[82vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Cabeçalho */}
         <div className="flex items-start justify-between px-5 py-3.5 border-b border-default shrink-0 gap-3">
           <div className="min-w-0">

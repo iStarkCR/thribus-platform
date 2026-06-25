@@ -135,7 +135,7 @@ export function RouterConfigModal({ workspace, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="bg-surface-1 border border-default rounded-[12px] w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden"
+        className="bg-surface-1 border border-default rounded-[12px] w-full max-w-3xl max-h-[86vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-default flex items-center justify-between shrink-0">

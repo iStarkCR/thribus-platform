@@ -50,7 +50,7 @@ export function AddDemandModal({
 
   return (
     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-[70] p-4" onClick={onClose}>
-      <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-lg max-h-[88vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-default shrink-0">
           <div className="text-[15px] font-bold text-creme flex items-center gap-2"><Plus size={16} className="text-brand" /> Nova demanda</div>
           <button onClick={onClose} className="text-creme-faint hover:text-creme"><X size={17} /></button>

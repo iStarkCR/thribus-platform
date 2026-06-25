@@ -52,8 +52,10 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Menu size={18} />
           </button>
         )}
-        {/* max-md:pt-16 abre espaço pro hamburger flutuante não cobrir o título em mobile */}
-        <div className={isChat ? 'flex-1 min-h-0 flex flex-col' : 'flex-1 p-6 max-md:pt-16'}>{children}</div>
+        {/* Páginas do sistema (não-chat) ganham um zoom leve pra ficar legíveis como o
+            chat — o chat já usa tipografia grande, então fica de fora.
+            max-md:pt-16 abre espaço pro hamburger flutuante não cobrir o título em mobile. */}
+        <div className={isChat ? 'flex-1 min-h-0 flex flex-col' : 'flex-1 p-6 max-md:pt-16 [zoom:1.1]'}>{children}</div>
       </main>
     </div>
   );
