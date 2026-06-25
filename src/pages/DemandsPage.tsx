@@ -77,6 +77,10 @@ export function DemandsPage() {
   const waitingCount = useMemo(() => demands.filter((d) => d.status === 'waiting').length, [demands]);
 
   async function move(id: string, status: DemandStatus) {
+    const prevStatus = demands.find((d) => d.id === id)?.status;
+    // Arrastar de done/error de volta pra fila = re-rodar de verdade (zera retry/erro/custo),
+    // igual ao botão "Rodar de novo" — senão re-roda sem orçamento de retry e com custo velho.
+    if (status === 'todo' && (prevStatus === 'done' || prevStatus === 'error')) { void retry(id); return; }
     setDemands((prev) => prev.map((d) => (d.id === id ? { ...d, status } : d)));
     try { await updateDemand(id, { status }); } catch { refetch(); }
   }
@@ -157,14 +161,14 @@ export function DemandsPage() {
           {loading ? (
             <div className="flex items-center gap-2 text-creme-faint text-[13px]"><Loader2 size={14} className="animate-spin" /> Carregando…</div>
           ) : (
-            <div className="grid grid-cols-5 gap-3 min-h-[60vh]">
+            <div className="flex gap-3 min-h-[60vh] overflow-x-auto pb-2 [scrollbar-width:thin]">
               {COLUMNS.map((col) => (
                 <div
                   key={col.key}
                   onDragOver={(e) => { e.preventDefault(); setDragOver(col.key); }}
                   onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver((c) => (c === col.key ? null : c)); }}
                   onDrop={(e) => { e.preventDefault(); setDragOver(null); if (dragId.current) { move(dragId.current, col.key); dragId.current = null; } }}
-                  className={`rounded-xl border p-2.5 transition-colors ${dragOver === col.key ? 'border-brand/50 bg-brand/[0.04]' : col.key === 'waiting' && byStatus.waiting.length > 0 ? 'border-semantic-amber/30 bg-semantic-amber/[0.03]' : 'border-default bg-surface-1/40'}`}
+                  className={`flex-1 min-w-[240px] rounded-xl border p-2.5 transition-colors ${dragOver === col.key ? 'border-brand/50 bg-brand/[0.04]' : col.key === 'waiting' && byStatus.waiting.length > 0 ? 'border-semantic-amber/30 bg-semantic-amber/[0.03]' : 'border-default bg-surface-1/40'}`}
                 >
                   <div className="flex items-center justify-between px-1 pb-2.5">
                     <div className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider ${col.accent}`}>

@@ -41,7 +41,7 @@ export function AddDemandModal({
         agentId: orchestrate ? BUKOWISKI_ID : agentId,
         orchestrate,
         priority,
-        dueDate: dueDate ? new Date(dueDate).toISOString() : null,
+        dueDate: dueDate ? new Date(`${dueDate}T23:59:59`).toISOString() : null,
         tags,
       });
       onCreated(d);

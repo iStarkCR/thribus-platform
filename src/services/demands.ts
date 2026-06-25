@@ -178,12 +178,18 @@ export async function updateDemand(
   if (error) throw error;
 }
 
-/** Re-enfileira uma demanda (ex: após erro): volta pra 'todo', limpa erro e zera o retry. */
+/**
+ * Re-enfileira uma demanda (ex: após erro): volta pra 'todo', limpa erro e zera a
+ * contabilidade desnormalizada (a ponte faz SET no re-run, então recomeça do zero).
+ */
 export async function retryDemand(id: string): Promise<void> {
   if (!supabase) return;
   const { error } = await supabase
     .from('team_demands')
-    .update({ status: 'todo', error: null, retry_count: 0, started_at: null, finished_at: null })
+    .update({
+      status: 'todo', error: null, retry_count: 0, started_at: null, finished_at: null,
+      cost_usd: 0, total_tokens: 0, duration_ms: 0,
+    })
     .eq('id', id);
   if (error) throw error;
 }

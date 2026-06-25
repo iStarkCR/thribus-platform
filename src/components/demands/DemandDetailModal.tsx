@@ -51,11 +51,27 @@ export function DemandDetailModal({
   useEffect(() => { refetch(); return subscribeDemandMessages(demand.id, refetch); }, [demand.id, refetch]);
   useEffect(() => { threadEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length, demand.status]);
 
+  // Re-sincroniza o form quando o registro muda no servidor (realtime) — mas não
+  // durante uma edição em andamento, pra não apagar o que o Charles está digitando.
+  useEffect(() => {
+    if (editing) return;
+    setETitle(demand.title);
+    setEDesc(demand.description ?? '');
+    setEProject(demand.project ?? '');
+    setEAgent(demand.agentId);
+    setEPriority(demand.priority);
+    setEDue(demand.dueDate ? demand.dueDate.slice(0, 10) : '');
+    setETags(demand.tags.join(', '));
+    setEDeps(demand.dependsOn);
+  }, [demand, editing]);
+
   const working = demand.status === 'doing';
   const hasPending = messages.some((m) => m.role === 'user' && m.status === 'pending');
   const prio = priorityMeta(demand.priority);
   const due = dueMeta(demand.dueDate);
   const depDemands = useMemo(() => allDemands.filter((d) => d.id !== demand.id), [allDemands, demand.id]);
+  const parent = useMemo(() => (demand.parentId ? allDemands.find((d) => d.id === demand.parentId) ?? null : null), [allDemands, demand.parentId]);
+  const children = useMemo(() => allDemands.filter((d) => d.parentId === demand.id), [allDemands, demand.id]);
 
   async function send(text?: string) {
     const body = (text ?? reply).trim();
@@ -84,7 +100,7 @@ export function DemandDetailModal({
         project: eProject.trim() || null,
         agentId: eAgent,
         priority: ePriority,
-        dueDate: eDue ? new Date(eDue).toISOString() : null,
+        dueDate: eDue ? new Date(`${eDue}T23:59:59`).toISOString() : null,
         tags: eTags.split(',').map((t) => t.trim()).filter(Boolean),
         dependsOn: eDeps,
       });
@@ -109,6 +125,7 @@ export function DemandDetailModal({
               <span className={`px-1.5 py-0.5 rounded-full ${working ? 'bg-semantic-blue/15 text-semantic-blue' : demand.status === 'waiting' ? 'bg-semantic-amber/15 text-semantic-amber' : demand.status === 'error' ? 'bg-semantic-red/15 text-semantic-red' : 'bg-surface-3 text-creme-dim'}`}>{working ? 'executando…' : STATUS_LABEL[demand.status]}</span>
               {demand.priority !== 0 && <span className="px-1.5 py-0.5 rounded-full" style={{ background: `${prio.color}22`, color: prio.color }}>{prio.label}</span>}
               {due && <span className={`px-1.5 py-0.5 rounded-full ${due.overdue ? 'bg-semantic-red/15 text-semantic-red' : 'bg-surface-3 text-creme-dim'}`}>{due.label}</span>}
+              {parent && <Chip><Link2 size={9} /> sub de: {parent.title.slice(0, 24)}</Chip>}
               {demand.tags.map((t) => <Chip key={t}>#{t}</Chip>)}
             </div>
           </div>
@@ -183,12 +200,14 @@ export function DemandDetailModal({
                 {!editing
                   ? <ActBtn icon={<Pencil size={13} />} onClick={() => setEditing(true)} disabled={busy}>Editar</ActBtn>
                   : <ActBtn icon={<Save size={13} />} onClick={saveEdits} disabled={busy} primary>Salvar alterações</ActBtn>}
-                <div>
-                  <label className="text-[10px] text-creme-faint">Mover para</label>
-                  <select className="input mt-0.5 text-[12px]" value={demand.status} onChange={(e) => act(() => updateDemand(demand.id, { status: e.target.value as DemandStatus }))} disabled={busy}>
-                    {(['todo', 'waiting', 'done', 'error'] as DemandStatus[]).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-                  </select>
-                </div>
+                {!working && (
+                  <div>
+                    <label className="text-[10px] text-creme-faint">Mover para</label>
+                    <select className="input mt-0.5 text-[12px]" value={demand.status} onChange={(e) => act(() => updateDemand(demand.id, { status: e.target.value as DemandStatus }))} disabled={busy}>
+                      {(['todo', 'waiting', 'done', 'error'] as DemandStatus[]).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
             </Section>
 
@@ -240,8 +259,17 @@ export function DemandDetailModal({
               <Section title={<span className="flex items-center gap-1"><Link2 size={11} /> Depende de</span>}>
                 {demand.dependsOn.map((id) => {
                   const dd = allDemands.find((x) => x.id === id);
-                  return <div key={id} className="text-[11px] text-creme-mute flex items-center gap-1.5"><span className={`w-1.5 h-1.5 rounded-full ${dd?.status === 'done' ? 'bg-semantic-green' : 'bg-creme-faint'}`} /> {dd?.title ?? '—'}</div>;
+                  return <div key={id} className="text-[11px] text-creme-mute flex items-center gap-1.5"><span className={`w-1.5 h-1.5 rounded-full ${dd?.status === 'done' ? 'bg-semantic-green' : dd?.status === 'error' ? 'bg-semantic-red' : 'bg-creme-faint'}`} /> {dd?.title ?? '—'}</div>;
                 })}
+              </Section>
+            )}
+            {children.length > 0 && (
+              <Section title={<span className="flex items-center gap-1"><Link2 size={11} /> Sub-demandas ({children.length})</span>}>
+                {children.map((c) => (
+                  <div key={c.id} className="text-[11px] text-creme-mute flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${c.status === 'done' ? 'bg-semantic-green' : c.status === 'error' ? 'bg-semantic-red' : c.status === 'doing' ? 'bg-semantic-blue' : 'bg-creme-faint'}`} /> {c.title}
+                  </div>
+                ))}
               </Section>
             )}
 

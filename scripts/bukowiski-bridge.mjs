@@ -1066,13 +1066,21 @@ async function processDemand(d, teamIds = new Set()) {
     timeoutMs: DEMAND_TIMEOUT_MS,
     model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
   });
+  // Persiste o custo no ledger ASSIM QUE o run volta — antes de qualquer throw/
+  // decomposição. Se algo abaixo falhar e a demanda cair no auto-retry, o gasto já
+  // está em cortex_usage (recordUsage tem try/catch interno, não muda o fluxo).
+  await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage: r.usage });
   let result = r.text;
   if (!result) throw new Error('resposta vazia do claude');
 
-  // Decomposição: o orquestrador pode emitir ```demands → vira sub-demandas na fila.
+  // Decomposição: SÓ o orquestrador (demanda orchestrate, ou o próprio Bukowiski) pode
+  // emitir ```demands → sub-demandas na fila. Espelha o gate do chat — sem isso um
+  // colaborador comum poderia despachar pro time (escalonamento + flood). Bloco
+  // indevido é apenas removido do texto (não vaza JSON no card).
   if (/```demands/i.test(result)) {
+    const canOrchestrate = d.orchestrate === true || d.agent_id === BUKOWISKI_ID;
     const { demands: subs, clean } = extractDemandsBlock(result);
-    if (subs.length) {
+    if (canOrchestrate && subs.length) {
       const n = await createSubDemands(d, subs, teamIds);
       result = (clean ? `${clean}\n\n` : '') + `_(${n} sub-demanda(s) criada(s) na fila e delegada(s) ao time.)_`;
     } else if (clean) {
@@ -1089,7 +1097,7 @@ async function processDemand(d, teamIds = new Set()) {
     cost_usd: usage?.costUsd ?? 0,
     total_tokens: usage?.totalTokens ?? 0,
   }).eq('id', d.id);
-  await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage });
+  // (recordUsage já foi gravado logo após o runClaude — não duplicar aqui)
   console.log(
     `[ok] ${agent.name} executou demanda "${d.title.slice(0, 50)}" (${result.length} chars` +
       `${usage ? `, $${usage.costUsd.toFixed(4)}` : ''})`,
@@ -1103,8 +1111,13 @@ function extractDemandsBlock(text) {
     .replace(/```demands\s*([\s\S]*?)```/gi, (_, body) => {
       try {
         const parsed = JSON.parse(body.trim());
+        // Descarta placeholders do template (… < > ... / "titulo" / "exemplo") — senão um
+        // exemplo ecoado pelo modelo viraria demanda-lixo despachada pro time.
+        const isPlaceholder = (t) => /[…<>]|\.\.\./.test(t) || /^(t[ií]tulo|title|tarefa|sub-?tarefa|exemplo)$/i.test(t);
         for (const x of (Array.isArray(parsed) ? parsed : [parsed])) {
-          if (x && typeof x.title === 'string' && x.title.trim()) demands.push(x);
+          const title = x && typeof x.title === 'string' ? x.title.trim() : '';
+          if (title && !isPlaceholder(title)) demands.push(x);
+          else if (title) console.warn(`[demands] título placeholder ignorado: ${JSON.stringify(title).slice(0, 60)}`);
         }
       } catch { /* malformado: ignora */ }
       return '';
@@ -1125,7 +1138,9 @@ async function createSubDemands(parent, subs, teamIds) {
     const byId = roster.find((a) => a.id === ref);
     if (byId) return byId.id;
     const byName = roster.find((a) => a.name.toLowerCase() === String(ref).toLowerCase());
-    return byName ? byName.id : fallback;
+    if (byName) return byName.id;
+    console.warn(`[subdemanda] colaborador '${ref}' não encontrado no time → atribuída a ${fallback}`);
+    return fallback;
   };
   let n = 0;
   for (const s of subs.slice(0, 20)) {
@@ -1144,14 +1159,56 @@ async function createSubDemands(parent, subs, teamIds) {
   return n;
 }
 
-// Dependências resolvidas? (todas as demandas em depends_on estão 'done'; dep
-// deletada = ignorada, pra não travar pra sempre).
-async function depsResolved(d) {
+// Estado das dependências (pipeline). ready=true quando todas em depends_on estão
+// 'done' (dep deletada = ignorada). failedDep = uma dep em 'error' → propaga o
+// bloqueio (a dependente vira 'error' visível em vez de ficar presa em 'todo').
+async function depsState(d) {
   const deps = Array.isArray(d.depends_on) ? d.depends_on : [];
-  if (!deps.length) return true;
+  if (!deps.length) return { ready: true };
   const { data } = await sb.from('team_demands').select('id,status').in('id', deps);
   const byId = new Map((data ?? []).map((x) => [x.id, x.status]));
-  return deps.every((id) => !byId.has(id) || byId.get(id) === 'done');
+  const failedDep = deps.find((id) => byId.get(id) === 'error');
+  if (failedDep) return { ready: false, failedDep };
+  const ready = deps.every((id) => !byId.has(id) || byId.get(id) === 'done');
+  return { ready };
+}
+
+// Rede de segurança: quando nada roda e há demandas travadas por dependência, busca
+// o grafo depends_on (só nós não-'done') e marca como 'error' as que estão num CICLO
+// — senão A→B→A travaria a fila pra sempre, invisível.
+async function flagDependencyCycles(blocked) {
+  const ids = new Set(blocked.map((d) => d.id));
+  const graph = new Map();
+  let frontier = [...ids];
+  while (frontier.length) {
+    const { data } = await sb.from('team_demands').select('id,status,depends_on').in('id', frontier);
+    frontier = [];
+    for (const r of data ?? []) {
+      if (graph.has(r.id)) continue;
+      const deps = (Array.isArray(r.depends_on) ? r.depends_on : []).filter(Boolean);
+      graph.set(r.id, r.status === 'done' ? [] : deps); // dep 'done' não bloqueia
+      for (const x of deps) if (!graph.has(x)) frontier.push(x);
+    }
+  }
+  const state = new Map(); // 0=visitando, 1=ok
+  const inCycle = new Set();
+  const stack = [];
+  const dfs = (u) => {
+    state.set(u, 0); stack.push(u);
+    for (const v of graph.get(u) ?? []) {
+      if (state.get(v) === 0) { for (let i = stack.indexOf(v); i < stack.length; i++) inCycle.add(stack[i]); }
+      else if (!state.has(v)) dfs(v);
+    }
+    stack.pop(); state.set(u, 1);
+  };
+  for (const id of graph.keys()) if (!state.has(id)) dfs(id);
+  const toFail = [...inCycle].filter((id) => ids.has(id));
+  if (toFail.length) {
+    await sb.from('team_demands')
+      .update({ status: 'error', error: 'Dependência circular — demandas se bloqueiam mutuamente.' })
+      .in('id', toFail).eq('status', 'todo');
+    console.error('[demandas] ciclo de dependências →', toFail);
+  }
 }
 
 async function tickDemands(teamIds) {
@@ -1166,9 +1223,21 @@ async function tickDemands(teamIds) {
     console.error('[demandas poll erro]', error.message);
     return;
   }
+  const blocked = [];
   for (const d of queue ?? []) {
     if (!teamIds.has(d.agent_id)) continue;   // só o time interno executa pela ponte
-    if (!(await depsResolved(d))) continue;   // pipeline: deps ainda não 'done'
+    const dep = await depsState(d);
+    if (!dep.ready) {
+      if (dep.failedDep) {
+        await sb.from('team_demands')
+          .update({ status: 'error', error: `bloqueada: dependência ${dep.failedDep} falhou` })
+          .eq('id', d.id);
+        console.log(`[bloqueada] demanda ${d.id}: dependência ${dep.failedDep} em erro`);
+      } else {
+        blocked.push(d); // ainda esperando deps — candidata a ciclo se nada rodar
+      }
+      continue;
+    }
     // Claim atômico + raia da demanda — não bloqueia o loop (uma demanda longa de
     // 25min não trava o re-poll do chat).
     if (!(await claimRow('team_demands', d.id, 'todo', 'doing'))) continue;
@@ -1182,8 +1251,10 @@ async function tickDemands(teamIds) {
         await sb.from('team_demands').update({ status: 'error', error: String(e.message).slice(0, 500) }).eq('id', d.id);
       }
     });
-    break; // 1 demanda por tick
+    return; // rodou 1 demanda neste tick
   }
+  // Nada rodou e há travadas por dependência → pode ser ciclo. Marca as envolvidas.
+  if (blocked.length) await flagDependencyCycles(blocked);
 }
 
 // ─── Respostas no thread da demanda (conversa dentro do MESMO card) ─────────
