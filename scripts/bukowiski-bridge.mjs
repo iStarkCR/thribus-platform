@@ -51,6 +51,7 @@ let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0, contextLimi
 const VOICE_MODEL = process.env.BRIDGE_VOICE_MODEL || 'sonnet';
 const VOICE_EFFORT = process.env.BRIDGE_VOICE_EFFORT || 'low';
 let brainLoadedAt = 0;
+let lastTeamIds = new Set(); // último time interno carregado (pra despacho de demandas no chat)
 // --effort só vale pra opus/fable (o CLI ignora em sonnet/haiku). Cobre tanto o
 // alias ('opus') quanto IDs fixos ('claude-opus-4-7').
 const effortApplies = (m) => /opus|fable/.test(m);
@@ -63,6 +64,7 @@ const TEAM_CLIENT = process.env.BRIDGE_TEAM_CLIENT || 'Thribus Tech (Interno)';
 const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 3000);
 const TIMEOUT_MS = Number(process.env.BRIDGE_TIMEOUT_MS || 900_000); // chat: 15min (processos longos — o paralelismo por raia evita travar a fila)
 const DEMAND_TIMEOUT_MS = Number(process.env.BRIDGE_DEMAND_TIMEOUT_MS || 1_500_000); // demandas: 25min (tarefas longas: relatórios, etc.)
+const DEMAND_AUTO_RETRY = Number(process.env.BRIDGE_DEMAND_AUTO_RETRY ?? 1); // re-tenta N vezes antes de marcar 'error'
 // Unificação de cérebro (Caminho A): SÓ as conversas do Bukowiski rodam no cwd do
 // daemon, pra compartilharem a sessão Claude (--resume) entre WhatsApp/Telegram/
 // painel. Os outros 14 colaboradores seguem no cwd neutro do bridge (senão o
@@ -388,6 +390,11 @@ const GUARD =
   '"entity":"opcional"}]. A ponte grava sozinha e remove o bloco — você só confirma em 1 frase ' +
   'natural ("Guardado: …"). Seja PARCIMONIOSO: nada de tarefa pontual, estado efêmero, óbvio, ' +
   'nem repetir fato que você já sabe. Qualidade, não volume.\n\n' +
+  'DESPACHO (só você, supervisor): quando o Charles pedir pra CRIAR/DESPACHAR tarefas pro time ' +
+  '("manda o Atlas fazer X", "cria uma demanda pra Y", "quebra isso e distribui pro time"), emita um ' +
+  'bloco ```demands com array JSON: [{"title":"…","description":"…","agent":"<id ou nome do colaborador>",' +
+  '"project":"opcional"}]. A ponte cria cada uma na fila de demandas e o colaborador certo executa. ' +
+  'Confirme em 1 frase o que despachou. NÃO use isso pra tarefa que você mesmo já resolveu na conversa.\n\n' +
   'EFICIÊNCIA DE CONTEXTO (importante): a sessão é mantida entre turnos e TUDO que você lê fica na memória e ' +
   'pesa nos próximos turnos. Ao consultar banco/IXC/arquivos: NUNCA traga tabela inteira nem dump gigante pro ' +
   'contexto. Use queries com LIMIT e filtros, SELECT só das colunas necessárias, e prefira AGREGAR/CONTAR a ' +
@@ -744,6 +751,17 @@ async function processMessage(msg) {
       }
       reply = clean || 'Guardado na memória.';
     }
+    // Despacho: o Bukowiski (supervisor) pode emitir ```demands no chat pra jogar
+    // tarefas na fila do time — a ponte cria as demandas e remove o bloco do texto.
+    if (agent.id === BUKOWISKI_ID && /```demands/i.test(reply)) {
+      const { demands: subs, clean } = extractDemandsBlock(reply);
+      if (subs.length) {
+        const n = await createSubDemands({ user_id: msg.user_id, agent_id: BUKOWISKI_ID }, subs, lastTeamIds).catch(() => 0);
+        reply = (clean ? `${clean}\n\n` : '') + `_(${n} demanda(s) criada(s) na fila pro time.)_`;
+      } else if (clean) {
+        reply = clean;
+      }
+    }
     if (!reply && !asstId) throw new Error('resposta vazia do claude');
 
     // Finaliza: insere (se nunca streamou) ou consolida o conteúdo com o texto
@@ -985,8 +1003,9 @@ async function tickCompaction(teamIds) {
 
 // ─── Fila de demandas (Kanban "Demandas do time") ───────────────────────────
 // O Charles adiciona demandas no painel; aqui o agente EXECUTA a tarefa.
-async function processDemand(d) {
-  await sb.from('team_demands').update({ status: 'doing' }).eq('id', d.id);
+async function processDemand(d, teamIds = new Set()) {
+  const startedAt = Date.now();
+  await sb.from('team_demands').update({ status: 'doing', started_at: new Date(startedAt).toISOString() }).eq('id', d.id);
 
   const { data: agent } = await sb
     .from('agents')
@@ -994,6 +1013,22 @@ async function processDemand(d) {
     .eq('id', d.agent_id)
     .single();
   if (!agent) throw new Error(`agente ${d.agent_id} não encontrado`);
+
+  // Modo orquestrador: o Bukowiski avalia se executa ou quebra/delega pro time.
+  let orchestrateNote = '';
+  if (d.orchestrate) {
+    const { data: team } = await sb.from('agents').select('id,name,sector').in('id', [...teamIds]);
+    const roster = (team ?? [])
+      .filter((a) => a.id !== d.agent_id)
+      .map((a) => `- ${a.name} (id: ${a.id})${a.sector ? ` — ${a.sector}` : ''}`)
+      .join('\n');
+    orchestrateNote =
+      `\n\nMODO ORQUESTRADOR: avalie esta demanda. Se VOCÊ resolve melhor sozinho, execute normal. ` +
+      `Se for melhor DIVIDIR entre o time, NÃO execute — emita um bloco \`\`\`demands com um array JSON ` +
+      `das sub-tarefas, cada uma com o colaborador certo: [{"title":"…","description":"…","agent":"<id do colaborador>"` +
+      `${d.project ? `,"project":"${d.project}"` : ''}}]. A ponte cria as sub-demandas na fila e cada um executa a sua. ` +
+      `Colaboradores disponíveis:\n${roster || '(nenhum além de você)'}`;
+  }
 
   // Demanda-filho (resposta do Charles a uma demanda anterior): puxa o contexto
   // do pai (título + o que o agente entregou/perguntou) pra continuar coerente.
@@ -1018,6 +1053,7 @@ async function processDemand(d) {
     `DEMANDA do Charles${d.project ? ` (projeto ${d.project})` : ''}: ${d.title}` +
     parentCtx +
     (d.description ? `\n\n${detailLabel}:\n${d.description}` : '') +
+    orchestrateNote +
     `\n\nExecute a demanda de ponta a ponta. No final, devolva um resumo curto do que foi feito ` +
     `e, se algo precisa da decisão do Charles (gastar dinheiro, mexer em produção, etc.), diga claramente o que falta.`;
 
@@ -1030,16 +1066,92 @@ async function processDemand(d) {
     timeoutMs: DEMAND_TIMEOUT_MS,
     model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
   });
-  const result = r.text;
+  let result = r.text;
   if (!result) throw new Error('resposta vazia do claude');
 
-  // limpa o erro antigo se a demanda foi reenfileirada depois de falhar
-  await sb.from('team_demands').update({ status: 'done', result, error: null }).eq('id', d.id);
-  await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage: r.usage });
+  // Decomposição: o orquestrador pode emitir ```demands → vira sub-demandas na fila.
+  if (/```demands/i.test(result)) {
+    const { demands: subs, clean } = extractDemandsBlock(result);
+    if (subs.length) {
+      const n = await createSubDemands(d, subs, teamIds);
+      result = (clean ? `${clean}\n\n` : '') + `_(${n} sub-demanda(s) criada(s) na fila e delegada(s) ao time.)_`;
+    } else if (clean) {
+      result = clean;
+    }
+  }
+
+  const usage = r.usage;
+  // status done + custo/tempo/tokens desnormalizados (card mostra sem join na cortex_usage)
+  await sb.from('team_demands').update({
+    status: 'done', result, error: null,
+    finished_at: new Date().toISOString(),
+    duration_ms: Date.now() - startedAt,
+    cost_usd: usage?.costUsd ?? 0,
+    total_tokens: usage?.totalTokens ?? 0,
+  }).eq('id', d.id);
+  await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage });
   console.log(
     `[ok] ${agent.name} executou demanda "${d.title.slice(0, 50)}" (${result.length} chars` +
-      `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''})`,
+      `${usage ? `, $${usage.costUsd.toFixed(4)}` : ''})`,
   );
+}
+
+// Extrai o bloco ```demands [...] da resposta → sub-demandas + texto limpo (sem o bloco).
+function extractDemandsBlock(text) {
+  const demands = [];
+  const clean = String(text || '')
+    .replace(/```demands\s*([\s\S]*?)```/gi, (_, body) => {
+      try {
+        const parsed = JSON.parse(body.trim());
+        for (const x of (Array.isArray(parsed) ? parsed : [parsed])) {
+          if (x && typeof x.title === 'string' && x.title.trim()) demands.push(x);
+        }
+      } catch { /* malformado: ignora */ }
+      return '';
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { demands, clean };
+}
+
+// Cria sub-demandas na fila a partir do bloco do orquestrador. Resolve o agente por
+// id OU nome (case-insensitive); cai no Bukowiski se não bater nenhum do time.
+async function createSubDemands(parent, subs, teamIds) {
+  const { data: team } = await sb.from('agents').select('id,name').in('id', [...teamIds]);
+  const roster = team ?? [];
+  const fallback = parent.agent_id || 'bukowiski-thribus';
+  const resolveAgent = (ref) => {
+    if (!ref) return fallback;
+    const byId = roster.find((a) => a.id === ref);
+    if (byId) return byId.id;
+    const byName = roster.find((a) => a.name.toLowerCase() === String(ref).toLowerCase());
+    return byName ? byName.id : fallback;
+  };
+  let n = 0;
+  for (const s of subs.slice(0, 20)) {
+    const { error } = await sb.from('team_demands').insert({
+      user_id: parent.user_id,
+      agent_id: resolveAgent(s.agent),
+      title: String(s.title).slice(0, 200),
+      description: s.description ? String(s.description) : null,
+      project: s.project || parent.project || null,
+      status: 'todo',
+      priority: Number(s.priority) || 0,
+      parent_id: parent.id || null,
+    });
+    if (!error) n++;
+  }
+  return n;
+}
+
+// Dependências resolvidas? (todas as demandas em depends_on estão 'done'; dep
+// deletada = ignorada, pra não travar pra sempre).
+async function depsResolved(d) {
+  const deps = Array.isArray(d.depends_on) ? d.depends_on : [];
+  if (!deps.length) return true;
+  const { data } = await sb.from('team_demands').select('id,status').in('id', deps);
+  const byId = new Map((data ?? []).map((x) => [x.id, x.status]));
+  return deps.every((id) => !byId.has(id) || byId.get(id) === 'done');
 }
 
 async function tickDemands(teamIds) {
@@ -1049,23 +1161,28 @@ async function tickDemands(teamIds) {
     .eq('status', 'todo')
     .order('priority', { ascending: false })
     .order('created_at', { ascending: true })
-    .limit(1); // 1 por vez pra não travar o chat interativo
+    .limit(10); // candidatas — a 1ª pode estar bloqueada por dependência (pipeline)
   if (error) {
     console.error('[demandas poll erro]', error.message);
     return;
   }
   for (const d of queue ?? []) {
-    if (!teamIds.has(d.agent_id)) continue; // só o time interno executa pela ponte
-    // Claim atômico + raia da demanda — não bloqueia o loop (senão uma demanda
-    // longa de 25min travaria o re-poll do chat).
+    if (!teamIds.has(d.agent_id)) continue;   // só o time interno executa pela ponte
+    if (!(await depsResolved(d))) continue;   // pipeline: deps ainda não 'done'
+    // Claim atômico + raia da demanda — não bloqueia o loop (uma demanda longa de
+    // 25min não trava o re-poll do chat).
     if (!(await claimRow('team_demands', d.id, 'todo', 'doing'))) continue;
-    runOnLane(`demand:${d.id}`, () => processDemand(d)).catch(async (e) => {
+    runOnLane(`demand:${d.id}`, () => processDemand(d, teamIds)).catch(async (e) => {
       console.error(`[erro] demanda ${d.id}:`, e.message);
-      await sb
-        .from('team_demands')
-        .update({ status: 'error', error: String(e.message).slice(0, 500) })
-        .eq('id', d.id);
+      const tries = d.retry_count || 0;
+      if (tries < DEMAND_AUTO_RETRY) {
+        await sb.from('team_demands').update({ status: 'todo', retry_count: tries + 1, started_at: null }).eq('id', d.id);
+        console.log(`[retry] demanda ${d.id} reenfileirada (${tries + 1}/${DEMAND_AUTO_RETRY})`);
+      } else {
+        await sb.from('team_demands').update({ status: 'error', error: String(e.message).slice(0, 500) }).eq('id', d.id);
+      }
     });
+    break; // 1 demanda por tick
   }
 }
 
@@ -1121,7 +1238,13 @@ async function processDemandReply(m) {
     content: result, status: 'done', cost_usd: r.usage?.costUsd ?? 0,
   });
   await sb.from('demand_messages').update({ status: 'done' }).eq('id', m.id);
-  await sb.from('team_demands').update({ status: 'done', error: null }).eq('id', d.id);
+  // custo/tokens ACUMULADOS na demanda (execução inicial + respostas no thread)
+  await sb.from('team_demands').update({
+    status: 'done', error: null,
+    finished_at: new Date().toISOString(),
+    cost_usd: (Number(d.cost_usd) || 0) + (r.usage?.costUsd ?? 0),
+    total_tokens: (Number(d.total_tokens) || 0) + (r.usage?.totalTokens ?? 0),
+  }).eq('id', d.id);
   await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage: r.usage });
   console.log(
     `[ok] ${agent.name} respondeu no thread "${d.title.slice(0, 40)}" (${result.length} chars` +
@@ -1335,6 +1458,7 @@ async function tickMemorySync() {
 async function loop() {
   for (;;) {
     const teamIds = await loadTeamIds();
+    lastTeamIds = teamIds;
     await loadBrainConfig();        // modelo/esforço/teto vindos do painel (cache 15s)
     await fetchUsageLimits();       // limites do plano (5h + semana) → painel (cache 2min)
     await importSkills();           // espelha as skills reais no painel (1x)
