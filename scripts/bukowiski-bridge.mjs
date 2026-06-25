@@ -339,6 +339,10 @@ const GUARD =
   'comparações, use TABELAS markdown (| Coluna | Coluna |\\n| --- | --- |\\n| valor | valor |). Use listas ' +
   'pra passos, **negrito** pra destaques e ## títulos pra seções. O painel renderiza tabelas e markdown ' +
   'de forma visual — então prefira tabela a despejar números no meio do texto.\n\n' +
+  'CONCISÃO: NÃO narre cada micro-passo do seu processo na resposta ("deixa eu ver", "achei", "vou testar", ' +
+  '"key veio vazia") — isso vira um blocão cansativo. Faça o trabalho e entregue a CONCLUSÃO: o que descobriu/' +
+  'fez e o próximo passo. Parágrafos curtos (uma ideia cada, separados por linha em branco), bullets quando ' +
+  'forem itens/passos. Se o caminho técnico importar, resuma em 2–3 bullets no fim — não a transcrição inteira.\n\n' +
   'CARDS: quando listar ENTIDADES (faturas, clientes, demandas, sistemas, leads, OS) — itens com nome + ' +
   'status/valor — em vez de tabela, devolva um bloco ```cards com um array JSON: ' +
   '[{"title":"TexNet · Mensalidade","subtitle":"vence 25/06","value":"R$ 1.200","status":"a receber","accent":"green"}]. ' +
@@ -511,6 +515,7 @@ function runClaude(prompt, opts = {}) {
     let err = '';
     let result = null;
     let streamedText = ''; // texto acumulado dos deltas (streaming ao vivo)
+    let pendingBreak = false; // houve tool entre rajadas de texto → quebra de parágrafo
     // Uso da ÚLTIMA mensagem do assistant — reflete a janela de contexto real do
     // último turno (input+cache da chamada final), ao contrário do uso do evento
     // 'result', que SOMA todos os round-trips de tool calls e infla o número.
@@ -528,6 +533,10 @@ function runClaude(prompt, opts = {}) {
       try { evt = JSON.parse(s); } catch { return; }
       // Delta de texto (--include-partial-messages) → acumula e emite pro painel.
       if (evt.type === 'stream_event' && evt.event?.type === 'content_block_delta' && evt.event.delta?.type === 'text_delta') {
+        // Nova rajada de texto após uma tool → começa em parágrafo novo. Sem isso a
+        // narração de processo cola tudo num blocão ("...primeiro.Não tem skill...").
+        if (pendingBreak && streamedText && !streamedText.endsWith('\n')) streamedText += '\n\n';
+        pendingBreak = false;
         streamedText += evt.event.delta.text || '';
         if (opts.onText) { try { opts.onText(streamedText); } catch { /* nunca derruba o parse */ } }
         return;
@@ -537,9 +546,12 @@ function runClaude(prompt, opts = {}) {
       }
       if (evt.type === 'assistant' && evt.message && Array.isArray(evt.message.content)) {
         for (const b of evt.message.content) {
-          if (b && b.type === 'tool_use' && opts.onEvent) {
-            try { opts.onEvent({ kind: 'tool', toolUseId: b.id, label: b.name || 'tool', detail: summarizeToolInput(b.input), input: fullInput(b.input) }); }
-            catch { /* nunca derruba o parse */ }
+          if (b && b.type === 'tool_use') {
+            pendingBreak = true; // próxima rajada de texto começa em parágrafo novo
+            if (opts.onEvent) {
+              try { opts.onEvent({ kind: 'tool', toolUseId: b.id, label: b.name || 'tool', detail: summarizeToolInput(b.input), input: fullInput(b.input) }); }
+              catch { /* nunca derruba o parse */ }
+            }
           }
         }
       } else if (evt.type === 'user' && evt.message && Array.isArray(evt.message.content)) {
