@@ -315,6 +315,14 @@ export function NeuralSphere({
     const baseHSL = { h: 0, s: 0, l: 0 };
     baseColor.getHSL(baseHSL);
     let raf = 0;
+    // Performance: a esfera é contemplativa — limita a ~30fps (em vez de 60–120 no
+    // rAF nativo, que em telas ProMotion fritava o compositor) e PAUSA quando sai da
+    // tela (IntersectionObserver). Corta a maior parte da carga GPU sem perda visual.
+    let lastFrameT = 0;
+    const FRAME_MS = 1000 / 30;
+    let visible = true;
+    const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0.01 });
+    io.observe(container);
     let smoothI = 0;
     const startTime = performance.now();
 
@@ -399,7 +407,11 @@ export function NeuralSphere({
       geomLines.setDrawRange(0, writeIdx / 3);
     };
 
-    const animate = () => {
+    const animate = (tNow = 0) => {
+      raf = requestAnimationFrame(animate);
+      if (!visible) return;                       // fora da tela → não gasta GPU
+      if (tNow - lastFrameT < FRAME_MS) return;   // cap de ~30fps
+      lastFrameT = tNow;
       const now = performance.now() * 0.001;
       const ambientPulse = ambient ? 0.18 + Math.sin(now * 0.5) * 0.06 : 0;
       // attack rápido / decay lento — sensação de respiração natural
@@ -493,12 +505,12 @@ export function NeuralSphere({
       innerGroup.rotation.x += AUTO_ROTATE_SPEED_INNER * 0.4 * speedMultiplier * speedBoost;
 
       renderer.render(scene, camera);
-      raf = requestAnimationFrame(animate);
     };
     animate();
 
     return () => {
       cancelAnimationFrame(raf);
+      io.disconnect();
       container.removeEventListener('mousemove', onMouseMove);
       container.removeEventListener('mouseleave', onMouseLeave);
       ro.disconnect();

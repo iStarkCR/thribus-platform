@@ -216,6 +216,8 @@
     animation: glassAurora 7s ease-in-out infinite alternate, auroraBreath 1.5s ease-in-out infinite;
     filter: saturate(1.5) brightness(1.22);
   }
+  /* App em background → congela a aurora (não desperdiça o compositor). */
+  html.app-hidden body::before { animation-play-state: paused !important; }
 
   /* DARK + glass — paleta RENOVADA: charcoal neutro (não mais verde-escuro
    * carregado); o Sage entra só como brilho/accent. Sobrescreve os tokens de
