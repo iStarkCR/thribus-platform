@@ -4,9 +4,10 @@ import {
   Send, Crown, Loader2, Plus, FolderPlus, Folder, ChevronDown, ChevronRight, Trash2, MessageSquare,
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
-  PanelLeftClose, PanelLeft, GitBranch, AlertTriangle, FileText, ChevronUp, Monitor, MessageCircle,
+  PanelLeftClose, PanelLeft, GitBranch, AlertTriangle, FileText, ChevronUp, Monitor, MessageCircle, Menu,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
 import { isStopPhrase, isNoise, mapVoiceState, ORB_FOLDER_NAME, type VoiceState } from '@/hooks/useOrbConversation';
@@ -107,6 +108,10 @@ export function TalkPage() {
     try { localStorage.setItem('thribus.chatNav', next ? '0' : '1'); } catch { /* noop */ }
     return next;
   });
+  // Mobile: lista de conversas vira drawer (a sidebar de 300px não cabe em 380px).
+  const isMobile = useIsMobile();
+  const [convDrawer, setConvDrawer] = useState(false);
+  const setMobileNavOpen = useAppStore((s) => s.setMobileNavOpen);
   // Mensagens longas do usuário colapsadas (id → expandida).
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
   const toggleExpanded = (id: string) => setExpandedMsgs((prev) => {
@@ -680,6 +685,7 @@ export function TalkPage() {
   // Selecionar uma conversa: no orbe (landing) prima e mostra "Abrir conversa";
   // já em chatMode vai DIRETO pro chat (navegar entre chats não volta pro orbe).
   function selectConversation(id: string) {
+    setConvDrawer(false); // mobile: fecha o drawer ao escolher
     if (chatMode) { void enterConversation(id); return; } // já no chat → entra direto (pré-carrega, sem flash)
     setActiveId(id);
     setMessages([]); // landing: orbe não mostra msgs, então limpa
@@ -698,6 +704,7 @@ export function TalkPage() {
 
   async function newSession(folderId: string | null = null) {
     if (!agentId || !userId) return;
+    setConvDrawer(false); // mobile: fecha o drawer de conversas
     const s = await createSession(agentId, userId, { folderId });
     setSessions((prev) => [s, ...prev]);
     setActiveId(s.id);
@@ -984,14 +991,17 @@ export function TalkPage() {
 
   return (
     <div className="flex-1 min-h-0 flex overflow-hidden">
-      {/* Sessões + pastas */}
-      {!navCollapsed && (
-      <div className="glass-strong border-r border-default flex flex-col bg-surface-1 min-h-0 w-[300px] shrink-0">
+      {/* Backdrop do drawer de conversas (mobile) */}
+      {convDrawer && <div className="md:hidden fixed inset-0 bg-black/55 z-[55]" onClick={() => setConvDrawer(false)} />}
+      {/* Sessões + pastas — inline no desktop (recolhível), drawer no mobile */}
+      <div className={`glass-strong border-r border-default flex flex-col bg-surface-1 min-h-0
+        fixed inset-y-0 left-0 z-[60] w-[86vw] max-w-[320px] transition-transform duration-200 ${convDrawer ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+        md:static md:z-auto md:translate-x-0 md:shadow-none md:w-[300px] md:shrink-0 ${navCollapsed ? 'md:hidden' : ''}`}>
         <div className="p-3.5 border-b border-default space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-widest text-creme-faint">Conversas</span>
-            <button onClick={toggleNav} title="Recolher conversas" className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
-              <PanelLeftClose size={15} />
+            <button onClick={() => (isMobile ? setConvDrawer(false) : toggleNav())} title={isMobile ? 'Fechar' : 'Recolher conversas'} className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
+              {isMobile ? <X size={16} /> : <PanelLeftClose size={15} />}
             </button>
           </div>
           <button
@@ -1110,14 +1120,20 @@ export function TalkPage() {
           </button>
         </div>
       </div>
-      )}
 
       {/* Thread */}
       <div className="flex-1 flex flex-col bg-surface-0 min-w-0 min-h-0">
-        <div className="glass-panel relative z-30 h-16 px-6 flex items-center justify-between gap-3 border-b border-default shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="glass-panel relative z-30 h-16 px-3 md:px-6 flex items-center justify-between gap-2 md:gap-3 border-b border-default shrink-0">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0">
+            {/* Mobile: abre a nav global e a lista de conversas */}
+            <button onClick={() => setMobileNavOpen(true)} title="Menu" className="md:hidden w-9 h-9 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors shrink-0">
+              <Menu size={18} />
+            </button>
+            <button onClick={() => setConvDrawer(true)} title="Conversas" className="md:hidden w-9 h-9 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors shrink-0">
+              <MessageSquare size={17} />
+            </button>
             {navCollapsed && (
-              <button onClick={toggleNav} title="Mostrar conversas" className="w-9 h-9 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors shrink-0">
+              <button onClick={toggleNav} title="Mostrar conversas" className="hidden md:inline-flex w-9 h-9 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover items-center justify-center transition-colors shrink-0">
                 <PanelLeft size={17} />
               </button>
             )}
@@ -1129,9 +1145,9 @@ export function TalkPage() {
               {agent.name[0]}
             </button>
             <button onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setChatMode(false); setHistOpen(false); }} title="Voltar pra tela inicial (orbe)" className="min-w-0 text-left">
-              <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2 hover:text-brand-bright transition-colors">
-                {agent.name}
-                {agent.isSupervisor && <Crown size={15} className="text-gold-bright" />}
+              <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2 hover:text-brand-bright transition-colors min-w-0">
+                <span className="truncate">{agent.name}</span>
+                {agent.isSupervisor && <Crown size={15} className="text-gold-bright shrink-0" />}
               </div>
               <div className="text-[12.5px] text-creme-faint truncate">
                 {agent.sector} · {agent.status}{active ? ` · ${sessionSource(active.title, active.source).clean}` : ''}
@@ -1185,13 +1201,13 @@ export function TalkPage() {
               className="flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-2xl glass-panel bg-surface-2/80 border border-default text-[13px] font-semibold text-creme-dim hover:text-creme hover:border-brand/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_24px_-16px_rgba(0,0,0,0.55)] transition-colors"
             >
               <span className="w-7 h-7 rounded-xl bg-brand/12 flex items-center justify-center shrink-0"><Users size={15} className="text-brand-bright" /></span>
-              Colaboradores
+              <span className="hidden lg:inline">Colaboradores</span>
               <ChevronDown size={14} className={`text-creme-faint transition-transform ${switcherOpen ? 'rotate-180' : ''}`} />
             </button>
             {switcherOpen && (
               <>
                 <div className="fixed inset-0 z-[55]" onClick={() => { setSwitcherOpen(false); setSwitcherQuery(''); }} />
-                <div className="glass-strong absolute right-0 mt-1.5 w-72 max-h-[66vh] flex flex-col bg-surface-1 border border-default rounded-2xl shadow-2xl z-[56] overflow-hidden">
+                <div className="glass-strong absolute right-0 mt-1.5 w-72 max-w-[calc(100vw-1.5rem)] max-h-[66vh] flex flex-col bg-surface-1 border border-default rounded-2xl shadow-2xl z-[56] overflow-hidden">
                   <div className="p-2 border-b border-default">
                     <div className="relative">
                       <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-creme-faint pointer-events-none" />
@@ -1404,7 +1420,7 @@ export function TalkPage() {
                       {histOpen && (
                         <>
                           <div className="fixed inset-0 z-[40]" onClick={() => setHistOpen(false)} />
-                          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 max-h-72 overflow-y-auto bg-surface-1 border border-default rounded-xl shadow-2xl z-[41] py-1.5 text-left">
+                          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 max-w-[calc(100vw-1.5rem)] max-h-72 overflow-y-auto bg-surface-1 border border-default rounded-xl shadow-2xl z-[41] py-1.5 text-left">
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-creme-faint">Conversas recentes</div>
                             {sorted.map((s) => (
                               <button key={s.id} onClick={() => selectConversation(s.id)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors">
@@ -1421,7 +1437,7 @@ export function TalkPage() {
               </div>
             </div>
           ) : (
-            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 py-6 space-y-5">
+            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-3 md:px-6 py-4 md:py-6 space-y-5">
               {/* Compactar conversa — flutua no topo em conversas longas. Gera um
                   resumo (TL;DR) e recomeça o contexto a partir dele; o histórico
                   visual fica intacto. Ver requestCompaction / ponte (caminho C). */}
@@ -1584,7 +1600,7 @@ export function TalkPage() {
         </div>
 
         {inChat && (
-        <div className="px-6 py-4 border-t border-default shrink-0">
+        <div className="px-3 md:px-6 py-3 md:py-4 border-t border-default shrink-0">
           <div className="flex items-center justify-between mb-2 px-1 gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <CortexBrainBar />
@@ -1696,7 +1712,7 @@ export function TalkPage() {
               {plusOpen && (
                 <>
                   <div className="fixed inset-0 z-[60]" onClick={() => { setPlusOpen(false); setDelegateOpen(false); }} />
-                  <div className="absolute bottom-full mb-2 left-0 z-[61] w-64 rounded-xl border border-default bg-surface-1 shadow-2xl p-1.5">
+                  <div className="absolute bottom-full mb-2 left-0 z-[61] w-64 max-w-[calc(100vw-1.5rem)] rounded-xl border border-default bg-surface-1 shadow-2xl p-1.5">
                     <MenuRow icon={<Paperclip size={15} />} label="Anexar arquivo" hint="img · PDF · vídeo" onClick={() => { setPlusOpen(false); fileInputRef.current?.click(); }} />
                     <MenuRow icon={<ListChecks size={15} />} label="Virar demanda" hint="2º plano" disabled={!input.trim()} onClick={() => agent && toDemand(agent.id)} />
                     <div>

@@ -3,9 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   ChevronRight, Zap, Settings, Building2, Bell, Lock,
-  LogOut, User, Moon, HelpCircle, PanelLeftClose, PanelLeft, Sparkles,
+  LogOut, User, Moon, HelpCircle, PanelLeftClose, PanelLeft, Sparkles, X,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { useGlass } from '@/hooks/useTheme';
 import { useSession } from '@/hooks/useSession';
 import { useAccess } from '@/hooks/useRole';
@@ -16,8 +17,13 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const agents = useAppStore((s) => s.agents);
-  const collapsed = useAppStore((s) => s.sidebarCollapsed);
+  const collapsedPref = useAppStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
+  const mobileNavOpen = useAppStore((s) => s.mobileNavOpen);
+  const setMobileNavOpen = useAppStore((s) => s.setMobileNavOpen);
+  const isMobile = useIsMobile();
+  // Em mobile o drawer é sempre EXPANDIDO (a preferência de recolher só vale no desktop).
+  const collapsed = collapsedPref && !isMobile;
   const { allowedPaths } = useAccess();
 
   // allowedPaths null = admin (vê tudo). Caso contrário filtra pelos grants do
@@ -41,7 +47,13 @@ export function Sidebar() {
   });
 
   return (
-    <aside className={clsx('glass-strong fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-50 transition-[width] duration-200', collapsed ? 'w-[64px]' : 'w-[244px]')}>
+    <aside className={clsx(
+      'glass-strong fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-[60] transition-[width,transform] duration-200',
+      collapsed ? 'w-[64px]' : 'w-[244px]',
+      // Drawer em mobile: desliza pra dentro quando aberto; no desktop fica sempre visível.
+      mobileNavOpen ? 'translate-x-0 shadow-2xl md:shadow-none' : '-translate-x-full',
+      'md:translate-x-0',
+    )}>
       {/* Brand + sino + recolher */}
       <div className={clsx('h-14 flex items-center border-b border-default shrink-0', collapsed ? 'justify-center px-2' : 'px-3 gap-2.5')}>
         <div className="w-[30px] h-[30px] rounded-lg bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center shrink-0">
@@ -54,8 +66,8 @@ export function Sidebar() {
               <span className="text-[11.5px] font-semibold text-brand uppercase tracking-wider leading-tight truncate">Colaboradores Digitais</span>
             </div>
             <NotifBell onClick={() => navigate('/notifications')} />
-            <button onClick={() => setSidebarCollapsed(true)} title="Recolher" className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
-              <PanelLeftClose size={15} />
+            <button onClick={() => (isMobile ? setMobileNavOpen(false) : setSidebarCollapsed(true))} title={isMobile ? 'Fechar' : 'Recolher'} className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
+              {isMobile ? <X size={16} /> : <PanelLeftClose size={15} />}
             </button>
           </>
         )}

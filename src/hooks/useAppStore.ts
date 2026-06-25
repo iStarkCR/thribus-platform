@@ -28,6 +28,8 @@ interface AppState {
   /** Sidebar recolhida (só ícones). Padrão recolhido no chat. */
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
+  mobileNavOpen: boolean; // drawer da nav global em mobile (< md)
+  setMobileNavOpen: (v: boolean) => void;
   /** Orbe flutuante Bukowiski — acompanha por todos os módulos. Persistido. */
   orbEnabled: boolean;
   setOrbEnabled: (v: boolean) => void;
@@ -126,6 +128,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSidebarCollapsed: (v) => {
     if (typeof localStorage !== 'undefined') localStorage.setItem('sidebarCollapsed', v ? '1' : '0');
     set({ sidebarCollapsed: v });
+  },
+  mobileNavOpen: false,
+  setMobileNavOpen: (v) => {
+    set({ mobileNavOpen: v });
   },
   orbEnabled: typeof localStorage !== 'undefined' && localStorage.getItem('orbEnabled') === '1',
   setOrbEnabled: (v) => {
