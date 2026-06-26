@@ -318,7 +318,7 @@ export function NeuralSphere({
     baseColor.getHSL(baseHSL);
     let raf = 0;
     let lastFrame = 0;
-    const minFrameMs = 1000 / 30; // cap ~30fps — sem isso roda a 120Hz em ProMotion e queima GPU
+    const minFrameMs = 1000 / 60; // cap 60fps — fluido, mas 4× mais leve que os 240Hz nativos que queimavam GPU
     // Performance: mantém o movimento FLUIDO (rAF nativo — sem cap, que picotava em
     // ProMotion), mas PAUSA quando sai da tela (IntersectionObserver). A carga é
     // contida pelo pixelRatio menor (ver setPixelRatio) em vez de cortar frames.
@@ -416,9 +416,11 @@ export function NeuralSphere({
       const elapsed = tNow - lastFrame;
       if (elapsed < minFrameMs) return; // cap de fps (não recalcula a cada frame nativo)
       lastFrame = tNow;
-      // Anima por TEMPO real, não por frame: a 30fps cada frame vale ~2 frames de
-      // 60fps. Sem isso, capar o fps deixava os pontos/rotação na metade da velocidade.
-      const frameScale = Math.min(elapsed / 16.67, 3);
+      // Anima por TEMPO real, não por frame. O dt fixo (0.016) foi calibrado p/ 60fps,
+      // mas o Charles está numa tela 240Hz e se acostumou com a velocidade NATIVA — que
+      // era ~4× a de 60fps (o passo fixo escalava com o refresh rate). O ×4 mantém essa
+      // velocidade AGORA independente do fps real, sem voltar a queimar a CPU a 240fps.
+      const frameScale = Math.min(elapsed / 16.67, 3) * 4;
       const now = tNow * 0.001;
       const ambientPulse = ambient ? 0.18 + Math.sin(now * 0.5) * 0.06 : 0;
       // attack rápido / decay lento — sensação de respiração natural
