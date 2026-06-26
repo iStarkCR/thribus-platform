@@ -144,24 +144,57 @@ export async function cancelMessage(messageId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Realtime do thread do usuário. Chama onChange a cada insert/update. */
+/**
+ * Realtime do thread do usuário. Chama onChange a cada insert/update, passando a
+ * sessão afetada (pra quem quiser ignorar eventos de outras conversas). Reconecta
+ * sozinho com backoff se o canal cair (Mac dorme, wifi oscila) — antes parava de
+ * receber resposta silenciosamente.
+ */
 let chanSeq = 0;
-export function subscribeChat(userId: string, onChange: () => void): () => void {
+export function subscribeChat(
+  userId: string,
+  onChange: (info?: { sessionId: string | null }) => void,
+): () => void {
   const sb = supabase;
   if (!sb) return () => {};
-  // Nome de canal único por assinante — vários componentes (TalkPage + orbe) podem
-  // assinar o mesmo userId ao mesmo tempo. Reusar o nome quebra: o Supabase recusa
-  // `.on()` num canal já `subscribe()`d.
-  const ch = sb
-    .channel(`collab-chat:${userId}:${++chanSeq}`)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'collaborator_messages', filter: `user_id=eq.${userId}` },
-      () => onChange(),
-    )
-    .subscribe();
+  let channel: ReturnType<typeof sb.channel> | null = null;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+  let closed = false;
+
+  const connect = () => {
+    if (closed) return;
+    // Nome de canal único por assinante — vários componentes (TalkPage + orbe) podem
+    // assinar o mesmo userId ao mesmo tempo. Reusar o nome quebra: o Supabase recusa
+    // `.on()` num canal já `subscribe()`d.
+    const ch = sb
+      .channel(`collab-chat:${userId}:${++chanSeq}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'collaborator_messages', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as { session_id?: string } | null;
+          onChange({ sessionId: row?.session_id ?? null });
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') { attempt = 0; return; }
+        if (closed) return;
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (retry) clearTimeout(retry);
+          const delay = Math.min(15000, 1000 * 2 ** attempt++); // 1s,2s,4s… até 15s
+          retry = setTimeout(() => { sb.removeChannel(ch); connect(); }, delay);
+        }
+      });
+    channel = ch;
+  };
+
+  connect();
+
   return () => {
-    sb.removeChannel(ch);
+    closed = true;
+    if (retry) clearTimeout(retry);
+    if (channel) sb.removeChannel(channel);
   };
 }
 

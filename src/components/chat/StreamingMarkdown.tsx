@@ -82,15 +82,18 @@ export function StreamingMarkdown({ text, streaming, onAction, onOpenArtifact }:
     if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       setN(targetRef.current.length); return;
     }
+    // ~64ms (≈15fps) é suave o bastante pro olho e corta o re-parse do markdown
+    // pela metade vs. 30ms; a ponte streama em ~400ms, então não há o que revelar
+    // mais rápido. Compensamos revelando mais chars por tick (catch-up).
     const id = setInterval(() => {
       setN((cur) => {
         const t = targetRef.current;
         if (cur >= t.length) return cur;
-        let next = cur + Math.max(2, Math.min(60, Math.ceil((t.length - cur) / 10)));
+        let next = cur + Math.max(4, Math.min(120, Math.ceil((t.length - cur) / 8)));
         for (const [s, e] of regionsRef.current) { if (next > s && next < e) { next = e; break; } } // salta bloco inteiro
         return Math.min(next, t.length);
       });
-    }, 30);
+    }, 64);
     return () => clearInterval(id);
   }, [streaming, text.length]);
 

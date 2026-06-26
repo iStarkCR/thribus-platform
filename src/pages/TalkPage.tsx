@@ -202,6 +202,12 @@ export function TalkPage() {
   useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   useEffect(() => { pendingWorkingDirRef.current = pendingWorkingDir; }, [pendingWorkingDir]);
+  // Handler estável pras sugestões do markdown (botões "Detalha isso" etc.): aponta
+  // sempre pro `send` mais recente via ref, então o <Markdown> memoizado não re-renderiza
+  // só por causa de uma referência nova de callback, sem risco de closure velha.
+  const sendRef = useRef<(t?: string) => void>(() => {});
+  sendRef.current = (t?: string) => { void send(t); };
+  const handleSuggestion = useCallback((t: string) => sendRef.current(t), []);
   // troca de conversa cancela edição pendente (evita truncar a sessão errada)
   useEffect(() => { setEditingFrom((e) => (e && e.sessionId !== activeId ? null : e)); }, [activeId]);
 
@@ -348,10 +354,15 @@ export function TalkPage() {
     refetch();
   }, [refetch]);
 
-  // Realtime: resposta do daemon aparece sozinha.
+  // Realtime: resposta do daemon aparece sozinha. Só refetch se o evento for da
+  // conversa aberta — resposta chegando numa sessão espelhada (ex: WhatsApp) não
+  // precisa re-buscar a conversa que está na tela.
   useEffect(() => {
     if (!userId) return;
-    return subscribeChat(userId, refetch);
+    return subscribeChat(userId, (info) => {
+      if (info && info.sessionId && info.sessionId !== activeIdRef.current) return;
+      refetch();
+    });
   }, [userId, refetch]);
 
   useEffect(() => {
@@ -408,6 +419,15 @@ export function TalkPage() {
     const t = window.setTimeout(() => setBridgeStale(true), 15000);
     return () => window.clearTimeout(t);
   }, [lastMsg?.id, lastPending]);
+
+  // Rede de segurança: enquanto aguarda resposta, refetch leve a cada 10s — cobre
+  // o caso do canal realtime ter caído sem o reconnect ainda ter pego o evento.
+  const awaiting = messages.some((m) => m.status === 'pending' || m.status === 'processing');
+  useEffect(() => {
+    if (!awaiting || !activeId) return;
+    const id = window.setInterval(() => refetch(), 10000);
+    return () => window.clearInterval(id);
+  }, [awaiting, activeId, refetch]);
 
   // Composer auto-cresce até 3 linhas; passou disso, rola interno. (chat + orbe)
   useEffect(() => {
@@ -1471,7 +1491,7 @@ export function TalkPage() {
                       </button>
                       {expandedMsgs.has(m.id) ? (
                         /* Mesmo renderizador rico das mensagens (markdown: títulos, tabelas, código, negrito) */
-                        <StreamingMarkdown text={m.content} streaming={false} onAction={(t) => send(t)} onOpenArtifact={setArtifact} />
+                        <StreamingMarkdown text={m.content} streaming={false} onAction={handleSuggestion} onOpenArtifact={setArtifact} />
                       ) : (
                         <button onClick={() => toggleExpanded(m.id)} className="text-left w-full">
                           <div className="whitespace-pre-wrap line-clamp-3 text-[13.5px] leading-relaxed text-creme-dim">{m.content}</div>
@@ -1539,7 +1559,7 @@ export function TalkPage() {
                     <div className="min-w-0 flex-1">
                       <div className="text-[12px] font-semibold text-creme-mute mb-1.5 tracking-wide">{agent.name}</div>
                       <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[17px] leading-[1.7] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
-                        <StreamingMarkdown text={m.content} streaming={m.status === 'pending' || m.status === 'processing'} onAction={(t) => send(t)} onOpenArtifact={setArtifact} />
+                        <StreamingMarkdown text={m.content} streaming={m.status === 'pending' || m.status === 'processing'} onAction={handleSuggestion} onOpenArtifact={setArtifact} />
                         {/* Streaming: cursor piscando enquanto a resposta ainda chega */}
                         {(m.status === 'pending' || m.status === 'processing') && <span className="inline-block w-[2px] h-[1.1em] -mb-[2px] ml-0.5 bg-brand-bright align-middle animate-[twBlink_1.05s_step-end_infinite]" />}
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
