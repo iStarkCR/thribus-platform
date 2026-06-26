@@ -54,6 +54,7 @@ import { FloatingOrb } from '@/components/voice/FloatingOrb';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { ConfirmDialog, PromptDialog } from '@/components/shared/Dialogs';
+import { ImageLightbox } from '@/components/shared/ImageLightbox';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
 import { useAccess } from '@/hooks/useRole';
@@ -104,6 +105,7 @@ export function App() {
       <CommandPalette />
       <GlobalConfirm />
       <GlobalPrompt />
+      <ImageLightbox />
     </HashRouter>
   );
 }

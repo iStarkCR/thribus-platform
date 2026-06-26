@@ -102,6 +102,11 @@ interface AppState {
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
   removeToast: (id: string) => void;
 
+  /** Visualização de imagem em modal (lightbox) — evita abrir em nova aba. */
+  lightbox: { url: string; alt?: string } | null;
+  openLightbox: (url: string, alt?: string) => void;
+  closeLightbox: () => void;
+
   // Confirmação (modal do sistema)
   askConfirm: (opts: { title: string; message: string; confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
   resolveConfirm: (v: boolean) => void;
@@ -151,6 +156,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sttBusy: false,
   setSttBusy: (v) => set({ sttBusy: v }),
   toasts: [],
+  lightbox: null,
   confirmRequest: null,
   promptRequest: null,
 
@@ -467,6 +473,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeToast: (id) => {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
   },
+
+  openLightbox: (url, alt) => set({ lightbox: { url, alt } }),
+  closeLightbox: () => set({ lightbox: null }),
 
   askConfirm: (opts) =>
     new Promise<boolean>((resolve) => set({ confirmRequest: { ...opts, resolve } })),

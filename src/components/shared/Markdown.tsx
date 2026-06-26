@@ -9,10 +9,11 @@
  * Não é um parser completo, mas cobre o que o time usa pra mostrar dados.
  */
 
-import { useState, type ReactNode } from 'react';
-import { AlertTriangle, ChevronRight, FileText } from 'lucide-react';
+import { memo, useState, type ReactNode } from 'react';
+import { AlertTriangle, ChevronRight, FileText, Check } from 'lucide-react';
 import { CodeViewer } from '@/components/shared/CodeViewer';
 import { Chart } from '@/components/shared/Chart';
+import { useAppStore } from '@/hooks/useAppStore';
 
 // URL aceita parênteses balanceados (ex.: .../Foo_(bar)) sem cortar no 1º ')'.
 const URLCORE = 'https?:\\/\\/(?:[^\\s()]+|\\([^\\s()]*\\))+';
@@ -154,12 +155,38 @@ function statusTone(s: string): string {
 // `action` (opcional): texto enviado ao chat quando o card é clicado — vira uma
 // opção selecionável (ex: escolher canal A/B). Sem action, o card é informativo.
 interface CardItem { title?: string; subtitle?: string; value?: string | number; status?: string; accent?: string; action?: string }
-function CardList({ items, onAction }: { items: CardItem[]; onAction?: (t: string) => void }) {
+// `multi`: quando o agente quer deixar escolher VÁRIOS caminhos, emite
+// ```cards {"multi":true,"items":[…]} — aí os cards viram toggle + botão "Confirmar".
+// Single (default): clicar escolhe na hora, trava e marca a opção escolhida.
+function CardList({ items, multi, onAction }: { items: CardItem[]; multi?: boolean; onAction?: (t: string) => void }) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirmed, setConfirmed] = useState(false);
+  const selectable = Boolean(onAction) && items.some((it) => it.action);
+
+  const pick = (i: number, action: string) => {
+    if (confirmed) return;
+    if (multi) {
+      setSelected((prev) => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
+    } else {
+      setSelected(new Set([i]));
+      setConfirmed(true);
+      onAction?.(action);
+    }
+  };
+  const confirmMulti = () => {
+    if (confirmed || selected.size === 0) return;
+    const msg = items.filter((_, i) => selected.has(i)).map((it) => it.action).filter(Boolean).join('\n');
+    setConfirmed(true);
+    onAction?.(msg);
+  };
+
   return (
     <div className="my-3 flex flex-col gap-2">
       {items.map((it, i) => {
         const acc = it.accent ? accentVar(it.accent) : it.status ? statusTone(String(it.status)) : '--brand-bright';
-        const clickable = Boolean(it.action && onAction);
+        const clickable = Boolean(it.action) && selectable && !confirmed;
+        const isSel = selected.has(i);
+        const dimmed = confirmed && !isSel; // depois de escolher, atenua os não escolhidos
         const inner = (
           <>
             <div className="min-w-0">
@@ -173,27 +200,42 @@ function CardList({ items, onAction }: { items: CardItem[]; onAction?: (t: strin
                   <span className="inline-block mt-0.5 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md" style={{ background: `rgb(var(${acc}) / 0.14)`, color: `rgb(var(${acc}))` }}>{String(it.status)}</span>
                 )}
               </div>
-              {clickable && <ChevronRight size={16} className="shrink-0 text-creme-faint" />}
+              {isSel
+                ? <span className="shrink-0 w-5 h-5 rounded-full bg-brand/20 text-brand-bright inline-flex items-center justify-center"><Check size={13} strokeWidth={3} /></span>
+                : (it.action && selectable) ? <ChevronRight size={16} className="shrink-0 text-creme-faint" /> : null}
             </div>
           </>
         );
-        const base = 'w-full flex items-center justify-between gap-3 rounded-xl border bg-surface-1/70 px-3.5 py-2.5 transition-colors';
+        const base = 'w-full flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 transition-all';
+        const selCls = isSel ? 'border-brand/50 bg-brand/8 ring-1 ring-brand/40' : 'border-default bg-surface-1/70';
         return clickable ? (
           <button
             key={i}
-            onClick={() => onAction!(it.action!)}
-            className={`${base} border-default text-left hover:bg-surface-hover hover:border-brand/50 cursor-pointer`}
+            onClick={() => pick(i, it.action!)}
+            className={`${base} ${selCls} text-left hover:bg-surface-hover hover:border-brand/50 cursor-pointer`}
             style={{ borderLeft: `3px solid rgb(var(${acc}))` }}
-            title="Selecionar esta opção"
+            title={multi ? 'Marcar/desmarcar esta opção' : 'Selecionar esta opção'}
           >
             {inner}
           </button>
         ) : (
-          <div key={i} className={`${base} border-default hover:bg-surface-hover/40`} style={{ borderLeft: `3px solid rgb(var(${acc}))` }}>
+          <div key={i} className={`${base} ${selCls} ${dimmed ? 'opacity-50' : ''} ${!isSel ? 'hover:bg-surface-hover/40' : ''}`} style={{ borderLeft: `3px solid rgb(var(${acc}))` }}>
             {inner}
           </div>
         );
       })}
+      {multi && selectable && !confirmed && (
+        <button
+          onClick={confirmMulti}
+          disabled={selected.size === 0}
+          className="self-start mt-1 px-4 py-1.5 rounded-lg text-[12.5px] font-bold transition-opacity bg-brand-bright text-[#0a140a] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Confirmar seleção{selected.size > 0 ? ` (${selected.size})` : ''}
+        </button>
+      )}
+      {multi && confirmed && (
+        <div className="self-start mt-1 text-[12px] text-brand-bright font-semibold inline-flex items-center gap-1.5"><Check size={14} strokeWidth={3} /> {selected.size} {selected.size === 1 ? 'caminho escolhido' : 'caminhos escolhidos'}</div>
+      )}
     </div>
   );
 }
@@ -248,7 +290,7 @@ function ConfirmCard({ data, onAction }: { data: ConfirmData; onAction?: (t: str
   );
 }
 
-export function Markdown({ text, className, onAction, onOpenArtifact }: { text: string; className?: string; onAction?: (t: string) => void; onOpenArtifact?: (a: { title: string; type?: string; content: string }) => void }) {
+function MarkdownImpl({ text, className, onAction, onOpenArtifact }: { text: string; className?: string; onAction?: (t: string) => void; onOpenArtifact?: (a: { title: string; type?: string; content: string }) => void }) {
   const lines = text.replace(/\r/g, '').split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -278,7 +320,8 @@ export function Markdown({ text, className, onAction, onOpenArtifact }: { text: 
             const data = JSON.parse(body);
             if (lk === 'cards') {
               const its = Array.isArray(data) ? data : data?.items;
-              if (Array.isArray(its) && its.length) { blocks.push(<CardList key={key++} items={its} onAction={onAction} />); i = j + 1; continue; }
+              const multi = !Array.isArray(data) && Boolean(data?.multi);
+              if (Array.isArray(its) && its.length) { blocks.push(<CardList key={key++} items={its} multi={multi} onAction={onAction} />); i = j + 1; continue; }
             } else if (lk === 'confirm') {
               blocks.push(<ConfirmCard key={key++} data={data} onAction={onAction} />); i = j + 1; continue;
             } else if (data && typeof data.content === 'string') {
@@ -354,9 +397,9 @@ export function Markdown({ text, className, onAction, onOpenArtifact }: { text: 
     if (imgM && (imgM[1] || (imgM[2] && isImageUrl(imgM[2])))) {
       const url = imgM[1] || imgM[2];
       blocks.push(
-        <a key={key++} href={url} target="_blank" rel="noopener noreferrer" className="block my-2 w-fit">
+        <button key={key++} type="button" onClick={() => useAppStore.getState().openLightbox(url)} className="block my-2 w-fit cursor-zoom-in">
           <img src={url} alt="" loading="lazy" className="max-h-72 max-w-full rounded-xl border border-default object-contain bg-surface-2" />
-        </a>,
+        </button>,
       );
       i++;
       continue;
@@ -423,3 +466,8 @@ export function Markdown({ text, className, onAction, onOpenArtifact }: { text: 
 
   return <div className={className}>{blocks}</div>;
 }
+
+// memo: re-parsear o markdown inteiro custa caro; com props estáveis (text/callbacks)
+// evita re-parse quando o pai re-renderiza por outro motivo. Streaming muda o `text`
+// a cada tick — aí re-parseia mesmo, como deve.
+export const Markdown = memo(MarkdownImpl);
