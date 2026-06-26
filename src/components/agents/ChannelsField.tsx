@@ -87,6 +87,11 @@ export function ChannelsField({ channels, onChange }: Props) {
           <AlertTriangle size={12} className="shrink-0 mt-0.5" />
           <span>{error}</span>
         </p>
+      ) : channels.length === 0 ? (
+        <p className="flex items-start gap-1.5 text-[12px] text-semantic-amber mt-1.5">
+          <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+          <span>Sem canais — este colaborador não receberá mensagens e some do roteamento.</span>
+        </p>
       ) : (
         <p className="text-[12px] text-creme-faint mt-1.5">
           Um colaborador pode atender vários canais. Digite <code className="font-mono text-brand">talki:8:121</code> e

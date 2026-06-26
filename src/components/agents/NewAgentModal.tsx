@@ -67,6 +67,11 @@ export function NewAgentModal({ onClose }: Props) {
       addToast('Preencha nome e cliente', 'amber');
       return;
     }
+    if (channels.length === 0) {
+      // Salvar sem canal é válido (rascunho), mas o colaborador fica fora do
+      // roteamento até receber um canal — sinaliza sem bloquear.
+      addToast('⚠ Sem canais — este colaborador não receberá mensagens', 'amber');
+    }
     setLoading(true);
     try {
       await agentsApi.create({

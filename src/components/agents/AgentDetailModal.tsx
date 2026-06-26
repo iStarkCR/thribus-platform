@@ -57,6 +57,11 @@ export function AgentDetailModal({ agent, onClose }: Props) {
       addToast('Nome e cliente são obrigatórios', 'amber');
       return;
     }
+    if (channels.length === 0) {
+      // Remover todos os canais é válido, mas tira o colaborador do roteamento
+      // (o webhook não tem mais como direcionar mensagens) — sinaliza sem bloquear.
+      addToast('⚠ Sem canais — este colaborador não receberá mensagens', 'amber');
+    }
     setSaving(true);
     try {
       await updateAgent(agent.id, {
