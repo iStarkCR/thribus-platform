@@ -34,7 +34,7 @@ export function CortexOverview() {
       }
     }
     void load();
-    const interval = setInterval(load, 10_000);
+    const interval = setInterval(() => { if (!document.hidden) load(); }, 10_000); // não pollar em aba oculta
     return () => {
       cancelled = true;
       clearInterval(interval);

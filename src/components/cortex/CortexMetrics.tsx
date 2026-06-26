@@ -28,7 +28,7 @@ export function CortexMetrics() {
     }
     void load();
     if (!auto) return;
-    const i = setInterval(load, 5000);
+    const i = setInterval(() => { if (!document.hidden) load(); }, 5000); // não pollar em aba oculta
     return () => clearInterval(i);
   }, [auto]);
 

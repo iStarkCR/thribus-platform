@@ -247,20 +247,23 @@ function NotifBell({ onClick }: { onClick: () => void }) {
 
   useEffect(() => {
     let mounted = true;
+    let unsub: (() => void) | undefined;
     import('@/services/notifications').then(async (mod) => {
-      if (!mod.notificationsConfigured) return;
+      if (!mod.notificationsConfigured || !mounted) return;
       try {
         const list = await mod.listNotifications('ws_texnet', 50);
         if (mounted) setUnread(list.filter((n) => !n.read).length);
-        const unsub = mod.subscribeNotifications('ws_texnet', () => {
+        const u = mod.subscribeNotifications('ws_texnet', () => {
           if (mounted) setUnread((c) => c + 1);
         });
-        return () => unsub();
+        // O cleanup do effect roda síncrono; guarda o unsub aqui. Se já desmontou
+        // durante o await, encerra o canal na hora (senão vaza WebSocket órfão).
+        if (mounted) unsub = u; else u();
       } catch {
         // silencioso — sem Supabase ou sem RLS adequada, badge fica 0
       }
     });
-    return () => { mounted = false; };
+    return () => { mounted = false; unsub?.(); };
   }, []);
 
   return (

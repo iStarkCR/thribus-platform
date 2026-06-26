@@ -103,7 +103,12 @@ export function useOrbConversation() {
 
   useEffect(() => {
     if (!userId) return;
-    return subscribeChat(userId, refetch);
+    // Só refetch se o evento for da sessão do orbe — antes qualquer mensagem de
+    // qualquer conversa disparava um SELECT * da thread do orbe à toa.
+    return subscribeChat(userId, (info) => {
+      if (info && info.sessionId && info.sessionId !== sessionRef.current) return;
+      refetch();
+    });
   }, [userId, refetch]);
 
   // Resolve a resposta pendente quando a msg assistant 'done' chega (realtime).

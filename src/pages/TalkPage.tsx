@@ -565,15 +565,15 @@ export function TalkPage() {
 
   // Agrupa sessões por pasta + hierarquia de pastas (só as ATIVAS — arquivadas
   // ficam numa seção à parte no rodapé). Fixadas (pin) sobem pro topo.
-  const liveSessions = sessions
+  const liveSessions = useMemo(() => sessions
     .filter((s) => !s.archivedAt)
-    .sort((a, b) => (a.pinnedAt ? 0 : 1) - (b.pinnedAt ? 0 : 1)); // estável: mantém updated_at desc dentro de cada grupo
-  const archivedSessions = sessions.filter((s) => s.archivedAt);
-  const ungrouped = liveSessions.filter((s) => !s.folderId);
+    .sort((a, b) => (a.pinnedAt ? 0 : 1) - (b.pinnedAt ? 0 : 1)), [sessions]); // estável: mantém updated_at desc dentro de cada grupo
+  const archivedSessions = useMemo(() => sessions.filter((s) => s.archivedAt), [sessions]);
+  const ungrouped = useMemo(() => liveSessions.filter((s) => !s.folderId), [liveSessions]);
   const byFolder = (fid: string) => liveSessions.filter((s) => s.folderId === fid);
   // Busca da lateral — resultado flat (todas as sessões, ativas + arquivadas) por título.
   const sq = sidebarQuery.trim().toLowerCase();
-  const searchResults = sq ? sessions.filter((s) => s.title.toLowerCase().includes(sq)) : [];
+  const searchResults = useMemo(() => (sq ? sessions.filter((s) => s.title.toLowerCase().includes(sq)) : []), [sessions, sq]);
   // Separadores por data (Hoje/Ontem/…) pelas conversas SEM pasta e não-fixadas.
   const dateBucket = (iso: string): string => {
     const startToday = new Date(); startToday.setHours(0, 0, 0, 0);

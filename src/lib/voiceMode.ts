@@ -10,6 +10,11 @@
  * - VAD adaptativo, menos sensível, com silêncio mais longo (não corta no meio).
  */
 
+// Logs de diagnóstico do VAD/voz — o da linha do RMS roda a cada frame de áudio
+// (serializa string síncrona, trava a main thread com DevTools aberto). Liga só
+// quando for depurar voz.
+const VOICE_DEBUG = false;
+
 export type VoiceState = 'idle' | 'listening' | 'speaking' | 'processing' | 'playing';
 export type VoiceTurn = { id: string; text: string; status: 'queued' | 'processing' | 'done' };
 
@@ -258,7 +263,7 @@ export class VoiceController {
       const onset = busy ? 7 : this.ONSET_FRAMES;
       if (now - this._vadLogAt > 700) {
         this._vadLogAt = now;
-        console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} busy=${busy}`);
+        VOICE_DEBUG && console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} busy=${busy}`);
       }
       if (rms > threshold) {
         this._above++;
@@ -294,7 +299,7 @@ export class VoiceController {
       const blob = chunks.length ? new Blob(chunks, { type: rec.mimeType || 'audio/webm' }) : null;
       this._armRecorder();
       this._refreshState();
-      console.log(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms blob=${blob?.size ?? 0}`);
+      VOICE_DEBUG && console.log(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms blob=${blob?.size ?? 0}`);
       if (this.cancelled || !blob || !hadSpeech) return;
       void this._ingest(blob, dur);
     };
@@ -305,7 +310,7 @@ export class VoiceController {
   private async _ingest(blob: Blob, dur: number): Promise<void> {
     let text = '';
     try { text = (await this.o.transcribe(blob, dur)).trim(); } catch (e) { this.o.onError?.(e as Error); }
-    console.log(`[voz] transcrito: "${text}"`);
+    VOICE_DEBUG && console.log(`[voz] transcrito: "${text}"`);
     if (this.cancelled || !text || this.o.isNoise?.(text)) return;
     this.o.onTranscript?.(text);
     const id = `t${++this.turnSeq}`;
@@ -340,7 +345,7 @@ export class VoiceController {
     if (this.o.quickAck) {
       try {
         const ack = await this.o.quickAck(text);
-        if (ack && !this.cancelled) { console.log(`[voz] ack: "${ack}"`); this._enqueue(ack); }
+        if (ack && !this.cancelled) { VOICE_DEBUG && console.log(`[voz] ack: "${ack}"`); this._enqueue(ack); }
       } catch { /* sem ack */ }
     }
     let reply = '';
@@ -351,7 +356,7 @@ export class VoiceController {
     const { sentences, remaining } = extractSentences(clean + '\n');
     const all = [...sentences];
     if (remaining.trim().length >= 3) all.push(remaining.trim());
-    console.log(`[voz] resposta: ${reply.length} chars, ${all.length} frase(s) p/ TTS`);
+    VOICE_DEBUG && console.log(`[voz] resposta: ${reply.length} chars, ${all.length} frase(s) p/ TTS`);
     for (const s of all) this._enqueue(s);
     // espera o TTS deste turno escoar antes de processar o próximo (fala em ordem).
     await this._waitQueue();
@@ -359,8 +364,8 @@ export class VoiceController {
 
   private _enqueue(sentence: string): void {
     const p = this.o.tts(sentence)
-      .then((b) => { console.log(`[voz] tts "${sentence.slice(0, 24)}…" → ${b?.size ?? 0} bytes`); return b; })
-      .catch((e) => { console.log(`[voz] tts ERRO: ${(e as Error).message}`); return null; });
+      .then((b) => { VOICE_DEBUG && console.log(`[voz] tts "${sentence.slice(0, 24)}…" → ${b?.size ?? 0} bytes`); return b; })
+      .catch((e) => { VOICE_DEBUG && console.log(`[voz] tts ERRO: ${(e as Error).message}`); return null; });
     this.audioQueue.push(p);
     if (!this.queueRunning) void this._drainQueue();
   }
@@ -414,13 +419,13 @@ export class VoiceController {
       audio.muted = false;
       this.playing = true;
       this._refreshState();
-      console.log(`[voz] tocando áudio (${blob.size} bytes)`);
+      VOICE_DEBUG && console.log(`[voz] tocando áudio (${blob.size} bytes)`);
       let done = false;
       const finish = () => { if (done) return; done = true; URL.revokeObjectURL(url); this.playResolve = null; resolve(); };
       this.playResolve = finish;
       audio.onended = finish;
       audio.onerror = finish;
-      audio.play().catch((e) => { console.log(`[voz] play bloqueado: ${(e as Error).message}`); this.o.onError?.(new Error('Áudio bloqueado pelo navegador. Clique na esfera de novo.')); finish(); });
+      audio.play().catch((e) => { VOICE_DEBUG && console.log(`[voz] play bloqueado: ${(e as Error).message}`); this.o.onError?.(new Error('Áudio bloqueado pelo navegador. Clique na esfera de novo.')); finish(); });
     });
   }
 }

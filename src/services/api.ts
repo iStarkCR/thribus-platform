@@ -1292,8 +1292,10 @@ export const templatesApi = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const dashboardApi = {
-  async getMetrics(): Promise<DashboardMetrics> {
-    const agents = await agentsApi.list();
+  // Aceita a lista de agents já carregada (evita re-listar no boot — o initialize
+  // já fez a query escopada por workspace). Sem o arg, lista por conta própria.
+  async getMetrics(agentsArg?: Agent[]): Promise<DashboardMetrics> {
+    const agents = agentsArg ?? await agentsApi.list();
     const totalToday = agents.reduce((sum, a) => sum + a.stats.today, 0);
     const totalEscalated = agents.reduce((sum, a) => sum + a.stats.escalated, 0);
     const resolved = totalToday - totalEscalated;

@@ -174,17 +174,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         localStorage.setItem('activeWorkspaceId', activeWorkspaceId);
       }
 
-      const [agents, tools, executions, escalations, metrics, skills, templates, sectors] = await Promise.all([
+      const [agents, tools, executions, escalations, skills, templates, sectors] = await Promise.all([
         agentsApi.list(activeWorkspaceId),
         toolsApi.list(),
         executionsApi.list(),
         escalationsApi.listPending(),
-        dashboardApi.getMetrics(),
         // skillsApi.list já degrada pra [] se schema não existe — não precisa catch
         skillsApi.list(),
         templatesApi.list().catch(() => [] as AgentTemplate[]),
         listSectors(activeWorkspaceId).catch(() => [] as Sector[]),
       ]);
+      // Métricas derivam dos agents JÁ carregados (escopados por workspace) — sem
+      // re-listar todos os workspaces como o getMetrics() fazia por dentro.
+      const metrics = await dashboardApi.getMetrics(agents);
 
       // Escopa execuções/escalações pelos agentes da conta ativa.
       const agentIds = new Set(agents.map((a) => a.id));
