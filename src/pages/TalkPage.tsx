@@ -104,6 +104,7 @@ export function TalkPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const heroFileRef = useRef<HTMLInputElement>(null);
   const [plusOpen, setPlusOpen] = useState(false);
   const [delegateOpen, setDelegateOpen] = useState(false);
   const [planMode, setPlanMode] = useState(false);
@@ -1387,6 +1388,24 @@ export function TalkPage() {
 
                 {/* Composer no MEIO (igual à referência) — onde estava */}
                 <div className="w-full">
+                  {/* Anexos selecionados no hero — mesmo state do composer da conversa */}
+                  {(attachments.length > 0 || uploading > 0) && (
+                    <div className="flex flex-wrap gap-2 mb-2 px-1 justify-center">
+                      {attachments.map((a, i) => (
+                        <div key={a.path} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
+                          <span>{/^image\//.test(a.mime) ? '🖼️' : /^video\//.test(a.mime) ? '🎬' : '📄'}</span>
+                          <span className="truncate">{a.name}</span>
+                          <button onClick={() => setAttachments((prev) => prev.filter((_, k) => k !== i))} className="text-creme-faint hover:text-semantic-red shrink-0"><X size={13} /></button>
+                        </div>
+                      ))}
+                      {uploading > 0 && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-faint">
+                          <Loader2 size={12} className="animate-spin" /> enviando {uploading}…
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <input ref={heroFileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
                   {recording ? (
                     <AudioRecorderBar agentId={agentId ?? ''} onResult={(t) => { setRecording(false); if (t) setInput((c) => (c ? `${c} ${t}` : t)); }} onCancel={() => setRecording(false)} />
                   ) : (
@@ -1400,9 +1419,10 @@ export function TalkPage() {
                         placeholder={`Mensagem para ${agent.name}…`}
                         className="flex-1 resize-none bg-transparent py-1 text-[15px] leading-[1.5] text-creme placeholder-creme-faint focus:outline-none"
                       />
+                      <button onClick={() => heroFileRef.current?.click()} title="Anexar arquivo — img · PDF · vídeo" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Paperclip size={17} /></button>
                       <button onClick={() => startPanelVoice()} title="Modo voz" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Headphones size={17} /></button>
                       <button onClick={() => setRecording(true)} title="Gravar áudio" className="w-9 h-9 rounded-xl flex items-center justify-center text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors"><Mic size={17} /></button>
-                      <button onClick={() => send()} disabled={sending || !input.trim()} className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors">{sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}</button>
+                      <button onClick={() => send()} disabled={sending || uploading > 0 || (!input.trim() && attachments.length === 0)} className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors">{sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}</button>
                     </div>
                   )}
                   {/* Pasta de trabalho da 1ª mensagem — onde o colaborador vai rodar.
