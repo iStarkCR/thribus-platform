@@ -413,8 +413,12 @@ export function NeuralSphere({
       raf = requestAnimationFrame(animate);
       if (!visible) return; // fora da tela → não gasta GPU
       const tNow = performance.now();
-      if (tNow - lastFrame < minFrameMs) return; // cap de fps (não recalcula a cada frame nativo)
+      const elapsed = tNow - lastFrame;
+      if (elapsed < minFrameMs) return; // cap de fps (não recalcula a cada frame nativo)
       lastFrame = tNow;
+      // Anima por TEMPO real, não por frame: a 30fps cada frame vale ~2 frames de
+      // 60fps. Sem isso, capar o fps deixava os pontos/rotação na metade da velocidade.
+      const frameScale = Math.min(elapsed / 16.67, 3);
       const now = tNow * 0.001;
       const ambientPulse = ambient ? 0.18 + Math.sin(now * 0.5) * 0.06 : 0;
       // attack rápido / decay lento — sensação de respiração natural
@@ -431,7 +435,7 @@ export function NeuralSphere({
 
       // Pulsos viajando pelas linhas (lerp nó A→B; ao chegar, parte do B). Cada um
       // deixa um rastro CONTÍNUO (linha) que esmaece atrás da cabeça.
-      const travDt = 0.016 * pulseSpeed * (1 + I * 0.8); // pulseSpeed calibra por instância; +rápido na voz
+      const travDt = 0.016 * frameScale * pulseSpeed * (1 + I * 0.8); // pulseSpeed calibra por instância; +rápido na voz
       for (let k = 0; k < TRAV_COUNT; k++) {
         travT[k] += travSpeed[k] * travDt;
         if (travT[k] >= 1) {
@@ -503,9 +507,9 @@ export function NeuralSphere({
       parallaxGroup.rotation.y += (targetRot.y + wobbleY - parallaxGroup.rotation.y) * PARALLAX_LERP;
       parallaxGroup.rotation.z += (wobbleZ - parallaxGroup.rotation.z) * 0.18;
 
-      outerGroup.rotation.y += AUTO_ROTATE_SPEED_OUTER * speedMultiplier * speedBoost;
-      innerGroup.rotation.y += AUTO_ROTATE_SPEED_INNER * speedMultiplier * speedBoost;
-      innerGroup.rotation.x += AUTO_ROTATE_SPEED_INNER * 0.4 * speedMultiplier * speedBoost;
+      outerGroup.rotation.y += AUTO_ROTATE_SPEED_OUTER * speedMultiplier * speedBoost * frameScale;
+      innerGroup.rotation.y += AUTO_ROTATE_SPEED_INNER * speedMultiplier * speedBoost * frameScale;
+      innerGroup.rotation.x += AUTO_ROTATE_SPEED_INNER * 0.4 * speedMultiplier * speedBoost * frameScale;
 
       renderer.render(scene, camera);
     };
