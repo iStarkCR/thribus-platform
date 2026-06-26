@@ -331,6 +331,7 @@ function MarkdownImpl({ text, className, onAction, onOpenArtifact }: { text: str
   let key = 0;
 
   while (i < lines.length) {
+    const iStart = i; // guard anti-loop (ver fim do laço)
     const line = lines[i];
 
     // ── bloco de código (só se houver fechamento; senão trata literal) ────
@@ -491,12 +492,20 @@ function MarkdownImpl({ text, className, onAction, onOpenArtifact }: { text: str
     while (
       i < lines.length && lines[i].trim() !== '' &&
       !isHeading(lines[i]) && !isUl(lines[i]) && !isOl(lines[i]) &&
-      !isQuote(lines[i]) && !isFence(lines[i]) && !isTableRow(lines[i])
+      !isQuote(lines[i]) && !isFence(lines[i]) &&
+      // só PARA numa linha de tabela se ela REALMENTE inicia tabela (tem o separador
+      // na seguinte); uma `| x |` solta é prosa — senão o laço travava nela.
+      !(isTableRow(lines[i]) && i + 1 < lines.length && isTableSep(lines[i + 1]))
     ) {
       para.push(lines[i]);
       i++;
     }
     if (para.length) blocks.push(<p key={key++} className="whitespace-pre-wrap">{renderInline(para.join('\n'))}</p>);
+    // Rede de segurança: se NENHUM branch consumiu esta linha (ex: linha de tabela
+    // `| x |` sem o separador `|---|` na seguinte — o branch de tabela não pega e o
+    // de parágrafo a exclui), o cursor ficaria parado → LOOP INFINITO travando a
+    // thread ("página sem resposta"). Trata a linha como texto e avança.
+    if (i === iStart) { blocks.push(<p key={key++} className="whitespace-pre-wrap">{renderInline(lines[i])}</p>); i++; }
   }
 
   return <div className={className}>{blocks}</div>;
