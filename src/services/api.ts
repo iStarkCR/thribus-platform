@@ -40,6 +40,7 @@ interface AgentRow {
   system_prompt: string;
   tools: string[];
   channel: string | null;
+  channels?: string[] | null;
   role: Agent['role'] | null;
   sector_id: string | null;
   is_supervisor: boolean | null;
@@ -69,6 +70,7 @@ function rowToAgent(r: AgentRow & { workspace_id?: string | null }): Agent {
     systemPrompt: r.system_prompt,
     tools: r.tools ?? [],
     channel: r.channel ?? undefined,
+    channels: r.channels ?? (r.channel ? [r.channel] : []),
     workspaceId: r.workspace_id ?? undefined,
     role: r.role ?? undefined,
     sectorId: r.sector_id ?? undefined,
@@ -436,6 +438,11 @@ export const agentsApi = {
       SEED_AGENTS.push(newAgent);
       return newAgent;
     }
+    // Multi-canal: persiste channels[] e mantém channel = channels[0] pra
+    // retrocompat (o worker ainda roteia pelo channel singular).
+    const channels = (payload.channels ?? (payload.channel ? [payload.channel] : []))
+      .map((c) => c.trim())
+      .filter(Boolean);
     const insertPayload: Record<string, unknown> = {
       name: payload.name,
       client: payload.client,
@@ -444,7 +451,8 @@ export const agentsApi = {
       model: payload.model,
       system_prompt: payload.systemPrompt,
       tools: payload.tools,
-      channel: payload.channel ?? null,
+      channels,
+      channel: channels[0] ?? null,
       status: 'standby',
     };
     if (payload.workspaceId) insertPayload.workspace_id = payload.workspaceId;
@@ -475,7 +483,15 @@ export const agentsApi = {
     if (payload.model !== undefined) update.model = payload.model;
     if (payload.systemPrompt !== undefined) update.system_prompt = payload.systemPrompt;
     if (payload.tools !== undefined) update.tools = payload.tools;
-    if (payload.channel !== undefined) update.channel = payload.channel || null;
+    // Multi-canal: ao receber channels[], persiste o array e ressincroniza o
+    // channel singular (= channels[0]) que o worker usa pra rotear.
+    if (payload.channels !== undefined) {
+      const channels = payload.channels.map((c) => c.trim()).filter(Boolean);
+      update.channels = channels;
+      update.channel = channels[0] ?? null;
+    } else if (payload.channel !== undefined) {
+      update.channel = payload.channel || null;
+    }
     if (payload.workspaceId !== undefined) {
       (update as Record<string, unknown>).workspace_id = payload.workspaceId || null;
     }
