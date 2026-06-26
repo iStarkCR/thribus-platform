@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, X, Loader2, Check, Sparkles } from 'lucide-react';
 import { createDemand, type Demand } from '@/services/demands';
 import { PRIORITIES } from './demandUtils';
@@ -48,7 +49,8 @@ export function AddDemandModal({
     } catch (e) { setError((e as Error).message); } finally { setSaving(false); }
   }
 
-  return (
+  // Portal pro body: /demands roda com [zoom:1.1]; sem portal o modal herda o zoom.
+  return createPortal(
     <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-[70] p-4" onClick={onClose}>
       <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-default shrink-0">
@@ -119,7 +121,8 @@ export function AddDemandModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

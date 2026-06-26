@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X, Loader2, Send, AlertTriangle, Folder, Trash2, RefreshCw, Check, Pencil, Save,
   DollarSign, Clock, Cpu, Link2, ThumbsUp,
@@ -108,9 +109,12 @@ export function DemandDetailModal({
     }, 'Demanda atualizada');
   }
 
-  return (
-    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-start justify-center z-[70] p-3 md:p-6 overflow-y-auto" onClick={onClose}>
-      <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-[1200px] h-[82vh] max-h-[calc(100dvh-1.5rem)] md:max-h-[calc(100dvh-3rem)] my-auto flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+  // Portal pro body: a pagina /demands roda dentro de um container com [zoom:1.1]
+  // (AppLayout) — sem o portal o modal `fixed inset-0` herda o zoom, fica maior que
+  // a viewport e corta topo/rodape + cria scrollbar. No body escapa do zoom.
+  return createPortal(
+    <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-[70] p-3 md:p-6" onClick={onClose}>
+      <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-[1200px] h-[82vh] max-h-[calc(100dvh-1.5rem)] md:max-h-[calc(100dvh-3rem)] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Cabeçalho */}
         <div className="flex items-start justify-between px-5 py-3.5 border-b border-default shrink-0 gap-3">
           <div className="min-w-0">
@@ -279,7 +283,8 @@ export function DemandDetailModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
