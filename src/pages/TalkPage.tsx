@@ -1415,6 +1415,7 @@ export function TalkPage() {
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+                        onPaste={(e) => { const fs = Array.from(e.clipboardData?.files ?? []); if (fs.length) { e.preventDefault(); addFiles(fs); } }}
                         rows={1}
                         placeholder={`Mensagem para ${agent.name}…`}
                         className="flex-1 resize-none bg-transparent py-1 text-[15px] leading-[1.5] text-creme placeholder-creme-faint focus:outline-none"
