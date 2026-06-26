@@ -7,7 +7,7 @@
  * A ponte streama em chunks de ~400ms; aqui suavizamos com catch-up: revela mais
  * rápido quando está atrás, em ritmo de digitação quando perto do fim.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Markdown } from '@/components/shared/Markdown';
 
 const isFenceLine = (l: string) => /^\s*```/.test(l);
@@ -58,7 +58,7 @@ function openFenceStart(text: string): number {
   return inFence ? openAt : -1;
 }
 
-export function StreamingMarkdown({ text, streaming, onAction, onOpenArtifact }: {
+export const StreamingMarkdown = memo(function StreamingMarkdown({ text, streaming, onAction, onOpenArtifact }: {
   text: string;
   streaming: boolean;
   onAction?: (t: string) => void;
@@ -99,4 +99,4 @@ export function StreamingMarkdown({ text, streaming, onAction, onOpenArtifact }:
 
   const shown = streaming ? target.slice(0, n) : text;
   return <Markdown text={shown} onAction={onAction} onOpenArtifact={onOpenArtifact} />;
-}
+});
