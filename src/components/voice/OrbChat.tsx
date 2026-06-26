@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Send, Mic, Loader2, AudioLines } from 'lucide-react';
+import { X, Send, Mic, Loader2, AudioLines, Paperclip } from 'lucide-react';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { Markdown } from '@/components/shared/Markdown';
+import { MessageAttachments } from '@/components/chat/MessageAttachments';
+import { uploadAttachment, type Attachment } from '@/services/collaboratorChat';
+import { useAppStore } from '@/hooks/useAppStore';
 import type { OrbConversation } from '@/hooks/useOrbConversation';
 
 const PANEL_W = 360;
@@ -12,7 +15,25 @@ const PANEL_H = 460;
 export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; size: number }; onClose: () => void; conv: OrbConversation }) {
   const { messages, voiceActive, listening, talking, speaking, waiting } = conv;
   const [input, setInput] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function addFiles(files: File[]) {
+    if (!conv.userId || !files.length) return;
+    for (const file of files) {
+      setUploading((n) => n + 1);
+      try {
+        const att = await uploadAttachment(conv.userId, conv.sessionId, file);
+        setAttachments((prev) => [...prev, att]);
+      } catch (e) {
+        useAppStore.getState().addToast('Falha no anexo: ' + (e as Error).message, 'red');
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  }
 
   // Liga a transcrição do mic (fora do modo voz) ao input.
   useEffect(() => {
@@ -34,7 +55,12 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
-  const submit = () => { const t = input.trim(); if (!t) return; setInput(''); conv.send(t); };
+  const submit = () => {
+    const t = input.trim();
+    if (!t && attachments.length === 0) return;
+    setInput(''); setAttachments([]);
+    conv.send(t, attachments);
+  };
 
   return (
     <div className="fixed z-[61] flex flex-col rounded-2xl border border-default bg-surface-1/95 backdrop-blur-md shadow-2xl overflow-hidden" style={style}>
@@ -66,7 +92,10 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
         ) : (
           messages.map((m) => (
             <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[82%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand text-white rounded-br-sm' : 'bg-surface-2 text-creme border border-default rounded-bl-sm'}`}>{m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}</div>
+              <div className={`max-w-[82%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand text-white rounded-br-sm' : 'bg-surface-2 text-creme border border-default rounded-bl-sm'}`}>
+                {m.attachments?.length > 0 && <MessageAttachments items={m.attachments} />}
+                {m.content && (m.role === 'assistant' ? <Markdown text={m.content} /> : m.content)}
+              </div>
             </div>
           ))
         )}
@@ -80,7 +109,33 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
         <div className="mb-1.5 px-0.5">
           <CortexBrainBar />
         </div>
+        {(attachments.length > 0 || uploading > 0) && (
+          <div className="flex flex-wrap gap-1.5 mb-1.5 px-0.5">
+            {attachments.map((a, i) => (
+              <div key={a.path} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11px] text-creme-dim max-w-[150px]">
+                <span>{/^image\//.test(a.mime) ? '🖼️' : /^video\//.test(a.mime) ? '🎬' : '📄'}</span>
+                <span className="truncate">{a.name}</span>
+                <button onClick={() => setAttachments((prev) => prev.filter((_, k) => k !== i))} className="text-creme-faint hover:text-semantic-red shrink-0"><X size={12} /></button>
+              </div>
+            ))}
+            {uploading > 0 && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-3 border border-default text-[11px] text-creme-faint">
+                <Loader2 size={11} className="animate-spin" /> enviando {uploading}…
+              </div>
+            )}
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
+        />
         <div className="flex items-end gap-1.5 bg-surface-2 border border-default rounded-xl px-2 py-1.5">
+          <button onClick={() => fileInputRef.current?.click()} title="Anexar arquivo — img · PDF · vídeo" className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-creme-faint hover:text-creme hover:bg-surface-hover transition-colors">
+            <Paperclip size={16} />
+          </button>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -94,7 +149,7 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
               {voiceActive ? <AudioLines size={16} className="animate-pulse" /> : <Mic size={16} />}
             </button>
           )}
-          <button onClick={submit} disabled={!input.trim()} className="w-8 h-8 rounded-lg bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors">
+          <button onClick={submit} disabled={(!input.trim() && attachments.length === 0) || uploading > 0} className="w-8 h-8 rounded-lg bg-brand text-white flex items-center justify-center shrink-0 disabled:opacity-40 hover:bg-brand-bright transition-colors">
             <Send size={15} />
           </button>
         </div>
