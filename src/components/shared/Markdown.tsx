@@ -152,6 +152,23 @@ function statusTone(s: string): string {
   return '--semantic-blue';
 }
 
+// Persistência da escolha (cards e confirmação) em localStorage — sobrevive a sair
+// da conversa/modal e a reload. Chave = hash estável do conteúdo do bloco; é
+// por-navegador (não sincroniza entre dispositivos). Sem msgId disponível aqui, o
+// hash de conteúdo é o suficiente: dois blocos idênticos compartilhariam estado,
+// caso raro e aceitável.
+function choiceKey(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return 'tcard:' + (h >>> 0).toString(36);
+}
+function loadChoice(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function saveChoice(key: string, val: string): void {
+  try { localStorage.setItem(key, val); } catch { /* quota/privado/SSR */ }
+}
+
 // `action` (opcional): texto enviado ao chat quando o card é clicado — vira uma
 // opção selecionável (ex: escolher canal A/B). Sem action, o card é informativo.
 interface CardItem { title?: string; subtitle?: string; value?: string | number; status?: string; accent?: string; action?: string }
@@ -159,8 +176,13 @@ interface CardItem { title?: string; subtitle?: string; value?: string | number;
 // ```cards {"multi":true,"items":[…]} — aí os cards viram toggle + botão "Confirmar".
 // Single (default): clicar escolhe na hora, trava e marca a opção escolhida.
 function CardList({ items, multi, onAction }: { items: CardItem[]; multi?: boolean; onAction?: (t: string) => void }) {
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [confirmed, setConfirmed] = useState(false);
+  const storeKey = choiceKey('cards|' + (multi ? 'm|' : 's|') + items.map((it) => String(it.title ?? '') + '>' + String(it.action ?? '')).join('|'));
+  const [selected, setSelected] = useState<Set<number>>(() => {
+    const v = loadChoice(storeKey);
+    if (!v) return new Set();
+    try { return new Set(JSON.parse(v) as number[]); } catch { return new Set(); }
+  });
+  const [confirmed, setConfirmed] = useState<boolean>(() => loadChoice(storeKey) != null);
   const selectable = Boolean(onAction) && items.some((it) => it.action);
 
   const pick = (i: number, action: string) => {
@@ -170,13 +192,16 @@ function CardList({ items, multi, onAction }: { items: CardItem[]; multi?: boole
     } else {
       setSelected(new Set([i]));
       setConfirmed(true);
+      saveChoice(storeKey, JSON.stringify([i]));
       onAction?.(action);
     }
   };
   const confirmMulti = () => {
     if (confirmed || selected.size === 0) return;
-    const msg = items.filter((_, i) => selected.has(i)).map((it) => it.action).filter(Boolean).join('\n');
+    const idx = [...selected];
+    const msg = idx.map((i) => items[i]?.action).filter(Boolean).join('\n');
     setConfirmed(true);
+    saveChoice(storeKey, JSON.stringify(idx));
     onAction?.(msg);
   };
 
@@ -265,10 +290,19 @@ function ArtifactChip({ data, onOpen }: { data: ArtifactInfo; onOpen?: (a: { tit
 
 interface ConfirmData { action?: string; detail?: string; danger?: boolean; confirm?: string; cancel?: string }
 function ConfirmCard({ data, onAction }: { data: ConfirmData; onAction?: (t: string) => void }) {
-  const [done, setDone] = useState<null | 'ok' | 'no'>(null);
+  const storeKey = choiceKey('confirm|' + String(data.action ?? '') + '|' + String(data.detail ?? ''));
+  const [done, setDone] = useState<null | 'ok' | 'no'>(() => {
+    const v = loadChoice(storeKey); return v === 'ok' || v === 'no' ? v : null;
+  });
   const tone = data.danger ? '--semantic-red' : '--gold-bright';
   const confirmMsg = data.confirm || `Confirmado: ${data.action}. Pode executar.`;
   const cancelMsg = data.cancel || `Cancela isso — não execute "${data.action}".`;
+  // Só dispara onAction no CLIQUE real; ao remontar (escolha já gravada) apenas
+  // mostra o estado, sem reenviar a mensagem.
+  const choose = (v: 'ok' | 'no', msg: string) => {
+    if (done) return;
+    setDone(v); saveChoice(storeKey, v); onAction?.(msg);
+  };
   return (
     <div className="my-3 rounded-xl px-3.5 py-3" style={{ border: `1px solid rgb(var(${tone}) / 0.4)`, background: `linear-gradient(180deg, rgb(var(${tone}) / 0.08), transparent)` }}>
       <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] mb-1.5" style={{ color: `rgb(var(${tone}))` }}>
@@ -282,8 +316,8 @@ function ConfirmCard({ data, onAction }: { data: ConfirmData; onAction?: (t: str
         </div>
       ) : (
         <div className="flex gap-2 mt-1">
-          <button onClick={() => { setDone('ok'); onAction?.(confirmMsg); }} className="px-4 py-1.5 rounded-lg text-[12.5px] font-bold transition-opacity hover:opacity-90" style={{ background: `rgb(var(${tone}))`, color: '#0a140a' }}>Confirmar</button>
-          <button onClick={() => { setDone('no'); onAction?.(cancelMsg); }} className="px-4 py-1.5 rounded-lg text-[12.5px] font-medium border border-default text-creme-mute hover:bg-surface-hover transition-colors">Cancelar</button>
+          <button onClick={() => choose('ok', confirmMsg)} className="px-4 py-1.5 rounded-lg text-[12.5px] font-bold transition-opacity hover:opacity-90" style={{ background: `rgb(var(${tone}))`, color: '#0a140a' }}>Confirmar</button>
+          <button onClick={() => choose('no', cancelMsg)} className="px-4 py-1.5 rounded-lg text-[12.5px] font-medium border border-default text-creme-mute hover:bg-surface-hover transition-colors">Cancelar</button>
         </div>
       )}
     </div>
