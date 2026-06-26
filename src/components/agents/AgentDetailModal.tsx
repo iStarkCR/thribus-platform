@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Trash2, Save, AlertTriangle } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
+import { ChannelsField } from './ChannelsField';
 import { AgentMemoryTab } from './AgentMemoryTab';
 import { useAppStore } from '@/hooks/useAppStore';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
@@ -28,7 +29,9 @@ export function AgentDetailModal({ agent, onClose }: Props) {
   // string inválida no DB. safeModel() força fallback pro default.
   const [model, setModel] = useState<AIModel>(safeModel(agent.model));
   const modelIsLegacy = !isValidModel(agent.model);
-  const [channel, setChannel] = useState(agent.channel ?? '');
+  const [channels, setChannels] = useState<string[]>(
+    agent.channels ?? (agent.channel ? [agent.channel] : []),
+  );
   const [workspaceId, setWorkspaceId] = useState(agent.workspaceId ?? '');
   const [prompt, setPrompt] = useState(agent.systemPrompt);
   const [tools, setTools] = useState<string[]>(agent.tools);
@@ -44,7 +47,7 @@ export function AgentDetailModal({ agent, onClose }: Props) {
     sector !== agent.sector ||
     type !== agent.type ||
     model !== agent.model ||
-    channel !== (agent.channel ?? '') ||
+    JSON.stringify(channels) !== JSON.stringify(agent.channels ?? (agent.channel ? [agent.channel] : [])) ||
     workspaceId !== (agent.workspaceId ?? '') ||
     prompt !== agent.systemPrompt ||
     JSON.stringify(tools) !== JSON.stringify(agent.tools);
@@ -62,7 +65,7 @@ export function AgentDetailModal({ agent, onClose }: Props) {
         sector: sector.trim(),
         type,
         model,
-        channel: channel.trim(),
+        channels,
         workspaceId: workspaceId || undefined,
         systemPrompt: prompt,
         tools,
@@ -230,18 +233,9 @@ export function AgentDetailModal({ agent, onClose }: Props) {
 
           <div>
             <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
-              Canal (slug do WhatsApp / inbox)
+              Canais (inbox Talki)
             </label>
-            <input
-              className="input font-mono"
-              value={channel}
-              onChange={(e) => setChannel(e.target.value)}
-              placeholder="texnet-duall"
-            />
-            <p className="text-[12px] text-creme-faint mt-1.5">
-              Slug do canal no CRM (ex: <code className="font-mono text-brand">texnet-duall</code>). É como o webhook
-              roteia mensagens deste canal para este colaborador.
-            </p>
+            <ChannelsField channels={channels} onChange={setChannels} />
           </div>
 
           <div>
@@ -311,7 +305,8 @@ export function AgentDetailModal({ agent, onClose }: Props) {
             sector,
             type,
             model,
-            channel,
+            channels,
+            channel: channels[0] ?? '',
             workspaceId,
             systemPrompt: prompt,
             tools,
