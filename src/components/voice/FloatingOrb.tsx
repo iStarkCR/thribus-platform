@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useWakeWordListener } from '@/hooks/useWakeWordListener';
@@ -43,6 +44,7 @@ export function FloatingOrb() {
   const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
   const voiceModeActive = useAppStore((s) => s.voiceModeActive);
   const sttBusy = useAppStore((s) => s.sttBusy);
+  const { pathname } = useLocation();
 
   const conv = useOrbConversation();
 
@@ -108,7 +110,9 @@ export function FloatingOrb() {
     }
   };
 
-  if (!orbEnabled) return null;
+  // No /talk a própria página já renderiza esferas (welcome + modo voz). O orbe
+  // global aqui empilharia outro contexto WebGL por cima → trava ao entrar no chat.
+  if (!orbEnabled || pathname.startsWith('/talk')) return null;
 
   const active = conv.voiceActive || chatOpen;
   const intensity = conv.voiceActive ? 0.95 : chatOpen ? 0.85 : hovered ? 0.7 : wakeFlash ? 0.6 : 0.32;

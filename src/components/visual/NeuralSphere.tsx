@@ -317,6 +317,8 @@ export function NeuralSphere({
     const baseHSL = { h: 0, s: 0, l: 0 };
     baseColor.getHSL(baseHSL);
     let raf = 0;
+    let lastFrame = 0;
+    const minFrameMs = 1000 / 30; // cap ~30fps — sem isso roda a 120Hz em ProMotion e queima GPU
     // Performance: mantém o movimento FLUIDO (rAF nativo — sem cap, que picotava em
     // ProMotion), mas PAUSA quando sai da tela (IntersectionObserver). A carga é
     // contida pelo pixelRatio menor (ver setPixelRatio) em vez de cortar frames.
@@ -410,7 +412,10 @@ export function NeuralSphere({
     const animate = () => {
       raf = requestAnimationFrame(animate);
       if (!visible) return; // fora da tela → não gasta GPU
-      const now = performance.now() * 0.001;
+      const tNow = performance.now();
+      if (tNow - lastFrame < minFrameMs) return; // cap de fps (não recalcula a cada frame nativo)
+      lastFrame = tNow;
+      const now = tNow * 0.001;
       const ambientPulse = ambient ? 0.18 + Math.sin(now * 0.5) * 0.06 : 0;
       // attack rápido / decay lento — sensação de respiração natural
       const target = Math.max(ambientPulse, Math.min(1, intensityRef.current));
