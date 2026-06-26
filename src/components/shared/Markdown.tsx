@@ -371,8 +371,9 @@ function MarkdownImpl({ text, className, onAction, onOpenArtifact }: { text: str
         i = j + 1;
         continue;
       }
-      // sem cerca de fechamento → não engole o resto: renderiza a linha literal
-      blocks.push(<p key={key++} className="whitespace-pre-wrap">{renderInline(line)}</p>);
+      // cerca de abertura sem par (órfã) → ignora a linha da cerca em vez de
+      // mostrar um ``` solto e feio (lixo de formatação do agente). O resto do
+      // texto segue sendo processado como markdown normal.
       i++;
       continue;
     }
