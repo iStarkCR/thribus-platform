@@ -134,9 +134,9 @@ const verbFor = (label: string | null) => (label && VERB[label]) || `usando ${la
 // `live`: enquanto a resposta ainda está sendo gerada, assina os run_events em
 // tempo real (mostra "Executando… rodando X" atualizando) — pra ver o que o
 // colaborador consulta NO MEIO da resposta. Concluída, vira estática.
-export function MessageSteps({ refId, className, onAct, live }: { refId?: string | null; className?: string; onAct?: OnStepAct; live?: boolean }) {
+export function MessageSteps({ refId, className, onAct, live, defaultOpen }: { refId?: string | null; className?: string; onAct?: OnStepAct; live?: boolean; defaultOpen?: boolean }) {
   const [events, setEvents] = useState<RunEvent[]>([]);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen ?? false);
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
 
   useEffect(() => {
