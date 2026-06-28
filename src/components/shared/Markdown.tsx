@@ -90,6 +90,31 @@ const isQuote = (l: string) => /^\s*>\s?/.test(l);
 const isFence = (l: string) => /^\s*```/.test(l);
 const isTableRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
 const isTableSep = (l: string) => /-/.test(l) && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(l);
+
+// Às vezes o agente cola uma string JSON-escapada como PROSA (ex: a definição de
+// uma demanda), com `\n`/`\t` LITERAIS (2 chars) em vez de quebras reais. O split
+// por '\n' real não pega isso → o blocão aparece cru, com `\n` à mostra. Aqui
+// desescapamos esses literais FORA de código:
+//   • cercas ```…``` (dentro o `\n` é escape válido de JSON em ```cards/```json —
+//     mexer quebraria o JSON.parse / o CodeViewer);
+//   • código inline `…` (ali `\n`/`\t` literal pode ser conteúdo de propósito,
+//     ex: o agente falando do escape ou de um path — preservado verbatim no split).
+function unescapeProseWhitespace(text: string): string {
+  if (!text.includes('\\n') && !text.includes('\\t') && !text.includes('\\r')) return text;
+  const lines = text.split('\n');
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (isFence(lines[i])) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    // Fatia preservando código inline (`…`): partes ímpares do split são code
+    // spans, mantidas verbatim; só a prosa (índices pares) é desescapada. Sem
+    // placeholder, sem risco de colisão com números soltos da prosa.
+    lines[i] = lines[i].split(/(`[^`]*`)/).map((part, k) =>
+      k % 2 === 1 ? part : part.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t'),
+    ).join('');
+  }
+  return lines.join('\n');
+}
 // número de verdade: moeda opcional, sinal, dígitos/separadores, % opcional.
 const numeric = (s: string) => { const t = s.trim(); return /\d/.test(t) && /^(US\$|R\$|\$)?\s*[+-]?[\d.,]+\s*%?$/.test(t); };
 
@@ -325,7 +350,7 @@ function ConfirmCard({ data, onAction }: { data: ConfirmData; onAction?: (t: str
 }
 
 function MarkdownImpl({ text, className, onAction, onOpenArtifact }: { text: string; className?: string; onAction?: (t: string) => void; onOpenArtifact?: (a: { title: string; type?: string; content: string }) => void }) {
-  const lines = text.replace(/\r/g, '').split('\n');
+  const lines = unescapeProseWhitespace(text).replace(/\r/g, '').split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
   let key = 0;
