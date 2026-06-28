@@ -1565,6 +1565,21 @@ async function loop() {
 // Navegador de pastas: poller próprio e rápido (independe do loop pesado) pra
 // navegar fluido no seletor "Abrir pasta…" do painel.
 setInterval(tickFsBrowse, 700);
+
+// ── Auto-limpeza de órfãs no boot ────────────────────────────────────────────
+// Um restart/deploy/crash do bridge pode matar o processo ENTRE um chunk de
+// streaming e o write final (status 'done'), deixando a msg presa em 'processing'
+// (spinner eterno no painel). No boot NÃO há sessão de chat ativa — toda msg em
+// 'processing' é resíduo de uma instância morta —, então destrava todas ANTES de
+// o loop principal começar a processar (sem race). Best-effort: falhou, segue.
+try {
+  const { data: reaped } = await sb.from('collaborator_messages')
+    .update({ status: 'done' })
+    .eq('status', 'processing')
+    .select('id');
+  if (reaped?.length) console.log(`[boot] destravadas ${reaped.length} msg(s) órfãs em 'processing'`);
+} catch (e) { console.error('[boot] auto-limpeza de órfãs falhou:', e.message); }
+
 await initMemory(); // memória de longo prazo (best-effort: se falhar, segue sem)
 loop().catch((e) => {
   console.error('fatal:', e);
