@@ -115,6 +115,24 @@ function unescapeProseWhitespace(text: string): string {
   }
   return lines.join('\n');
 }
+
+// ── Marcador de fronteira "raciocínio ↔ resposta final" ──────────────────────
+// O Bukowiski fecha respostas de execução com `<!--FINAL-->`: tudo ANTES é
+// processo (recolhido num accordion pelo StreamingMarkdown), o que vem DEPOIS é
+// a resposta. Aqui ficam o split (usado pelo accordion) e uma limpeza defensiva:
+// em qualquer render que NÃO divida (demandas, orbe, voz), o marcador é apenas
+// removido pra nunca aparecer cru.
+const FINAL_MARKER_RE = /[ \t]*<!--\s*FINAL\s*-->[ \t]*/i;
+const FINAL_MARKER_G = /[ \t]*<!--\s*FINAL\s*-->[ \t]*/gi;
+export function splitFinalMarker(text: string): { process: string; answer: string } | null {
+  const m = FINAL_MARKER_RE.exec(text);
+  if (!m) return null;
+  const process = text.slice(0, m.index).trim();
+  const answer = text.slice(m.index + m[0].length).trim();
+  if (!process || !answer) return null; // marcador no começo/fim → trata como ausente
+  return { process, answer };
+}
+
 // número de verdade: moeda opcional, sinal, dígitos/separadores, % opcional.
 const numeric = (s: string) => { const t = s.trim(); return /\d/.test(t) && /^(US\$|R\$|\$)?\s*[+-]?[\d.,]+\s*%?$/.test(t); };
 
@@ -350,7 +368,7 @@ function ConfirmCard({ data, onAction }: { data: ConfirmData; onAction?: (t: str
 }
 
 function MarkdownImpl({ text, className, onAction, onOpenArtifact }: { text: string; className?: string; onAction?: (t: string) => void; onOpenArtifact?: (a: { title: string; type?: string; content: string }) => void }) {
-  const lines = unescapeProseWhitespace(text).replace(/\r/g, '').split('\n');
+  const lines = unescapeProseWhitespace(text.replace(FINAL_MARKER_G, '')).replace(/\r/g, '').split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
   let key = 0;

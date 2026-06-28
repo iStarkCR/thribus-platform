@@ -8,7 +8,31 @@
  * rápido quando está atrás, em ritmo de digitação quando perto do fim.
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Markdown } from '@/components/shared/Markdown';
+import { ChevronRight } from 'lucide-react';
+import { Markdown, splitFinalMarker } from '@/components/shared/Markdown';
+
+// Accordion do "raciocínio": recolhe a narração de processo (passos, "deixa eu
+// ver", typecheck…) e deixa só a resposta final à mostra. Fechado por padrão.
+function ProcessAccordion({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-[12px] text-creme-mute hover:text-creme transition-colors select-none"
+      >
+        <ChevronRight size={13} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+        {open ? 'Ocultar raciocínio' : 'Ver raciocínio'}
+      </button>
+      {open && (
+        <div className="mt-1.5 pl-3 border-l-2 border-default/70 opacity-70 text-[12.5px]">
+          <Markdown text={text} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 const isFenceLine = (l: string) => /^\s*```/.test(l);
 const isTableRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
@@ -70,7 +94,14 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({ text, streami
     const of = openFenceStart(text);
     return of >= 0 ? text.slice(0, of) : text;
   }, [text, streaming]);
-  const regions = useMemo(() => blockRegions(target), [target]);
+  const regions = useMemo(() => {
+    const r = blockRegions(target);
+    // marcador <!--FINAL--> é saltado inteiro pelo cursor (nunca pisca parcial);
+    // quando ultrapassado, o Markdown o remove (defensivo) — flash zero.
+    const mm = /<!--\s*FINAL\s*-->/i.exec(target);
+    if (mm) r.push([mm.index, mm.index + mm[0].length]);
+    return r;
+  }, [target]);
 
   const [n, setN] = useState(streaming ? 0 : text.length);
   const targetRef = useRef(target); targetRef.current = target;
@@ -97,6 +128,20 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({ text, streami
     return () => clearInterval(id);
   }, [streaming, text.length]);
 
-  const shown = streaming ? target.slice(0, n) : text;
-  return <Markdown text={shown} onAction={onAction} onOpenArtifact={onOpenArtifact} />;
+  // Completo: separa o raciocínio (recolhido) da resposta final, se o agente
+  // marcou com <!--FINAL-->. Sem marcador → render normal (degrada pro atual).
+  if (!streaming) {
+    const split = splitFinalMarker(text);
+    if (split) {
+      return (
+        <>
+          <ProcessAccordion text={split.process} />
+          <Markdown text={split.answer} onAction={onAction} onOpenArtifact={onOpenArtifact} />
+        </>
+      );
+    }
+    return <Markdown text={text} onAction={onAction} onOpenArtifact={onOpenArtifact} />;
+  }
+  // Streaming: mostra tudo ao vivo (o cursor salta o marcador, o Markdown o limpa).
+  return <Markdown text={target.slice(0, n)} onAction={onAction} onOpenArtifact={onOpenArtifact} />;
 });

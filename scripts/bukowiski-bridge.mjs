@@ -352,6 +352,14 @@ const GUARD =
   '"key veio vazia") — isso vira um blocão cansativo. Faça o trabalho e entregue a CONCLUSÃO: o que descobriu/' +
   'fez e o próximo passo. Parágrafos curtos (uma ideia cada, separados por linha em branco), bullets quando ' +
   'forem itens/passos. Se o caminho técnico importar, resuma em 2–3 bullets no fim — não a transcrição inteira.\n\n' +
+  'RACIOCÍNIO vs RESPOSTA (marcador <!--FINAL-->): em tarefa de execução com vários passos (você usou ' +
+  'ferramentas, investigou, editou arquivos), os passos JÁ aparecem nos eventos de ferramenta do painel — ' +
+  'não os narre de novo em prosa ("deixa eu achar", "confirmo o import", "typecheck limpo", "aplicando"). ' +
+  'Se mesmo assim narrar algo do processo, ponha essa narração ANTES de uma linha contendo SÓ <!--FINAL--> ' +
+  'e a RESPOSTA depois dele. O painel recolhe tudo antes do marcador num "Ver raciocínio" e mostra só a ' +
+  'resposta. A RESPOSTA = lead de 1 frase (o que mudou/descobriu) + o detalhe essencial (tabela/cards/' +
+  'bullets) + o próximo passo ou decisão. Resposta curta e direta (sem execução multi-passo) vai inteira, ' +
+  'SEM marcador. Use o marcador no máximo 1 vez, nunca dentro de cercas ```, nunca em modo voz.\n\n' +
   'CARDS: quando listar ENTIDADES (faturas, clientes, demandas, sistemas, leads, OS) — itens com nome + ' +
   'status/valor — em vez de tabela, devolva um bloco ```cards com um array JSON: ' +
   '[{"title":"TexNet · Mensalidade","subtitle":"vence 25/06","value":"R$ 1.200","status":"a receber","accent":"green"}]. ' +
