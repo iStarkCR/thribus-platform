@@ -18,7 +18,10 @@ import { useAppStore } from '@/hooks/useAppStore';
 // URL aceita parênteses balanceados (ex.: .../Foo_(bar)) sem cortar no 1º ')'.
 const URLCORE = 'https?:\\/\\/(?:[^\\s()]+|\\([^\\s()]*\\))+';
 const INLINE = new RegExp(
-  '(\\[([^\\]]+)\\]\\((' + URLCORE + ')\\))|(' + URLCORE + ')|(\\*\\*([^*]+?)\\*\\*)|(`([^`]+?)`)',
+  '(\\[([^\\]]+)\\]\\((' + URLCORE + ')\\))|(' + URLCORE + ')|(\\*\\*([^*]+?)\\*\\*)|(`([^`]+?)`)' +
+    // itálico _…_ : fronteira não-palavra dos dois lados (m[9]=fronteira, m[10]=_…_, m[11]=conteúdo)
+    // — evita snake_case / path_com_underscore. Só `_`, não `*` (colidiria com **bold**/bullets).
+    '|(^|[^\\w*])(_([^\\s_][^_]*?)_)(?![\\w])',
   'g',
 );
 const linkCls = 'text-brand-bright underline underline-offset-2 hover:text-brand break-words';
@@ -67,6 +70,9 @@ function renderInline(text: string): ReactNode[] {
       } else {
         out.push(<code key={key++} className="font-mono text-[0.88em] bg-surface-3 text-brand-bright px-1.5 py-0.5 rounded-md">{code}</code>);
       }
+    } else if (m[10]) {
+      if (m[9]) out.push(m[9]); // re-emite o char de fronteira consumido pelo match
+      out.push(<em key={key++} className="italic">{m[11]}</em>);
     }
     last = INLINE.lastIndex;
   }
