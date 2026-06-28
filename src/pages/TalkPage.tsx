@@ -78,7 +78,15 @@ export function TalkPage() {
   // Uma vez que o usuário ENTRA num chat, navegar entre chats fica direto (não volta
   // pro orbe). Só recarregar/trocar de colaborador volta pro orbe. Default: false.
   const [chatMode, setChatMode] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Pastas fechadas — lembradas entre visitas ao chat (a página remonta a cada
+  // volta; sem persistir, reabria tudo). Chave global: ids de pasta não colidem
+  // entre agentes, então cada pasta guarda seu estado independente.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('thribus.chatFolders') || '[]') as string[]); } catch { return new Set(); }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('thribus.chatFolders', JSON.stringify([...collapsed])); } catch { /* quota/privado/SSR */ }
+  }, [collapsed]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // id da pergunta (user) imediatamente anterior a cada mensagem — pré-calculado
   // 1x por mudança de `messages`. Antes: O(n²) (slice+reverse+find por msg, a cada
