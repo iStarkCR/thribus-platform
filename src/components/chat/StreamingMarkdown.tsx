@@ -26,7 +26,7 @@ function ProcessAccordion({ text }: { text: string }) {
         {open ? 'Ocultar raciocínio' : 'Ver raciocínio'}
       </button>
       {open && (
-        <div className="mt-1.5 pl-3 border-l-2 border-default/70 opacity-70 text-[12.5px]">
+        <div className="mt-1.5 pl-3 border-l-2 border-default/70 opacity-85 text-[15px] leading-relaxed">
           <Markdown text={text} />
         </div>
       )}
