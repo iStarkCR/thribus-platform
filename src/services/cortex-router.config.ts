@@ -8,8 +8,9 @@
  * Dois perfis:
  *   - 'whatsapp' : porta 1:1 a heurística do daemon (cortexBrain() em
  *     Bukowiski/daemon/server.js) — mesmos tiers, mesmos thresholds, mesmas regex.
- *   - 'painel'   : STUB explícito (Fase 1). Será recalibrado na Fase 2 com os
- *     números da análise do Codd. Por ora roteia tudo no default.
+ *   - 'painel'   : calibrado na Fase 2 com a análise de uso real do Codd. Gate
+ *     primário pelo SINAL DE CONTEÚDO (curto-mas-pesado → Opus); tamanho só
+ *     escala o esforço. Validado por replay offline (scripts/cortex-router-replay.mjs).
  */
 
 import type { CortexModel, CortexEffort } from './cortexBrain';
@@ -119,24 +120,140 @@ export function classifyWhatsapp(text: string): Classification {
   return { tier: 'médio', model: 'sonnet', effort: null, reason: 'default' };
 }
 
-// ─── Perfil Painel — STUB (Fase 1) ──────────────────────────────────────────
+// ─── Perfil Painel — calibrado pela análise de uso real (Fase 2, Codd) ──────
 //
-// NÃO copiamos os thresholds do WhatsApp aqui de propósito: o tráfego do painel
-// tem outra distribuição (mensagens mais longas e estruturadas), então calibrar
-// com a régua do zap roteia errado. Fica como placeholder consciente: tudo no
-// default (médio → sonnet). A Fase 2 substitui isto pela curva real do Codd.
+// A Fase 0 INVERTEU a premissa: o tráfego do painel é majoritariamente CURTO
+// (mediana 68 chars, ~80% abaixo de 150), não longo. Logo a régua do WhatsApp
+// (tamanho como gate primário) subdimensiona os ~12% de pedidos CURTOS-MAS-
+// PESADOS — ex.: "audita o RLS do cortex" (24 chars) é trabalho de Opus.
+//
+// Por isso, no painel o gate PRIMÁRIO é o SINAL DE CONTEÚDO; o tamanho vira só
+// ESCALADOR DE ESFORÇO (sobe o tier de um pesado, nunca rebaixa):
+//   trivial  → haiku        len<=40 + só sinal leve, SEM sinal pesado
+//   médio    → sonnet       default (conversa/pergunta sem sinal pesado, <400)
+//   complexo → opus · high  QUALQUER sinal pesado (independe do tamanho); ou 400–900
+//   crítico  → opus · xhigh sinal pesado E (len>600 OU 2+ sinais OU bloco de código)
+//   máximo   → opus · max   estratégia/arquitetura/roadmap; len>1500; ou código multi-parte
+// DESEMPATE: pesado vence leve. Tamanho não rebaixa pesado, só escala o esforço.
 
-/** Marca explícita de que o perfil painel ainda é placeholder. */
-export const PAINEL_IS_STUB = true;
+/** Thresholds de comprimento do painel (chars do texto trimado). */
+export const PAINEL_LENGTH = {
+  /** len <= trivialMax + só sinal leve + sem pesado → trivial (haiku). */
+  trivialMax: 40,
+  /** len >= complex (sem sinal pesado) → complexo (escalada por tamanho puro). */
+  complex: 400,
+  /** Pesado + len > dense → sobe complexo→crítico (escalador ~600 = +1 nível). */
+  dense: 600,
+  /** Sem pesado, len > heavy → crítico (texto muito longo sem sinal). */
+  heavy: 900,
+  /** len > maximo → máximo (opus max), com ou sem sinal. */
+  maximo: 1500,
+} as const;
 
-export function classifyPainel(_text: string): Classification {
-  // TODO(Fase 2): substituir pela heurística calibrada com a análise do Codd.
-  return {
-    tier: 'médio',
-    model: 'sonnet',
-    effort: null,
-    reason: 'painel-stub: roteamento não calibrado (Fase 2)',
-  };
+/**
+ * Sinais de conteúdo do painel. PESADOS empurram pra Opus; LEVES só liberam o
+ * trivial. Cada chave PESADA conta como UM "sinal" para a regra de 2+ sinais.
+ */
+export const PAINEL_SIGNALS = {
+  /** Bloco de código cercado por crase tripla — sinal pesado e gatilho de crítico. */
+  code: /```/,
+  heavy: {
+    sql: /\b(select|insert|update|delete|create\s+table|alter\s+table|drop\s+table)\b/i,
+    // path: começa em / (opcionalmente ~ ou . antes) com 2 segmentos, OU extensão de arquivo.
+    path: /(^|\s)(~|\.{1,2})?\/[\w.-]+\/[\w.-]+|\.(ts|tsx|jsx?|mjs|cjs|sql|env|json|ya?ml|sh|py|md)\b/i,
+    // chamada de função: foo() vazio ou foo(a, b)/foo(x=1) com args — evita "cliente(s)".
+    fn: /\b[a-z_][\w.]*\(\s*\)|\b[a-z_][\w.]*\([^)]*[,;=][^)]*\)/i,
+    nouns:
+      /\b(rls|schema|query|queries|migration|migrations|daemon|supabase|endpoint|endpoints|deploy|deploys|commit|commits|repo|repos|reposit[óo]rio)\b/i,
+    // prefixos de verbos de ação; lookaheads evitam casar substantivos soltos
+    // que só compartilham o radical (validade, montante/montagem).
+    verbs:
+      /\b(implementa|audita|auditoria|refatora|an[aá]lis|analisa|investiga|diagnostic|diagn[óo]stic|debug|corrig|corre[çc][ãa]o|configura|migra|otimiz|revis|valida(?!de)|planej|estrutura|monta(?!nte|gem|dor|nh))/i,
+    deleg:
+      /\b(manda o|manda a|despach|delega|cria(r)? demanda|distribui(r)? pro time|consulta(r)? o banco|roda(r)? (a|essa) query)\b/i,
+  },
+  light: {
+    ack: /^(ok|okay|blz|beleza|certo|sim|n[ãa]o|valeu|vlw|show|massa|perfeito|fechou|isso|exato|confirma(do|r)?|combinado|pode ser|👍|🙏|👌|✅|kk+|h[ae]h[ae]|obrigad[oa])\b/i,
+    greet: /^(oi+|opa|ol[áa]|e[ -]?a[íi]|fala|bom dia|boa tarde|boa noite)\b/i,
+  },
+} as const;
+
+/** Detecta enumeração/lista ou conjunção de tarefas — "pedido multi-parte". */
+const PAINEL_MULTIPART =
+  /(^|\n)\s*(\d+[.)]|[-*•])\s|\b(e tamb[ée]m|al[ée]m disso|tamb[ée]m precis|depois (faz|disso)|por fim)\b/i;
+
+/** Keywords estratégicas — sempre vão pro topo (opus max). */
+const PAINEL_STRATEGIC = /\b(estrat[ée]gi|arquitet|roadmap|vis[ãa]o de (produto|neg[óo]cio)|posicionament|trade.?off)/i;
+
+/**
+ * Classificador do painel — gate primário por SINAL, tamanho como escalador.
+ * Quantos sinais PESADOS distintos a mensagem dispara (código conta como 1).
+ */
+function countHeavySignals(raw: string, t: string): number {
+  const H = PAINEL_SIGNALS.heavy;
+  let n = 0;
+  if (PAINEL_SIGNALS.code.test(raw)) n++;
+  if (H.sql.test(t)) n++;
+  if (H.path.test(raw)) n++;
+  if (H.fn.test(raw)) n++;
+  if (H.nouns.test(t)) n++;
+  if (H.verbs.test(t)) n++;
+  if (H.deleg.test(t)) n++;
+  return n;
+}
+
+export function classifyPainel(text: string): Classification {
+  const raw = (text || '').trim();
+  const t = raw.toLowerCase();
+  const len = raw.length;
+  const L = PAINEL_LENGTH;
+  const S = PAINEL_SIGNALS;
+
+  const hasCode = S.code.test(raw);
+  const heavyCount = countHeavySignals(raw, t);
+  const hasHeavy = heavyCount > 0;
+  const strategic = PAINEL_STRATEGIC.test(t);
+
+  // máximo → opus · max: estratégia/arquitetura/roadmap; ou muito longo; ou código multi-parte.
+  // (bloco de código SOZINHO é crítico, não máximo — máximo exige a parte multi.)
+  if (strategic || len > L.maximo || (hasCode && PAINEL_MULTIPART.test(raw))) {
+    return {
+      tier: 'máximo',
+      model: 'opus',
+      effort: 'max',
+      reason: strategic ? 'estratégico/arquitetura' : len > L.maximo ? 'muito longa' : 'código multi-parte',
+    };
+  }
+
+  // QUALQUER sinal pesado → Opus (pesado vence leve; tamanho só escala o esforço).
+  if (hasHeavy) {
+    const dense = len > L.dense || heavyCount >= 2 || hasCode;
+    return {
+      tier: dense ? 'crítico' : 'complexo',
+      model: 'opus',
+      effort: dense ? 'xhigh' : 'high',
+      reason: hasCode ? 'código' : heavyCount >= 2 ? 'múltiplos sinais' : len > L.dense ? 'pesado longo' : 'sinal pesado',
+    };
+  }
+
+  // Sem sinal pesado: tamanho puro escala (texto longo estruturado).
+  if (len >= L.complex) {
+    const dense = len > L.heavy;
+    return {
+      tier: dense ? 'crítico' : 'complexo',
+      model: 'opus',
+      effort: dense ? 'xhigh' : 'high',
+      reason: dense ? 'longa densa' : 'longa',
+    };
+  }
+
+  // trivial → haiku: curtíssimo + só sinal leve (ack/saudação), sem nada pesado.
+  if (len <= L.trivialMax && (S.light.ack.test(t) || S.light.greet.test(t))) {
+    return { tier: 'trivial', model: 'haiku', effort: null, reason: 'ack/saudação' };
+  }
+
+  // médio → sonnet: o dia a dia (pergunta/conversa curta sem sinal pesado).
+  return { tier: 'médio', model: 'sonnet', effort: null, reason: 'default' };
 }
 
 // ─── Tabela de perfis ───────────────────────────────────────────────────────
@@ -150,7 +267,7 @@ export interface RouterProfile {
 
 export const PROFILES: Record<RouterProfileId, RouterProfile> = {
   whatsapp: { id: 'whatsapp', classify: classifyWhatsapp, stub: false },
-  painel: { id: 'painel', classify: classifyPainel, stub: true },
+  painel: { id: 'painel', classify: classifyPainel, stub: false },
 };
 
 export const DEFAULT_PROFILE: RouterProfileId = 'whatsapp';
