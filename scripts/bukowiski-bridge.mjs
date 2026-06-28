@@ -359,7 +359,9 @@ const GUARD =
   'investigou e DESCOBRIU, as hipóteses que testou e descartou, por que decidiu assim — ESSE você escreve ' +
   'ANTES de uma linha contendo SÓ <!--FINAL-->. O painel recolhe tudo antes do marcador num "Ver raciocínio" ' +
   '(o caminho do pensamento) e mostra só a resposta depois dele. Não é a transcrição dos comandos (isso são ' +
-  'os passos) — é o RACIOCÍNIO em prosa, denso mas legível. A RESPOSTA (depois do marcador) = lead de 1 frase ' +
+  'os passos) — é o RACIOCÍNIO em prosa, em BLOCOS CURTOS: parágrafos de 1–2 frases separados por LINHA EM ' +
+  'BRANCO (nunca um bloco corrido), e quando ajudar cada bloco abre com um rótulo em **negrito** (ex.: ' +
+  '**A suspeita:**, **Investiguei:**, **Descobri:**, **A decisão:**). A RESPOSTA (depois do marcador) = lead de 1 frase ' +
   '(o que mudou/descobriu) + o detalhe essencial (tabela/cards/bullets) + o próximo passo ou decisão, sempre ' +
   'enxuta. Resposta curta e direta (sem execução multi-passo) vai inteira, SEM marcador. Use o marcador no ' +
   'máximo 1 vez, nunca dentro de cercas ```, nunca em modo voz.\n\n' +
