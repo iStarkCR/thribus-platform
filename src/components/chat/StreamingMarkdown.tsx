@@ -10,14 +10,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Markdown, splitFinalMarker } from '@/components/shared/Markdown';
-import { MessageSteps, type OnStepAct } from '@/components/shared/ThinkingActivity';
 
 // Accordion do "raciocínio": recolhe a narração de processo (passos, "deixa eu
 // ver", typecheck…) e deixa só a resposta final à mostra. Fechado por padrão.
-// Ao abrir, mostra a narração em prosa + a timeline real de passos (run_events:
-// cada grep/read/edit, com input e resultado) — o "como ele pensou" auditável,
-// já que o thinking cru do modelo é redigido pela CLI no modo headless.
-function ProcessAccordion({ text, refId, onAct }: { text: string; refId?: string | null; onAct?: OnStepAct }) {
+function ProcessAccordion({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="mb-2">
@@ -30,9 +26,8 @@ function ProcessAccordion({ text, refId, onAct }: { text: string; refId?: string
         {open ? 'Ocultar raciocínio' : 'Ver raciocínio'}
       </button>
       {open && (
-        <div className="mt-1.5 pl-3 border-l-2 border-default/70 text-[12.5px]">
-          {text.trim() && <div className="opacity-70"><Markdown text={text} /></div>}
-          {refId && <MessageSteps refId={refId} onAct={onAct} defaultOpen className="mt-1.5" />}
+        <div className="mt-1.5 pl-3 border-l-2 border-default/70 opacity-70 text-[12.5px]">
+          <Markdown text={text} />
         </div>
       )}
     </div>
@@ -87,13 +82,11 @@ function openFenceStart(text: string): number {
   return inFence ? openAt : -1;
 }
 
-export const StreamingMarkdown = memo(function StreamingMarkdown({ text, streaming, onAction, onOpenArtifact, refId, onStepAct }: {
+export const StreamingMarkdown = memo(function StreamingMarkdown({ text, streaming, onAction, onOpenArtifact }: {
   text: string;
   streaming: boolean;
   onAction?: (t: string) => void;
   onOpenArtifact?: (a: { title: string; type?: string; content: string }) => void;
-  refId?: string | null;
-  onStepAct?: OnStepAct;
 }) {
   // Alvo: enquanto streama, esconde a cerca incompleta do fim.
   const target = useMemo(() => {
@@ -140,21 +133,14 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({ text, streami
   if (!streaming) {
     const split = splitFinalMarker(text);
     if (split) {
-      // Com marcador: os passos vão DENTRO do "Ver raciocínio", junto da narração.
       return (
         <>
-          <ProcessAccordion text={split.process} refId={refId} onAct={onStepAct} />
+          <ProcessAccordion text={split.process} />
           <Markdown text={split.answer} onAction={onAction} onOpenArtifact={onOpenArtifact} />
         </>
       );
     }
-    // Sem marcador: resposta direta + os passos (se houver) logo abaixo, recolhidos.
-    return (
-      <>
-        <Markdown text={text} onAction={onAction} onOpenArtifact={onOpenArtifact} />
-        {refId && <MessageSteps refId={refId} onAct={onStepAct} />}
-      </>
-    );
+    return <Markdown text={text} onAction={onAction} onOpenArtifact={onOpenArtifact} />;
   }
   // Streaming: mostra tudo ao vivo (o cursor salta o marcador, o Markdown o limpa).
   return <Markdown text={target.slice(0, n)} onAction={onAction} onOpenArtifact={onOpenArtifact} />;
