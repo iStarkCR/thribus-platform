@@ -122,6 +122,33 @@ function unescapeProseWhitespace(text: string): string {
   return lines.join('\n');
 }
 
+// Sanitiza newlines reais dentro de valores de string JSON — o agente às vezes
+// inclui markdown com quebras de linha no campo "content" do artifact, gerando
+// JSON inválido (string literal não pode ter newline real). Parseamos char a char.
+function fixJsonNewlines(s: string): string {
+  let r = ''; let inStr = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (c === '\\') { r += c + (s[i + 1] ?? ''); i++; }
+      else if (c === '"') { inStr = false; r += c; }
+      else if (c === '\n') r += '\\n';
+      else if (c === '\r') r += '\\r';
+      else if (c === '\t') r += '\\t';
+      else r += c;
+    } else { if (c === '"') inStr = true; r += c; }
+  }
+  return r;
+}
+// Tenta JSON.parse; se falhar por newlines literais, sanitiza e tenta de novo.
+// Retorna undefined se ambos falharem — nunca lança.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function safeJson(s: string): any {
+  try { return JSON.parse(s); } catch { /* noop */ }
+  try { return JSON.parse(fixJsonNewlines(s)); } catch { /* noop */ }
+  return undefined;
+}
+
 // ── Marcador de fronteira "raciocínio ↔ resposta final" ──────────────────────
 // O Bukowiski fecha respostas de execução com `<!--FINAL-->`: tudo ANTES é
 // processo (recolhido num accordion pelo StreamingMarkdown), o que vem DEPOIS é
@@ -393,25 +420,23 @@ function MarkdownImpl({ text, className, onAction, onOpenArtifact }: { text: str
         const lk = lang.toLowerCase();
         // Gráfico (bar/line/donut).
         if (lk === 'chart') {
-          try {
-            const spec = JSON.parse(body);
-            if (spec && Array.isArray(spec.data) && spec.data.length) { blocks.push(<Chart key={key++} spec={spec} />); i = j + 1; continue; }
-          } catch { /* JSON inválido → cai pro CodeViewer abaixo */ }
+          const spec = safeJson(body);
+          if (spec && Array.isArray(spec.data) && spec.data.length) { blocks.push(<Chart key={key++} spec={spec} />); i = j + 1; continue; }
         }
         // Blocos especiais: cards ricos, confirmação de ação e artefato (canvas).
+        // safeJson tenta JSON.parse direto; se falhar (ex: newlines reais no
+        // campo "content" do artifact), sanitiza e tenta de novo antes de desistir.
         if (lk === 'cards' || lk === 'confirm' || lk === 'artifact') {
-          try {
-            const data = JSON.parse(body);
-            if (lk === 'cards') {
-              const its = Array.isArray(data) ? data : data?.items;
-              const multi = !Array.isArray(data) && Boolean(data?.multi);
-              if (Array.isArray(its) && its.length) { blocks.push(<CardList key={key++} items={its} multi={multi} onAction={onAction} />); i = j + 1; continue; }
-            } else if (lk === 'confirm') {
-              blocks.push(<ConfirmCard key={key++} data={data} onAction={onAction} />); i = j + 1; continue;
-            } else if (data && typeof data.content === 'string') {
-              blocks.push(<ArtifactChip key={key++} data={data} onOpen={onOpenArtifact} />); i = j + 1; continue;
-            }
-          } catch { /* JSON inválido → cai pro CodeViewer abaixo */ }
+          const data = safeJson(body);
+          if (lk === 'cards') {
+            const its = Array.isArray(data) ? data : data?.items;
+            const multi = !Array.isArray(data) && Boolean(data?.multi);
+            if (Array.isArray(its) && its.length) { blocks.push(<CardList key={key++} items={its} multi={multi} onAction={onAction} />); i = j + 1; continue; }
+          } else if (lk === 'confirm' && data) {
+            blocks.push(<ConfirmCard key={key++} data={data} onAction={onAction} />); i = j + 1; continue;
+          } else if (lk === 'artifact' && data && typeof data.content === 'string') {
+            blocks.push(<ArtifactChip key={key++} data={data} onOpen={onOpenArtifact} />); i = j + 1; continue;
+          }
         }
         blocks.push(
           <div key={key++} className="my-2">
