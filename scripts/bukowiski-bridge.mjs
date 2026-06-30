@@ -22,16 +22,23 @@
  *     # A ponte atende SÓ o time interno (acesso total). Clientes vão pela API.
  *     # Marcador do time (default já correto):
  *     #   export BRIDGE_TEAM_CLIENT="Thribus Tech (Interno)"
+ *     # Memória de longo prazo (bukowiski_memory @ postgres-thribus na VPS, via túnel SSH):
+ *     export MEMORY_ENABLED="1"
+ *     export MEMORY_PG_PASSWORD="..."        # senha do postgres-thribus (printenv POSTGRES_PASSWORD no container)
+ *     #   defaults já corretos: MEMORY_SSH_HOST/USER/KEY, MEMORY_PG_CONTAINER=postgres-thribus,
+ *     #   MEMORY_PG_DB=bukowiski_memory, MEMORY_PG_USER=postgres, MEMORY_LOCAL_PORT=6543.
+ *     #   Recall: MEMORY_RECALL_LIMIT=40, MEMORY_RECALL_MAXCHARS=2000 (teto cacheável no seed).
  *
  * Uso:
  *   source ~/.thribus/bukowiski-bridge.env && node scripts/bukowiski-bridge.mjs
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { initMemory, recall, saveFacts, memoryReady, listAllFacts, applyOp } from './memory.mjs';
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const URL = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -39,8 +46,12 @@ const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 // por execução. O default vem do env (fallback); o painel sobrescreve via a
 // tabela cortex_brain_config (scope='global'). Recarregada a cada ~15s no loop.
 const DEFAULT_MODEL = process.env.BRIDGE_MODEL || 'opus'; // alias do CLI — resolve sozinho pro modelo atual
-let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0 };
+let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0, contextLimitTokens: 250000, mode: 'manual' };
+// Modo voz: modelo leve/rápido (conversa falada), independente do Brain global.
+const VOICE_MODEL = process.env.BRIDGE_VOICE_MODEL || 'sonnet';
+const VOICE_EFFORT = process.env.BRIDGE_VOICE_EFFORT || 'low';
 let brainLoadedAt = 0;
+let lastTeamIds = new Set(); // último time interno carregado (pra despacho de demandas no chat)
 // --effort só vale pra opus/fable (o CLI ignora em sonnet/haiku). Cobre tanto o
 // alias ('opus') quanto IDs fixos ('claude-opus-4-7').
 const effortApplies = (m) => /opus|fable/.test(m);
@@ -51,9 +62,22 @@ const cliEffort = (e) => (e === 'ultra' ? 'max' : e);
 // os ignora pra que um cliente nunca execute nada na sua máquina.
 const TEAM_CLIENT = process.env.BRIDGE_TEAM_CLIENT || 'Thribus Tech (Interno)';
 const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 3000);
-const TIMEOUT_MS = Number(process.env.BRIDGE_TIMEOUT_MS || 180_000); // chat interativo: 3min
+const TIMEOUT_MS = Number(process.env.BRIDGE_TIMEOUT_MS || 900_000); // chat: 15min (processos longos — o paralelismo por raia evita travar a fila)
 const DEMAND_TIMEOUT_MS = Number(process.env.BRIDGE_DEMAND_TIMEOUT_MS || 1_500_000); // demandas: 25min (tarefas longas: relatórios, etc.)
+const DEMAND_AUTO_RETRY = Number(process.env.BRIDGE_DEMAND_AUTO_RETRY ?? 1); // re-tenta N vezes antes de marcar 'error'
+// Unificação de cérebro (Caminho A): SÓ as conversas do Bukowiski rodam no cwd do
+// daemon, pra compartilharem a sessão Claude (--resume) entre WhatsApp/Telegram/
+// painel. Os outros 14 colaboradores seguem no cwd neutro do bridge (senão o
+// CLAUDE.md do Bukowiski contaminaria a persona deles). Desligar: aponte
+// BRIDGE_BUKOWISKI_CWD pro cwd do bridge.
+const BUKOWISKI_AGENT = 'bukowiski-thribus';
+const BUKOWISKI_CWD = process.env.BRIDGE_BUKOWISKI_CWD || '/Users/charlesandrade/projects/Bukowiski';
 const HISTORY = 20; // últimas N msgs do thread como contexto
+// Anti-bloat de contexto: a sessão do claude é resumida a cada turno e ACUMULA
+// (dumps de tool, etc.). Quando passa de ~70% da janela (1M no Max), reiniciamos
+// a sessão limpa (re-seed persona + histórico recente) em vez de resumir infinito.
+const CONTEXT_WINDOW = Number(process.env.BRIDGE_CONTEXT_WINDOW || 1_000_000);
+const CONTEXT_RESET_TOKENS = Math.round(CONTEXT_WINDOW * Number(process.env.BRIDGE_CONTEXT_RESET_PCT || 0.70));
 
 if (!URL || !KEY) {
   console.error('Faltam SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY. Veja o cabeçalho do arquivo.');
@@ -62,6 +86,58 @@ if (!URL || !KEY) {
 
 const sb = createClient(URL, KEY, { auth: { persistSession: false } });
 
+// ─── Cortex Router (Fase 3) ─────────────────────────────────────────────────
+// Roteamento por complexidade (perfil 'painel'): escolhe modelo/esforço por
+// mensagem de chat. O módulo é TS e foi PRÉ-COMPILADO num .mjs autocontido (com
+// stub do supabase) em ~/.thribus/bridge/cortex-router.built.mjs — o bridge real
+// não tem esbuild, então NÃO buildamos em runtime; só importamos o .mjs pronto.
+// (rebuild: esbuild do repo → cortex-router.built.mjs quando o módulo mudar.)
+let route = null; // null = auto indisponível → cai no modo fixo (nunca derruba)
+const ROUTER_BUILT = join(homedir(), '.thribus', 'bridge', 'cortex-router.built.mjs');
+async function loadRouter() {
+  const mod = await import(ROUTER_BUILT);
+  return mod.route;
+}
+// Sticky model por conversa (session_id → alias). Dentro da sessão o modelo só
+// SOBE (protege o prompt cache), conforme route() decide. Cache em memória.
+const stickyByCortexSession = new Map();
+
+// ── Concorrência: semáforo global + raias por conversa (portado do daemon) ────
+// Conversas/demandas DIFERENTES rodam EM PARALELO (até MAX_CONCURRENCY); a MESMA
+// conversa fica serial na sua raia, pra não corromper a sessão Claude (--resume +
+// claude_session_id). Antes a ponte era 100% serial — 1 msg longa travava o painel
+// inteiro. Agora uma tarefa de 10min numa conversa não bloqueia as outras.
+const MAX_CONCURRENCY = Number(process.env.BRIDGE_MAX_CONCURRENCY || 3);
+let _slots = MAX_CONCURRENCY;
+const _waiters = [];
+function _acquire() {
+  if (_slots > 0) { _slots--; return Promise.resolve(); }
+  return new Promise((res) => _waiters.push(res));
+}
+function _release() {
+  _slots++;
+  const next = _waiters.shift();
+  if (next) { _slots--; next(); }
+}
+const _laneTails = new Map();
+function runOnLane(laneKey, fn) {
+  const prev = _laneTails.get(laneKey) || Promise.resolve();
+  const tail = prev.then(async () => {
+    await _acquire();
+    try { return await fn(); } finally { _release(); }
+  });
+  _laneTails.set(laneKey, tail);
+  tail.catch(() => {}).finally(() => { if (_laneTails.get(laneKey) === tail) _laneTails.delete(laneKey); });
+  return tail;
+}
+// Claim atômico: marca o item como em-processamento; só 1 poll ganha a corrida
+// (evita processar a mesma msg/demanda 2x agora que os ticks não são mais serial).
+async function claimRow(table, id, fromStatus, toStatus) {
+  const { data } = await sb.from(table).update({ status: toStatus })
+    .eq('id', id).eq('status', fromStatus).select('id');
+  return !!(data && data.length);
+}
+
 // Lê a config do painel (modelo + esforço + teto). Cacheia 15s pra não consultar
 // o banco a cada poll. Em erro, mantém o último valor conhecido.
 async function loadBrainConfig() {
@@ -69,7 +145,7 @@ async function loadBrainConfig() {
   try {
     const { data } = await sb
       .from('cortex_brain_config')
-      .select('model,effort,max_budget_usd')
+      .select('*')
       .eq('scope', 'global')
       .maybeSingle();
     if (data) {
@@ -77,6 +153,8 @@ async function loadBrainConfig() {
         model: data.model || DEFAULT_MODEL,
         effort: data.effort || 'high',
         maxBudgetUsd: Number(data.max_budget_usd) || 0,
+        contextLimitTokens: Number(data.context_limit_tokens) || BRAIN.contextLimitTokens || 250000,
+        mode: data.mode === 'auto' ? 'auto' : 'manual',
       };
     }
     brainLoadedAt = Date.now();
@@ -86,17 +164,131 @@ async function loadBrainConfig() {
   return BRAIN;
 }
 
+// Limites do plano (janela de 5h + semanal). O CLI não expõe os headers
+// `anthropic-ratelimit-unified-*`, então fazemos uma chamada-sonda mínima (1
+// token haiku, custo desprezível) a cada ~2min e gravamos a utilização/reset de
+// cada janela em cortex_brain_limits — o painel mostra quanto resta no rodapé.
+let limitsCheckedAt = 0;
+const LIMITS_EVERY_MS = Number(process.env.BRIDGE_LIMITS_MS || 120_000);
+async function fetchUsageLimits() {
+  if (Date.now() - limitsCheckedAt < LIMITS_EVERY_MS) return;
+  limitsCheckedAt = Date.now();
+  const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  if (!token) return; // sem token OAuth → não dá pra ler os limites do plano
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'anthropic-beta': 'oauth-2025-04-20',
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+    });
+    await res.text().catch(() => {}); // drena o corpo (não precisamos dele)
+    const h = res.headers;
+    const num = (k) => { const v = h.get(k); return v == null || v === '' ? null : Number(v); };
+    const iso = (k) => { const v = num(k); return v ? new Date(v * 1000).toISOString() : null; };
+    const fiveH = num('anthropic-ratelimit-unified-5h-utilization');
+    if (fiveH == null) return; // proxy não repassou os headers → não regrava
+    await sb.from('cortex_brain_limits').upsert({
+      id: 'global',
+      five_h_utilization: fiveH,
+      five_h_reset: iso('anthropic-ratelimit-unified-5h-reset'),
+      five_h_status: h.get('anthropic-ratelimit-unified-5h-status'),
+      seven_d_utilization: num('anthropic-ratelimit-unified-7d-utilization'),
+      seven_d_reset: iso('anthropic-ratelimit-unified-7d-reset'),
+      seven_d_status: h.get('anthropic-ratelimit-unified-7d-status'),
+      overall_status: h.get('anthropic-ratelimit-unified-status'),
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error('[limits]', e.message);
+  }
+}
+
+// Pastas de trabalho permitidas (allowlist + lista do seletor do painel). A
+// conversa escolhe uma; o cwd do claude vira essa pasta. Cache 30s.
+let _wfPaths = new Set();
+let _wfAt = 0;
+async function loadWorkFolders() {
+  if (Date.now() - _wfAt < 30_000) return _wfPaths;
+  try {
+    const { data } = await sb.from('cortex_work_folders').select('path').eq('active', true);
+    if (data) _wfPaths = new Set(data.map((r) => r.path));
+    _wfAt = Date.now();
+  } catch (e) { console.error('[work folders]', e.message); }
+  return _wfPaths;
+}
+// cwd da conversa: a pasta escolhida no painel (se estiver na allowlist), senão
+// o default do colaborador (Bukowiski no cwd dele; os outros no cwd neutro).
+async function cwdForSession(agentId, workingDir) {
+  if (workingDir) {
+    const allowed = await loadWorkFolders();
+    if (allowed.has(workingDir)) return workingDir;
+    console.error('[cwd] pasta fora da allowlist, ignorando:', workingDir);
+  }
+  return agentId === BUKOWISKI_AGENT ? BUKOWISKI_CWD : undefined;
+}
+
+// Navegador de pastas pro painel: o painel (web) não acessa o filesystem; aqui
+// listamos os subdiretórios de um caminho e devolvemos. Guard: só dentro do home
+// do daemon e /Volumes (não expõe o sistema inteiro). Poller rápido (700ms) pra
+// navegar fluido.
+const FS_ROOTS = [homedir(), '/Volumes'];
+function fsAllowed(p) {
+  const r = resolve(p);
+  return FS_ROOTS.some((root) => r === root || r.startsWith(root + '/'));
+}
+let _fsBusy = false;
+async function tickFsBrowse() {
+  if (_fsBusy) return;
+  _fsBusy = true;
+  try {
+    const { data: reqs } = await sb
+      .from('fs_browse_requests')
+      .select('id,path')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(5);
+    for (const req of reqs || []) {
+      let patch;
+      try {
+        const base = req.path && req.path.trim() ? resolve(req.path.trim()) : homedir();
+        if (!fsAllowed(base)) throw new Error('pasta fora do permitido');
+        const ents = readdirSync(base, { withFileTypes: true })
+          .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+          .map((d) => ({ name: d.name, path: join(base, d.name) }))
+          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+        patch = { status: 'done', entries: { base, items: ents }, error: null, resolved_at: new Date().toISOString() };
+      } catch (e) {
+        patch = { status: 'error', entries: null, error: e.message, resolved_at: new Date().toISOString() };
+      }
+      await sb.from('fs_browse_requests').update(patch).eq('id', req.id);
+    }
+    // limpeza: descarta pedidos resolvidos há mais de 5min
+    await sb.from('fs_browse_requests').delete().lt('resolved_at', new Date(Date.now() - 5 * 60_000).toISOString());
+  } catch (e) {
+    console.error('[fs browse]', e.message);
+  } finally {
+    _fsBusy = false;
+  }
+}
+
 // Grava o custo/tokens reais de uma execução (best-effort; nunca derruba o loop).
-async function recordUsage({ userId, agentId, kind, refId, usage }) {
+async function recordUsage({ userId, agentId, kind, refId, sessionId, usage, routing = null }) {
   if (!usage) return;
   try {
-    await sb.from('cortex_usage').insert({
+    const row = {
       user_id: userId ?? null,
       agent_id: agentId ?? null,
       kind,
       ref_id: refId ?? null,
-      model: usage.model || BRAIN.model,
-      effort: effortApplies(BRAIN.model) ? BRAIN.effort : null,
+      session_id: sessionId ?? null,
+      // modo auto: grava o que o ROUTER escolheu; senão o modelo/esforço fixos.
+      model: routing?.model || usage.model || BRAIN.model,
+      effort: routing ? routing.effort : (effortApplies(BRAIN.model) ? BRAIN.effort : null),
       cost_usd: usage.costUsd,
       total_tokens: usage.totalTokens,
       input_tokens: usage.inputTokens,
@@ -104,7 +296,10 @@ async function recordUsage({ userId, agentId, kind, refId, usage }) {
       cache_read_tokens: usage.cacheReadTokens,
       duration_ms: usage.durationMs,
       num_turns: usage.numTurns,
-    });
+    };
+    // tier/reason: colunas da migration da Fase 3, só no modo auto (pós-migration).
+    if (routing) { row.tier = routing.tier; row.reason = routing.reason; }
+    await sb.from('cortex_usage').insert(row);
   } catch (e) {
     console.error('[usage] falha ao gravar:', e.message);
   }
@@ -173,7 +368,80 @@ const GUARD =
   'FORMATAÇÃO: responda em markdown. SEMPRE que devolver dados, números, métricas, listas de itens ou ' +
   'comparações, use TABELAS markdown (| Coluna | Coluna |\\n| --- | --- |\\n| valor | valor |). Use listas ' +
   'pra passos, **negrito** pra destaques e ## títulos pra seções. O painel renderiza tabelas e markdown ' +
-  'de forma visual — então prefira tabela a despejar números no meio do texto.';
+  'de forma visual — então prefira tabela a despejar números no meio do texto.\n\n' +
+  'CONCISÃO: NÃO narre cada micro-passo do seu processo na resposta ("deixa eu ver", "achei", "vou testar", ' +
+  '"key veio vazia") — isso vira um blocão cansativo. Faça o trabalho e entregue a CONCLUSÃO: o que descobriu/' +
+  'fez e o próximo passo. Parágrafos curtos (uma ideia cada, separados por linha em branco), bullets quando ' +
+  'forem itens/passos. Se o caminho técnico importar, resuma em 2–3 bullets no fim — não a transcrição inteira.\n\n' +
+  'RACIOCÍNIO vs RESPOSTA (marcador <!--FINAL-->): em tarefa de execução com vários passos, separe DUAS ' +
+  'camadas. (a) os PASSOS TÉCNICOS (cada grep/read/edit/bash) já aparecem nos "Passos executados" embaixo da ' +
+  'mensagem — NÃO os narre em prosa ("deixa eu achar", "rodando grep", "typecheck limpo", "aplicando"). ' +
+  '(b) o CONTEXTO DO RACIOCÍNIO — o pensamento que liga os passos ao resultado: o que você suspeitou, o que ' +
+  'investigou e DESCOBRIU, as hipóteses que testou e descartou, por que decidiu assim — ESSE você escreve ' +
+  'ANTES de uma linha contendo SÓ <!--FINAL-->. O painel recolhe tudo antes do marcador num "Ver raciocínio" ' +
+  '(o caminho do pensamento) e mostra só a resposta depois dele. Não é a transcrição dos comandos (isso são ' +
+  'os passos) — é o RACIOCÍNIO em prosa, em BLOCOS CURTOS: parágrafos de 1–2 frases separados por LINHA EM ' +
+  'BRANCO (nunca um bloco corrido), e quando ajudar cada bloco abre com um rótulo em **negrito** (ex.: ' +
+  '**A suspeita:**, **Investiguei:**, **Descobri:**, **A decisão:**). A RESPOSTA (depois do marcador) = lead de 1 frase ' +
+  '(o que mudou/descobriu) + o detalhe essencial (tabela/cards/bullets) + o próximo passo ou decisão, sempre ' +
+  'enxuta. Resposta curta e direta (sem execução multi-passo) vai inteira, SEM marcador. Use o marcador no ' +
+  'máximo 1 vez, nunca dentro de cercas ```, nunca em modo voz.\n\n' +
+  'CARDS: quando listar ENTIDADES (faturas, clientes, demandas, sistemas, leads, OS) — itens com nome + ' +
+  'status/valor — em vez de tabela, devolva um bloco ```cards com um array JSON: ' +
+  '[{"title":"TexNet · Mensalidade","subtitle":"vence 25/06","value":"R$ 1.200","status":"a receber","accent":"green"}]. ' +
+  'O painel renderiza como cards. status = texto curto; accent opcional = green|gold|blue|red|amber ' +
+  '(se omitir, a cor sai do status). Use cards pra 2–8 itens; acima disso, tabela. ' +
+  'Pra OPÇÕES/ESCOLHAS (o Charles vai escolher UMA — ex: canal, conta, plano), inclua "action" em cada ' +
+  'card = a frase exata que o painel envia quando ele CLICAR no card (ex: ' +
+  '{"title":"WhatsApp ...8912-1001","status":"Opção A","action":"Pode usar o canal ...8912-1001 (opção A)"}). ' +
+  'Com "action" o card fica clicável e o Charles escolhe num toque, sem digitar.\n' +
+  'ESCOLHA MÚLTIPLA: quando ele puder escolher VÁRIOS (não exclusivo — ex: marcar 2+ canais, selecionar ' +
+  'várias tarefas/relatórios pra rodar), use um OBJETO {"multi":true,"items":[...]} no lugar do array — ' +
+  'cada item com "action". O painel vira toggle (marca/desmarca) + botão "Confirmar" que junta as escolhas ' +
+  'numa só mensagem. Use multi SÓ quando fizer sentido escolher mais de um; pra escolha única, array normal.\n' +
+  'SINTAXE OBRIGATÓRIA (cards/chart/confirm/artifact): abra a cerca ```cards (ou ```chart/```confirm) ' +
+  'numa LINHA SOZINHA, o JSON nas linhas seguintes, e FECHE com ``` numa linha sozinha. NUNCA cole o JSON ' +
+  'solto no meio do texto nem deixe uma ``` órfã (sem par) — senão o painel mostra o JSON cru, não os cards. ' +
+  'Se for só MOSTRAR/explicar um JSON de exemplo (sem renderizar), use um bloco ```json comum.\n\n' +
+  'GRÁFICO: quando os números pedirem leitura visual (evolução no tempo, composição, comparação) devolva ' +
+  'um bloco ```chart JSON: {"type":"bar|line|donut","title":"Faturamento por mês","unit":"R$","data":' +
+  '[{"label":"Jan","value":12000},{"label":"Fev","value":15000}]}. bar = comparar categorias, line = ' +
+  'evolução no tempo, donut = composição (partes do todo). unit opcional (R$, %). Use 2–12 pontos; pode vir ' +
+  'junto de uma tabela (gráfico pra ver, tabela pro detalhe).\n\n' +
+  'CONFIRMAR: antes de QUALQUER ação que mexa em dinheiro, produção/deploy, DNS, exclusão de dados ou envio ' +
+  'a externos — NÃO execute direto. Descreva e peça confirmação com um bloco ```confirm JSON: ' +
+  '{"action":"Criar cobrança PIX de R$ 1.200 pro TexNet","detail":"vencimento 25/06","danger":false}. ' +
+  'O painel mostra botões Confirmar/Cancelar; só execute quando o Charles confirmar na mensagem seguinte. ' +
+  'Use danger:true pra ações destrutivas (deletar, derrubar serviço).\n\n' +
+  'ARTEFATO: pra entregas LONGAS e estruturadas (relatório, dossiê, plano de ação, análise extensa, ' +
+  'documento) — em vez de despejar tudo no chat, devolva um bloco ```artifact JSON: ' +
+  '{"title":"Relatório de recall — Dra Aloma","type":"relatório","content":"<markdown completo do documento>"}. ' +
+  'O painel mostra um cartão clicável que abre o conteúdo num painel lateral (canvas). Use pra textos longos/' +
+  'documentos; resposta curta vai direto no chat normal. Pode acompanhar de 1 frase de contexto antes do bloco. ' +
+  'Quando for RELATÓRIO, estruture no PADRÃO THRIBUS (título, resumo executivo, seções, conclusão + próximos ' +
+  'passos) — use a skill thribus-report-standard como referência. Se o Charles pedir pra PUBLICAR NO HUB ' +
+  '(há um botão "Publicar no Hub" no painel do artefato), gere o HTML branded com thribus-report-standard e ' +
+  'publique com a skill thribus-hub-publish, devolvendo o LINK de compartilhamento — confirme antes (```confirm), ' +
+  'é entrega externa.\n\n' +
+  '(NÃO use cards/confirm/artifact em modo voz — ali a resposta é só fala natural.)\n\n' +
+  'MEMÓRIA: você tem memória de longo prazo (lembra entre conversas). Quando o Charles ' +
+  'pedir pra GUARDAR/LEMBRAR algo ("guarda na memória que…", "lembra que…"), OU quando ele ' +
+  'revelar um fato claramente DURÁVEL e reutilizável (preferência fixa, decisão firme, fato ' +
+  'estável sobre a Thribus/pessoas/sistemas/processos), emita um bloco ```remember com array ' +
+  'JSON: [{"fact":"frase curta auto-contida","category":"preferencia|decisao|projeto|pessoa|sistema|fato",' +
+  '"entity":"opcional"}]. A ponte grava sozinha e remove o bloco — você só confirma em 1 frase ' +
+  'natural ("Guardado: …"). Seja PARCIMONIOSO: nada de tarefa pontual, estado efêmero, óbvio, ' +
+  'nem repetir fato que você já sabe. Qualidade, não volume.\n\n' +
+  'DESPACHO (só você, supervisor): quando o Charles pedir pra CRIAR/DESPACHAR tarefas pro time ' +
+  '("manda o Atlas fazer X", "cria uma demanda pra Y", "quebra isso e distribui pro time"), emita um ' +
+  'bloco ```demands com array JSON: [{"title":"…","description":"…","agent":"<id ou nome do colaborador>",' +
+  '"project":"opcional"}]. A ponte cria cada uma na fila de demandas e o colaborador certo executa. ' +
+  'Confirme em 1 frase o que despachou. NÃO use isso pra tarefa que você mesmo já resolveu na conversa.\n\n' +
+  'EFICIÊNCIA DE CONTEXTO (importante): a sessão é mantida entre turnos e TUDO que você lê fica na memória e ' +
+  'pesa nos próximos turnos. Ao consultar banco/IXC/arquivos: NUNCA traga tabela inteira nem dump gigante pro ' +
+  'contexto. Use queries com LIMIT e filtros, SELECT só das colunas necessárias, e prefira AGREGAR/CONTAR a ' +
+  'listar tudo (ex: "SELECT count(*)" em vez de listar 500 linhas). Se um resultado for grande, leia o ' +
+  'suficiente pra responder e RESUMA — não cole o bruto completo. Isso mantém a sessão leve e rápida.';
 
 let bukowiskiCmd = null;
 function bukowiskiPersona() {
@@ -188,12 +456,22 @@ function bukowiskiPersona() {
   return bukowiskiCmd;
 }
 
-function buildPrompt(agent, history, content) {
-  const transcript = history
-    .map((m) => `${m.role === 'user' ? 'Charles' : agent.name}: ${m.content}`)
-    .join('\n');
-  const ctx = transcript ? `Histórico recente da conversa:\n${transcript}\n\n` : '';
-  const task = `${ctx}Nova mensagem do Charles:\n${content}`;
+function buildPrompt(agent, history, content, seed = null, memoryBlock = '') {
+  let ctx = '';
+  if (seed) {
+    // Sessão compactada: o modelo NÃO tem o histórico completo — o resumo curado
+    // é a memória dele. (caminho C — ver migration 20260624_chat_compaction)
+    ctx =
+      `Resumo do contexto desta conversa até aqui (ela foi COMPACTADA — você não tem ` +
+      `o histórico completo; use este resumo como sua memória):\n${seed}\n\n`;
+  } else {
+    const transcript = history
+      .map((m) => `${m.role === 'user' ? 'Charles' : agent.name}: ${m.content}`)
+      .join('\n');
+    ctx = transcript ? `Histórico recente da conversa:\n${transcript}\n\n` : '';
+  }
+  const mem = memoryBlock ? `${memoryBlock}\n\n` : '';
+  const task = `${mem}${ctx}Nova mensagem do Charles:\n${content}`;
 
   if (agent.id === BUKOWISKI_ID) {
     return bukowiskiPersona().replace('$ARGUMENTS', task);
@@ -266,6 +544,7 @@ function runClaude(prompt, opts = {}) {
       '--append-system-prompt', GUARD,
       '--output-format', 'stream-json',
       '--verbose',
+      '--include-partial-messages', // deltas de texto → streaming ao vivo no painel
       '--model', model,
       '--permission-mode', 'bypassPermissions',
     ];
@@ -291,10 +570,21 @@ function runClaude(prompt, opts = {}) {
         delete env[k];
       }
     }
-    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env });
+    // Marca esta invocação pro cc-mirror PULAR — senão o hook criaria uma conversa
+    // "💻 <projeto>" gêmea da conversa do painel (mesmo claude_session_id). Ver
+    // ~/.claude/hooks/lib/cc-mirror.mjs (guard CC_MIRROR_SKIP).
+    env.CC_MIRROR_SKIP = '1';
+    const child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env, cwd: opts.cwd || undefined });
+    if (opts.onSpawn) { try { opts.onSpawn(child); } catch { /* noop */ } }
     let buf = '';
     let err = '';
     let result = null;
+    let streamedText = ''; // texto acumulado dos deltas (streaming ao vivo)
+    let pendingBreak = false; // houve tool entre rajadas de texto → quebra de parágrafo
+    // Uso da ÚLTIMA mensagem do assistant — reflete a janela de contexto real do
+    // último turno (input+cache da chamada final), ao contrário do uso do evento
+    // 'result', que SOMA todos os round-trips de tool calls e infla o número.
+    let lastAssistantUsage = null;
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       reject(new Error(`timeout ${timeoutMs}ms`));
@@ -306,11 +596,27 @@ function runClaude(prompt, opts = {}) {
       if (!s) return;
       let evt;
       try { evt = JSON.parse(s); } catch { return; }
+      // Delta de texto (--include-partial-messages) → acumula e emite pro painel.
+      if (evt.type === 'stream_event' && evt.event?.type === 'content_block_delta' && evt.event.delta?.type === 'text_delta') {
+        // Nova rajada de texto após uma tool → começa em parágrafo novo. Sem isso a
+        // narração de processo cola tudo num blocão ("...primeiro.Não tem skill...").
+        if (pendingBreak && streamedText && !streamedText.endsWith('\n')) streamedText += '\n\n';
+        pendingBreak = false;
+        streamedText += evt.event.delta.text || '';
+        if (opts.onText) { try { opts.onText(streamedText); } catch { /* nunca derruba o parse */ } }
+        return;
+      }
+      if (evt.type === 'assistant' && evt.message) {
+        if (evt.message.usage) lastAssistantUsage = evt.message.usage;
+      }
       if (evt.type === 'assistant' && evt.message && Array.isArray(evt.message.content)) {
         for (const b of evt.message.content) {
-          if (b && b.type === 'tool_use' && opts.onEvent) {
-            try { opts.onEvent({ kind: 'tool', toolUseId: b.id, label: b.name || 'tool', detail: summarizeToolInput(b.input), input: fullInput(b.input) }); }
-            catch { /* nunca derruba o parse */ }
+          if (b && b.type === 'tool_use') {
+            pendingBreak = true; // próxima rajada de texto começa em parágrafo novo
+            if (opts.onEvent) {
+              try { opts.onEvent({ kind: 'tool', toolUseId: b.id, label: b.name || 'tool', detail: summarizeToolInput(b.input), input: fullInput(b.input) }); }
+              catch { /* nunca derruba o parse */ }
+            }
           }
         }
       } else if (evt.type === 'user' && evt.message && Array.isArray(evt.message.content)) {
@@ -340,7 +646,13 @@ function runClaude(prompt, opts = {}) {
       if (buf.trim()) handleLine(buf); // última linha sem \n final
       if (result) {
         if (result.isError) reject(new Error(result.text || 'claude retornou erro'));
-        else resolve({ text: result.text, usage: result.usage, sessionId: result.sessionId });
+        else {
+          const lu = lastAssistantUsage;
+          const contextTokens = lu
+            ? (lu.input_tokens || 0) + (lu.cache_creation_input_tokens || 0) + (lu.cache_read_input_tokens || 0) + (lu.output_tokens || 0)
+            : null;
+          resolve({ text: result.text || streamedText, usage: result.usage, sessionId: result.sessionId, contextTokens });
+        }
         return;
       }
       if (code !== 0) reject(new Error(`claude saiu com código ${code}: ${err.slice(0, 400)}`));
@@ -362,72 +674,185 @@ async function processMessage(msg) {
   // Sessão do claude desta conversa (memória otimizada via --resume).
   const { data: sess } = await sb
     .from('chat_sessions')
-    .select('claude_session_id')
+    .select('claude_session_id,context_tokens,working_dir,context_seed')
     .eq('id', msg.session_id)
     .maybeSingle();
-  const resumeId = sess?.claude_session_id || null;
+  let resumeId = sess?.claude_session_id || null;
+  // Anti-bloat: se o contexto acumulado passou do teto (cortex_brain_config — o
+  // Charles controla em /cortex-brain, 250k a 1M), NÃO resume — reinicia a sessão
+  // limpa (re-seed persona + histórico recente) e zera o acúmulo.
+  const ctxLimit = BRAIN.contextLimitTokens || CONTEXT_RESET_TOKENS;
+  if (resumeId && (sess?.context_tokens || 0) > ctxLimit) {
+    console.log(`[contexto ${sess.context_tokens} > teto ${ctxLimit} → reinicia sessão limpa]`);
+    resumeId = null;
+  }
 
   // anexos (imagem/PDF/vídeo) → baixa pro Mac e referencia no prompt
   const files = await downloadAttachments(msg.attachments);
-  const content = msg.content + attachNote(files);
+  // Modo voz: o usuário está FALANDO e a resposta será LIDA em voz alta (TTS).
+  // Avisa o agente pra responder pra ser ouvido — e NUNCA dizer que "não fala".
+  const voiceNote = msg.is_voice
+    ? '\n\n[MODO VOZ — o usuário está falando com você e ESTA resposta será convertida em fala (TTS, voz OpenAI). Responda naturalmente pra ser OUVIDO: frases curtas, pontuação clara, PT-BR, sem markdown/código/listas. Você TEM voz — NUNCA diga que não pode falar/ler em voz alta; só responda normalmente que o sistema fala por você. Seja conciso.]'
+    : '';
+  const content = msg.content + attachNote(files) + voiceNote;
 
   let evSeq = 0;
   const onEvent = (e) => {
     if (e.kind === 'tool_result') { recordRunEventResult(msg.id, e.toolUseId, e.result); return; }
     recordRunEvent({ userId: msg.user_id, scope: 'chat', refId: msg.id, seq: evSeq++, label: e.label, detail: e.detail, input: e.input, toolUseId: e.toolUseId });
   };
-  const opts = { model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent };
+  // Modo voz → modelo leve/rápido (conversa falada). A execução normal (texto/
+  // painel/demandas) segue no modelo forte do cortex_brain_config global.
+  const voice = msg.is_voice ? { model: VOICE_MODEL, effort: VOICE_EFFORT } : {};
+  const cwd = await cwdForSession(msg.agent_id, sess?.working_dir);
 
-  let r = null;
-  if (resumeId) {
-    // retoma a sessão: manda SÓ a mensagem nova (persona/histórico já estão lá)
-    try {
-      r = await runClaude(content, { ...opts, resumeSessionId: resumeId });
-    } catch (e) {
-      console.error(`[resume falhou, recomeçando sessão] ${e.message}`);
-      r = null;
+  // ─── Roteamento (modo auto) ────────────────────────────────────────────────
+  // Cortex Router decide modelo/esforço pelo texto (profile 'painel'), com sticky
+  // por sessão e imagem→sonnet. Voz tem modelo próprio (VOICE_*), então pula o
+  // roteamento. Manual: model/effort fixos do config vencem (comportamento atual).
+  let runModel = BRAIN.model;
+  let runEffort = BRAIN.effort;
+  let routing = null;
+  if (BRAIN.mode === 'auto' && route && !msg.is_voice) {
+    const hasImage = files.some((f) => /^image\//.test(f.mime));
+    const sticky = (msg.session_id && stickyByCortexSession.get(msg.session_id)) || null;
+    const rt = route({ text: msg.content, hasImage, currentModel: sticky, profile: 'painel' });
+    runModel = rt.model;
+    runEffort = rt.effort || BRAIN.effort; // route() devolve effort null em modelo sem esforço/sticky
+    if (rt.stickyModel && msg.session_id) stickyByCortexSession.set(msg.session_id, rt.stickyModel);
+    routing = { model: runModel, effort: effortApplies(runModel) ? runEffort : null, tier: rt.tier, reason: rt.reason };
+    console.log(`[router] ${runModel}${routing.effort ? ' · ' + routing.effort : ''} (${rt.tier} — ${rt.reason})${sticky ? ` · sticky=${sticky}` : ''}`);
+  }
+  const opts = { model: runModel, effort: runEffort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent, cwd };
+
+  // ── Streaming ──────────────────────────────────────────────────────────────
+  // A msg do assistente NASCE no 1º token de texto e o conteúdo cresce em chunks
+  // (throttle ~400ms). Antes do texto, o indicador "pensando/executando" segue
+  // (a msg só existe quando o texto começa). Modo voz não faz streaming (curto +
+  // falado). Tudo best-effort: o write final (done) é o autoritativo.
+  let asstId = null;
+  let lastFlush = 0;
+  let finalized = false;
+  async function writeStream(text, done) {
+    if (finalized && !done) return;
+    if (done) finalized = true;
+    if (!asstId) {
+      const { data } = await sb.from('collaborator_messages')
+        .insert({ session_id: msg.session_id, agent_id: msg.agent_id, user_id: msg.user_id, role: 'assistant', content: text, status: done ? 'done' : 'processing', channel: msg.channel })
+        .select('id').single();
+      asstId = data?.id ?? null;
+    } else {
+      await sb.from('collaborator_messages').update(done ? { content: text, status: 'done' } : { content: text }).eq('id', asstId);
     }
   }
-  if (!r) {
-    // inicia (ou reinicia) a sessão: persona + histórico RECENTE pra semear o contexto
-    const { data: history } = await sb
-      .from('collaborator_messages')
-      .select('role,content,created_at')
-      .eq('session_id', msg.session_id)
-      .in('status', ['done'])
-      .order('created_at', { ascending: false })
-      .limit(HISTORY);
-    const recent = (history ?? []).reverse(); // mais recentes, em ordem cronológica
-    r = await runClaude(buildPrompt(agent, recent, content), opts);
+  if (!msg.is_voice) {
+    opts.onText = (text) => {
+      const now = Date.now();
+      if (now - lastFlush < 400) return;
+      lastFlush = now;
+      writeStream(text, false).catch(() => { /* chunk best-effort */ });
+    };
   }
 
-  const reply = r.text;
-  if (!reply) throw new Error('resposta vazia do claude');
+  // Botão "Parar" do chat: o front marca a msg como 'cancelled'. Um poller detecta
+  // e MATA o claude; aí não escrevemos resposta e a msg fica como 'cancelled'.
+  const ctl = { child: null, cancelled: false };
+  opts.onSpawn = (c) => { ctl.child = c; };
+  const pollCancel = setInterval(async () => {
+    try {
+      const { data } = await sb.from('collaborator_messages').select('status').eq('id', msg.id).maybeSingle();
+      if (data?.status === 'cancelled') { ctl.cancelled = true; try { ctl.child?.kill('SIGKILL'); } catch { /* noop */ } }
+    } catch { /* noop */ }
+  }, 1500);
 
-  await sb.from('collaborator_messages').insert({
-    session_id: msg.session_id,
-    agent_id: msg.agent_id,
-    user_id: msg.user_id,
-    role: 'assistant',
-    content: reply,
-    status: 'done',
-    channel: msg.channel,
-  });
-  await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', msg.id);
+  try {
+    let r = null;
+    if (resumeId) {
+      // retoma a sessão: manda SÓ a mensagem nova (persona/histórico já estão lá)
+      try {
+        r = await runClaude(content, { ...opts, resumeSessionId: resumeId });
+      } catch (e) {
+        if (ctl.cancelled) throw e;
+        console.error(`[resume falhou, recomeçando sessão] ${e.message}`);
+        r = null;
+      }
+    }
+    if (!r) {
+      if (ctl.cancelled) throw new Error('cancelado');
+      // inicia (ou reinicia) a sessão semeando o contexto. Se a conversa foi
+      // COMPACTADA (caminho C), semeia com o resumo curado; senão, com o
+      // histórico RECENTE cru (comportamento padrão).
+      let recent = [];
+      if (!sess?.context_seed) {
+        const { data: history } = await sb
+          .from('collaborator_messages')
+          .select('role,content,created_at')
+          .eq('session_id', msg.session_id)
+          .in('status', ['done'])
+          .order('created_at', { ascending: false })
+          .limit(HISTORY);
+        recent = (history ?? []).reverse(); // mais recentes, em ordem cronológica
+      }
+      // Recall só no (re)seed → entra 1x e fica cacheado na sessão (custo ~zero/turno).
+      const memoryBlock = await recall(agent.id).catch(() => '');
+      r = await runClaude(buildPrompt(agent, recent, content, sess?.context_seed || null, memoryBlock), opts);
+    }
+    if (ctl.cancelled) throw new Error('cancelado');
 
-  // grava a sessão do claude + a janela de contexto (pro painel mostrar X/1M)
-  if (msg.session_id && r.sessionId) {
-    const ctx = r.usage ? (r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.outputTokens) : null;
-    const patch = { claude_session_id: r.sessionId };
-    if (ctx != null) patch.context_tokens = ctx;
-    await sb.from('chat_sessions').update(patch).eq('id', msg.session_id);
+    let reply = r.text;
+    // Comando de memória: o colaborador emite um bloco ```remember pra gravar fatos
+    // de longo prazo sob comando ("guarda na memória que X") ou proativamente. A ponte
+    // salva e remove o bloco do texto — a confirmação natural dele permanece.
+    if (memoryReady() && /```remember/i.test(reply)) {
+      const { facts, clean } = extractRememberBlocks(reply);
+      if (facts.length) {
+        const n = await saveFacts(agent.id, facts).catch(() => 0);
+        if (n) console.log(`[memory] +${n} fato(s) sob comando (${agent.name})`);
+      }
+      reply = clean || 'Guardado na memória.';
+    }
+    // Despacho: o Bukowiski (supervisor) pode emitir ```demands no chat pra jogar
+    // tarefas na fila do time — a ponte cria as demandas e remove o bloco do texto.
+    if (agent.id === BUKOWISKI_ID && /```demands/i.test(reply)) {
+      const { demands: subs, clean } = extractDemandsBlock(reply);
+      if (subs.length) {
+        const n = await createSubDemands({ user_id: msg.user_id, agent_id: BUKOWISKI_ID }, subs, lastTeamIds).catch(() => 0);
+        reply = (clean ? `${clean}\n\n` : '') + `_(${n} demanda(s) criada(s) na fila pro time.)_`;
+      } else if (clean) {
+        reply = clean;
+      }
+    }
+    if (!reply && !asstId) throw new Error('resposta vazia do claude');
+
+    // Finaliza: insere (se nunca streamou) ou consolida o conteúdo com o texto
+    // autoritativo do 'result' + status done (aí o painel mostra as ações).
+    await writeStream(reply || '', true);
+    await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', msg.id);
+
+    // grava a sessão do claude + a janela de contexto (pro painel mostrar X/1M).
+    // Usa o uso da última mensagem do assistant (janela real do turno); só cai no
+    // uso cumulativo do 'result' se a última mensagem não trouxe usage.
+    if (msg.session_id && r.sessionId) {
+      const ctx = r.contextTokens ?? (r.usage ? r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.outputTokens : null);
+      const patch = { claude_session_id: r.sessionId };
+      if (ctx != null) patch.context_tokens = ctx;
+      await sb.from('chat_sessions').update(patch).eq('id', msg.session_id);
+    }
+
+    await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, sessionId: msg.session_id, usage: r.usage, routing });
+    console.log(
+      `[ok] ${agent.name} respondeu (${reply.length} chars` +
+        `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,
+    );
+  } catch (e) {
+    // Streaming parcial já gravado → finaliza como 'done' (mantém o que foi dito)
+    // pra não deixar mensagem pela metade em 'processing'.
+    if (asstId && !finalized) { try { await sb.from('collaborator_messages').update({ status: 'done' }).eq('id', asstId); } catch { /* noop */ } }
+    if (ctl.cancelled) { console.log(`[parado] msg ${msg.id} cancelada pelo usuário`); return; }
+    throw e;
+  } finally {
+    clearInterval(pollCancel);
   }
-
-  await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, usage: r.usage });
-  console.log(
-    `[ok] ${agent.name} respondeu (${reply.length} chars` +
-      `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,
-  );
 }
 
 async function loadTeamIds() {
@@ -451,22 +876,196 @@ async function tick(teamIds) {
   for (const msg of pending ?? []) {
     // Agente de cliente → respondido pela API (worker), não pela ponte do Mac.
     if (!teamIds.has(msg.agent_id)) continue;
-    try {
-      await processMessage(msg);
-    } catch (e) {
+    // Claim atômico + dispara na raia da conversa: conversas diferentes em paralelo,
+    // a mesma conversa serial. O loop NÃO espera aqui (não-bloqueante).
+    if (!(await claimRow('collaborator_messages', msg.id, 'pending', 'processing'))) continue;
+    runOnLane(`chat:${msg.session_id || msg.id}`, () => processMessage(msg)).catch(async (e) => {
       console.error(`[erro] msg ${msg.id}:`, e.message);
       await sb
         .from('collaborator_messages')
         .update({ status: 'error', error: String(e.message).slice(0, 500) })
         .eq('id', msg.id);
+    });
+  }
+}
+
+// ─── Compactação de conversa (caminho C) ────────────────────────────────────
+// Gera um resumo curado (TL;DR) usando a PRÓPRIA sessão do claude (--resume, que
+// já tem o contexto todo), grava como semente + marcador visual e ZERA a sessão.
+// A próxima mensagem reinicia a sessão semeada com o resumo — contexto barato,
+// histórico visual intacto. Roda na raia da conversa (não colide com mensagens).
+const COMPACT_PROMPT =
+  'Compacte NOSSA conversa num resumo de contexto que outra instância sua use pra ' +
+  'continuar SEM o histórico completo. PT-BR, denso mas LEGÍVEL e escaneável. ' +
+  'Siga EXATAMENTE este formato (markdown), nesta ordem:\n\n' +
+  '**Onde paramos:** uma frase — o estado atual e o que trava ou qual o próximo movimento.\n\n' +
+  '## Decisões\n- decisões firmes já tomadas (e o que foi descartado, se importa).\n\n' +
+  '## Feito\n- o que já foi executado/entregue — com paths/commits quando relevante.\n\n' +
+  '## Pendências\n- o que falta e o que está bloqueado, por quê.\n\n' +
+  '## Próximo passo\n- a(s) ação(ões) imediata(s), em ordem (1–3 itens).\n\n' +
+  '## Fatos & IDs\n- identificadores que não dá pra perder: paths, URLs, nomes, números, IDs.\n\n' +
+  'Regras de formato: bullets curtos (1 linha cada quando der); **negrito SÓ** no que é ' +
+  'decisão ou bloqueio crítico — NÃO em tudo; `code` para paths/comandos/IDs. Sem título ' +
+  'no topo (o painel já rotula), sem saudação, sem "neste resumo", sem repetir. Direto.';
+
+const clearCompactFlag = (id) => sb.from('chat_sessions').update({ compact_requested: false }).eq('id', id);
+
+async function compactSession(sess, agent) {
+  // Espelho do Claude Code (source='claude_code'): o --resume falha (sessão vive em
+  // outro cwd), mas o FALLBACK por histórico resume mesmo assim. Por isso o MANUAL
+  // funciona aqui também; só o AUTO (teto) é restrito a 'panel' (ver tickCompaction).
+  const isMirror = sess.source === 'claude_code';
+  const cwd = await cwdForSession(sess.agent_id, sess.working_dir);
+  let summary = '';
+  let usage = null;
+  // 1ª tentativa: --resume (barato — o modelo já tem o contexto na sessão).
+  if (sess.claude_session_id) {
+    try {
+      const r = await runClaude(COMPACT_PROMPT, {
+        resumeSessionId: sess.claude_session_id,
+        model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, cwd,
+      });
+      summary = (r.text || '').trim();
+      usage = r.usage;
+    } catch (e) {
+      console.error(`[compact resume falhou] sessão ${sess.id}: ${e.message} → fallback histórico`);
     }
+  }
+  // Fallback: sessão expirada / --resume falhou → resume a partir do histórico cru
+  // (sessão nova, sem --resume). Funciona pra qualquer conversa.
+  if (!summary) {
+    const { data: hist } = await sb
+      .from('collaborator_messages')
+      .select('role,content')
+      .eq('session_id', sess.id)
+      .in('status', ['done'])
+      .order('created_at', { ascending: true })
+      .limit(200);
+    const transcript = (hist ?? [])
+      .filter((m) => m.role !== 'system')
+      .map((m) => `${m.role === 'user' ? 'Charles' : agent.name}: ${m.content}`)
+      .join('\n');
+    if (transcript.trim()) {
+      try {
+        const r = await runClaude(`${COMPACT_PROMPT}\n\nConversa a resumir:\n${transcript}`, {
+          model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, cwd,
+        });
+        summary = (r.text || '').trim();
+        usage = r.usage;
+      } catch (e) {
+        console.error(`[compact fallback falhou] sessão ${sess.id}: ${e.message}`);
+      }
+    }
+  }
+  if (!summary) {
+    // Nada deu certo: baixa a flag (não fica em loop) e deixa o reset cego agir no teto.
+    await clearCompactFlag(sess.id);
+    return;
+  }
+  // Marcador visual (role='system') + semente, e zera o ponteiro de contexto.
+  const { data: marker } = await sb.from('collaborator_messages')
+    .insert({ session_id: sess.id, agent_id: sess.agent_id, user_id: sess.user_id, role: 'system', content: summary, status: 'done', channel: 'thribus' })
+    .select('id').single();
+  const patch = {
+    context_seed: summary,
+    context_tokens: 0,
+    compacted_at: new Date().toISOString(),
+    compact_requested: false,
+  };
+  // Conversa digitada: zera o ponteiro → próxima msg reinicia a sessão semeada com o
+  // resumo. Espelho: NÃO mexe no claude_session_id — senão o cc-mirror perde o vínculo
+  // e recria uma gêmea na próxima atividade no Claude Code desktop. O reseed via
+  // context_seed acontece igual (o --resume da sessão do CC falha → cai no resumo).
+  if (!isMirror) patch.claude_session_id = null;
+  await sb.from('chat_sessions').update(patch).eq('id', sess.id);
+  await recordUsage({ userId: sess.user_id, agentId: sess.agent_id, kind: 'chat', refId: marker?.id, sessionId: sess.id, usage });
+  console.log(`[compactado] ${agent.name} · sessão ${sess.id} → resumo ${summary.length} chars`);
+  // Memória de longo prazo pega carona: extrai fatos duráveis do RESUMO (input curto)
+  // com modelo barato. Fire-and-forget — nunca segura a compactação.
+  extractAndSaveMemory(sess.agent_id, agent, summary, cwd).catch((e) => console.error('[memory] extract falhou:', e.message));
+}
+
+// Extrai blocos ```remember [...] da resposta → fatos pra memória + texto limpo (sem o
+// bloco). Aceita array ou objeto único; bloco malformado é só removido do texto.
+function extractRememberBlocks(text) {
+  const facts = [];
+  const clean = String(text || '')
+    .replace(/```remember\s*([\s\S]*?)```/gi, (_, body) => {
+      try {
+        const parsed = JSON.parse(body.trim());
+        for (const f of (Array.isArray(parsed) ? parsed : [parsed])) {
+          if (f && typeof f.fact === 'string' && f.fact.trim()) facts.push(f);
+        }
+      } catch { /* malformado: ignora os fatos, mas remove o bloco do texto */ }
+      return '';
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { facts, clean };
+}
+
+// Extrai fatos duráveis do resumo da conversa e grava na memória de longo prazo.
+// Roda só se a memória estiver no ar; usa Haiku (centavos) sobre texto curto.
+const EXTRACT_FACTS_PROMPT =
+  'Do RESUMO abaixo, extraia apenas FATOS DURÁVEIS que valha a pena LEMBRAR em conversas ' +
+  'futuras: preferências do Charles, decisões firmes, fatos sobre a Thribus/produtos/pessoas/' +
+  'sistemas, configurações. NÃO inclua tarefas pontuais, estado efêmero ("estamos debugando X") ' +
+  'nem nada que expire rápido. Devolva SÓ um array JSON puro (sem ```, sem texto fora): ' +
+  '[{"fact":"frase curta auto-contida","category":"preferencia|decisao|projeto|pessoa|sistema|fato",' +
+  '"entity":"opcional","confidence":0.5-1.0}]. Máx 8 itens. Se não houver nada durável, devolva [].';
+
+async function extractAndSaveMemory(agentId, agent, summary, cwd) {
+  if (!memoryReady() || !summary || summary.length < 80) return;
+  let r;
+  try {
+    r = await runClaude(`${EXTRACT_FACTS_PROMPT}\n\nRESUMO:\n${summary}`, {
+      model: 'haiku', maxBudgetUsd: 0.1, cwd, timeoutMs: 60000,
+    });
+  } catch (e) { console.error('[memory] extract claude falhou:', e.message); return; }
+  const m = String(r?.text || '').match(/\[[\s\S]*\]/); // primeiro array JSON
+  if (!m) return;
+  let facts;
+  try { facts = JSON.parse(m[0]); } catch { return; }
+  if (!Array.isArray(facts) || !facts.length) return;
+  const n = await saveFacts(agentId, facts);
+  if (n) console.log(`[memory] +${n} fato(s) de ${agent.name} (sessão compactada)`);
+}
+
+// Sessões com compactação EM ANDAMENTO — a compactação leva ~10-30s (chamada ao
+// claude), mas o poll roda a cada 3s; sem isto, re-enfileirava a MESMA sessão a
+// cada poll (flag ainda não baixou) e inseria vários marcadores idênticos.
+const _compacting = new Set();
+async function tickCompaction(teamIds) {
+  // Manual (botão "Compactar" → compact_requested) OU automático (contexto passou
+  // do teto do painel). Em ambos, gera resumo curado em vez do corte cego.
+  const ctxLimit = BRAIN.contextLimitTokens || CONTEXT_RESET_TOKENS;
+  // MANUAL (botão → compact_requested) funciona pra qualquer conversa, inclusive
+  // espelho. AUTO (passou do teto) só nas DIGITADAS (source='panel') — não dispara
+  // sozinho nas sessões do Claude Code (que o Charles controla no próprio CC).
+  const { data: rows, error } = await sb
+    .from('chat_sessions')
+    .select('id,agent_id,user_id,claude_session_id,working_dir,context_tokens,compact_requested,source')
+    .or(`compact_requested.eq.true,and(context_tokens.gt.${ctxLimit},source.eq.panel)`)
+    .limit(3);
+  if (error) { console.error('[compact poll erro]', error.message); return; }
+  for (const sess of rows ?? []) {
+    if (!teamIds.has(sess.agent_id)) continue;
+    if (_compacting.has(sess.id)) continue; // já em andamento → não re-enfileira
+    _compacting.add(sess.id);
+    const { data: agent } = await sb.from('agents').select('id,name,sector,system_prompt').eq('id', sess.agent_id).single();
+    if (!agent) { _compacting.delete(sess.id); continue; }
+    // Mesma raia das mensagens da conversa → serial (não corrompe a sessão).
+    runOnLane(`chat:${sess.id}`, () => compactSession(sess, agent))
+      .catch((e) => console.error(`[compact erro] sessão ${sess.id}:`, e.message))
+      .finally(() => _compacting.delete(sess.id));
   }
 }
 
 // ─── Fila de demandas (Kanban "Demandas do time") ───────────────────────────
 // O Charles adiciona demandas no painel; aqui o agente EXECUTA a tarefa.
-async function processDemand(d) {
-  await sb.from('team_demands').update({ status: 'doing' }).eq('id', d.id);
+async function processDemand(d, teamIds = new Set()) {
+  const startedAt = Date.now();
+  await sb.from('team_demands').update({ status: 'doing', started_at: new Date(startedAt).toISOString() }).eq('id', d.id);
 
   const { data: agent } = await sb
     .from('agents')
@@ -474,6 +1073,22 @@ async function processDemand(d) {
     .eq('id', d.agent_id)
     .single();
   if (!agent) throw new Error(`agente ${d.agent_id} não encontrado`);
+
+  // Modo orquestrador: o Bukowiski avalia se executa ou quebra/delega pro time.
+  let orchestrateNote = '';
+  if (d.orchestrate) {
+    const { data: team } = await sb.from('agents').select('id,name,sector').in('id', [...teamIds]);
+    const roster = (team ?? [])
+      .filter((a) => a.id !== d.agent_id)
+      .map((a) => `- ${a.name} (id: ${a.id})${a.sector ? ` — ${a.sector}` : ''}`)
+      .join('\n');
+    orchestrateNote =
+      `\n\nMODO ORQUESTRADOR: avalie esta demanda. Se VOCÊ resolve melhor sozinho, execute normal. ` +
+      `Se for melhor DIVIDIR entre o time, NÃO execute — emita um bloco \`\`\`demands com um array JSON ` +
+      `das sub-tarefas, cada uma com o colaborador certo: [{"title":"…","description":"…","agent":"<id do colaborador>"` +
+      `${d.project ? `,"project":"${d.project}"` : ''}}]. A ponte cria as sub-demandas na fila e cada um executa a sua. ` +
+      `Colaboradores disponíveis:\n${roster || '(nenhum além de você)'}`;
+  }
 
   // Demanda-filho (resposta do Charles a uma demanda anterior): puxa o contexto
   // do pai (título + o que o agente entregou/perguntou) pra continuar coerente.
@@ -498,6 +1113,7 @@ async function processDemand(d) {
     `DEMANDA do Charles${d.project ? ` (projeto ${d.project})` : ''}: ${d.title}` +
     parentCtx +
     (d.description ? `\n\n${detailLabel}:\n${d.description}` : '') +
+    orchestrateNote +
     `\n\nExecute a demanda de ponta a ponta. No final, devolva um resumo curto do que foi feito ` +
     `e, se algo precisa da decisão do Charles (gastar dinheiro, mexer em produção, etc.), diga claramente o que falta.`;
 
@@ -510,16 +1126,200 @@ async function processDemand(d) {
     timeoutMs: DEMAND_TIMEOUT_MS,
     model: BRAIN.model, effort: BRAIN.effort, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent,
   });
-  const result = r.text;
+  // Persiste o custo no ledger ASSIM QUE o run volta — antes de qualquer throw/
+  // decomposição. Se algo abaixo falhar e a demanda cair no auto-retry, o gasto já
+  // está em cortex_usage (recordUsage tem try/catch interno, não muda o fluxo).
+  await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage: r.usage });
+  let result = r.text;
   if (!result) throw new Error('resposta vazia do claude');
 
-  // limpa o erro antigo se a demanda foi reenfileirada depois de falhar
-  await sb.from('team_demands').update({ status: 'done', result, error: null }).eq('id', d.id);
-  await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage: r.usage });
+  // Decomposição: SÓ o orquestrador (demanda orchestrate, ou o próprio Bukowiski) pode
+  // emitir ```demands → sub-demandas na fila. Espelha o gate do chat — sem isso um
+  // colaborador comum poderia despachar pro time (escalonamento + flood). Bloco
+  // indevido é apenas removido do texto (não vaza JSON no card).
+  if (/```demands/i.test(result)) {
+    const canOrchestrate = d.orchestrate === true || d.agent_id === BUKOWISKI_ID;
+    const { demands: subs, clean } = extractDemandsBlock(result);
+    if (canOrchestrate && subs.length) {
+      const n = await createSubDemands(d, subs, teamIds);
+      result = (clean ? `${clean}\n\n` : '') + `_(${n} sub-demanda(s) criada(s) na fila e delegada(s) ao time.)_`;
+    } else if (clean) {
+      result = clean;
+    }
+  }
+
+  const usage = r.usage;
+  // status done + custo/tempo/tokens desnormalizados (card mostra sem join na cortex_usage)
+  await sb.from('team_demands').update({
+    status: 'done', result, error: null,
+    finished_at: new Date().toISOString(),
+    duration_ms: Date.now() - startedAt,
+    cost_usd: usage?.costUsd ?? 0,
+    total_tokens: usage?.totalTokens ?? 0,
+  }).eq('id', d.id);
+  // (recordUsage já foi gravado logo após o runClaude — não duplicar aqui)
   console.log(
     `[ok] ${agent.name} executou demanda "${d.title.slice(0, 50)}" (${result.length} chars` +
-      `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''})`,
+      `${usage ? `, $${usage.costUsd.toFixed(4)}` : ''})`,
   );
+}
+
+// Extrai o bloco ```demands [...] da resposta → sub-demandas + texto limpo (sem o bloco).
+function extractDemandsBlock(text) {
+  const demands = [];
+  const clean = String(text || '')
+    .replace(/```demands\s*([\s\S]*?)```/gi, (_, body) => {
+      try {
+        const parsed = JSON.parse(body.trim());
+        // Descarta placeholders do template (… < > ... / "titulo" / "exemplo") — senão um
+        // exemplo ecoado pelo modelo viraria demanda-lixo despachada pro time.
+        const isPlaceholder = (t) => /[…<>]|\.\.\./.test(t) || /^(t[ií]tulo|title|tarefa|sub-?tarefa|exemplo)$/i.test(t);
+        for (const x of (Array.isArray(parsed) ? parsed : [parsed])) {
+          const title = x && typeof x.title === 'string' ? x.title.trim() : '';
+          if (title && !isPlaceholder(title)) demands.push(x);
+          else if (title) console.warn(`[demands] título placeholder ignorado: ${JSON.stringify(title).slice(0, 60)}`);
+        }
+      } catch { /* malformado: ignora */ }
+      return '';
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { demands, clean };
+}
+
+// Cria sub-demandas na fila a partir do bloco do orquestrador. Resolve o agente por
+// id OU nome (case-insensitive); cai no Bukowiski se não bater nenhum do time.
+async function createSubDemands(parent, subs, teamIds) {
+  const { data: team } = await sb.from('agents').select('id,name').in('id', [...teamIds]);
+  const roster = team ?? [];
+  const fallback = parent.agent_id || 'bukowiski-thribus';
+  const resolveAgent = (ref) => {
+    if (!ref) return fallback;
+    const byId = roster.find((a) => a.id === ref);
+    if (byId) return byId.id;
+    const byName = roster.find((a) => a.name.toLowerCase() === String(ref).toLowerCase());
+    if (byName) return byName.id;
+    console.warn(`[subdemanda] colaborador '${ref}' não encontrado no time → atribuída a ${fallback}`);
+    return fallback;
+  };
+  const list = subs.slice(0, 20);
+  const keyOf = (s, i) => (s && s.key != null ? String(s.key) : `#${i}`);
+  const allKeys = new Set(list.map(keyOf));
+  const keyToId = new Map(); // key local → uuid real (preenchido conforme insere)
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // Resolve uma ref de depends_on: key local já inserida → uuid; uuid externo → ele mesmo;
+  // ref desconhecida (key inexistente / ainda não inserida) → null (ignorada).
+  const resolveDep = (ref) => {
+    const r = String(ref);
+    if (keyToId.has(r)) return keyToId.get(r);
+    if (UUID_RE.test(r)) return r;
+    return null;
+  };
+
+  const buildRow = (s, depsUuids) => {
+    const tags = Array.isArray(s.tags) ? s.tags.map(String) : [];
+    let description = s.description ? String(s.description) : null;
+    if (s.gate === true) {
+      if (!tags.includes('gate')) tags.push('gate');
+      const aviso = '⚠️ GATE: requer OK explícito do Charles antes de QUALQUER ação de produção/deploy/SQL/gasto/DNS/exclusão. Pare e peça confirmação.';
+      description = description ? `${aviso}\n\n${description}` : aviso;
+    }
+    return {
+      user_id: parent.user_id,
+      agent_id: resolveAgent(s.agent),
+      title: String(s.title).slice(0, 200),
+      description,
+      project: s.project || parent.project || null,
+      status: 'todo',
+      priority: Number(s.priority) || 0,
+      parent_id: parent.id || null,
+      orchestrate: s.orchestrate === true,
+      tags,
+      depends_on: depsUuids,
+    };
+  };
+
+  // Insere em ORDEM TOPOLÓGICA: uma demanda só entra quando todas as deps que são KEYS
+  // LOCAIS já viraram uuid — assim depends_on entra resolvido no próprio INSERT, sem race
+  // com o poller (que poderia pegar a dependente antes de um UPDATE pós-insert).
+  const depKeysLocal = (s) =>
+    (Array.isArray(s.depends_on) ? s.depends_on.map(String) : []).filter((r) => allKeys.has(r));
+  const isReady = (s) => depKeysLocal(s).every((r) => keyToId.has(r));
+
+  let n = 0;
+  let pending = list.map((s, i) => ({ s, key: keyOf(s, i) }));
+  let guard = 0;
+  while (pending.length && guard++ <= list.length + 1) {
+    const ready = pending.filter(({ s }) => isReady(s));
+    // Trava (ciclo ou dep inexistente): força o resto, resolvendo só as deps que já dá.
+    const batch = ready.length ? ready : pending;
+    if (!ready.length) {
+      console.warn(`[subdemanda] dep não resolvível (ciclo/inexistente) — inserindo ${pending.length} sem as deps faltantes`);
+    }
+    const insertedKeys = new Set();
+    for (const { s, key } of batch) {
+      const uuids = (Array.isArray(s.depends_on) ? s.depends_on : []).map(resolveDep).filter(Boolean);
+      const { data, error } = await sb.from('team_demands').insert(buildRow(s, uuids)).select('id').single();
+      if (!error && data) { keyToId.set(key, data.id); n++; insertedKeys.add(key); }
+      else console.warn(`[subdemanda] insert falhou (${key}): ${error?.message ?? 'sem id'}`);
+    }
+    pending = pending.filter((p) => !insertedKeys.has(p.key));
+    if (!insertedKeys.size) break; // nada inseriu nesta volta → evita loop infinito
+  }
+  return n;
+}
+
+// Estado das dependências (pipeline). ready=true quando todas em depends_on estão
+// 'done' (dep deletada = ignorada). failedDep = uma dep em 'error' → propaga o
+// bloqueio (a dependente vira 'error' visível em vez de ficar presa em 'todo').
+async function depsState(d) {
+  const deps = Array.isArray(d.depends_on) ? d.depends_on : [];
+  if (!deps.length) return { ready: true };
+  const { data } = await sb.from('team_demands').select('id,status').in('id', deps);
+  const byId = new Map((data ?? []).map((x) => [x.id, x.status]));
+  const failedDep = deps.find((id) => byId.get(id) === 'error');
+  if (failedDep) return { ready: false, failedDep };
+  const ready = deps.every((id) => !byId.has(id) || byId.get(id) === 'done');
+  return { ready };
+}
+
+// Rede de segurança: quando nada roda e há demandas travadas por dependência, busca
+// o grafo depends_on (só nós não-'done') e marca como 'error' as que estão num CICLO
+// — senão A→B→A travaria a fila pra sempre, invisível.
+async function flagDependencyCycles(blocked) {
+  const ids = new Set(blocked.map((d) => d.id));
+  const graph = new Map();
+  let frontier = [...ids];
+  while (frontier.length) {
+    const { data } = await sb.from('team_demands').select('id,status,depends_on').in('id', frontier);
+    frontier = [];
+    for (const r of data ?? []) {
+      if (graph.has(r.id)) continue;
+      const deps = (Array.isArray(r.depends_on) ? r.depends_on : []).filter(Boolean);
+      graph.set(r.id, r.status === 'done' ? [] : deps); // dep 'done' não bloqueia
+      for (const x of deps) if (!graph.has(x)) frontier.push(x);
+    }
+  }
+  const state = new Map(); // 0=visitando, 1=ok
+  const inCycle = new Set();
+  const stack = [];
+  const dfs = (u) => {
+    state.set(u, 0); stack.push(u);
+    for (const v of graph.get(u) ?? []) {
+      if (state.get(v) === 0) { for (let i = stack.indexOf(v); i < stack.length; i++) inCycle.add(stack[i]); }
+      else if (!state.has(v)) dfs(v);
+    }
+    stack.pop(); state.set(u, 1);
+  };
+  for (const id of graph.keys()) if (!state.has(id)) dfs(id);
+  const toFail = [...inCycle].filter((id) => ids.has(id));
+  if (toFail.length) {
+    await sb.from('team_demands')
+      .update({ status: 'error', error: 'Dependência circular — demandas se bloqueiam mutuamente.' })
+      .in('id', toFail).eq('status', 'todo');
+    console.error('[demandas] ciclo de dependências →', toFail);
+  }
 }
 
 async function tickDemands(teamIds) {
@@ -529,23 +1329,43 @@ async function tickDemands(teamIds) {
     .eq('status', 'todo')
     .order('priority', { ascending: false })
     .order('created_at', { ascending: true })
-    .limit(1); // 1 por vez pra não travar o chat interativo
+    .limit(10); // candidatas — a 1ª pode estar bloqueada por dependência (pipeline)
   if (error) {
     console.error('[demandas poll erro]', error.message);
     return;
   }
+  const blocked = [];
   for (const d of queue ?? []) {
-    if (!teamIds.has(d.agent_id)) continue; // só o time interno executa pela ponte
-    try {
-      await processDemand(d);
-    } catch (e) {
-      console.error(`[erro] demanda ${d.id}:`, e.message);
-      await sb
-        .from('team_demands')
-        .update({ status: 'error', error: String(e.message).slice(0, 500) })
-        .eq('id', d.id);
+    if (!teamIds.has(d.agent_id)) continue;   // só o time interno executa pela ponte
+    const dep = await depsState(d);
+    if (!dep.ready) {
+      if (dep.failedDep) {
+        await sb.from('team_demands')
+          .update({ status: 'error', error: `bloqueada: dependência ${dep.failedDep} falhou` })
+          .eq('id', d.id);
+        console.log(`[bloqueada] demanda ${d.id}: dependência ${dep.failedDep} em erro`);
+      } else {
+        blocked.push(d); // ainda esperando deps — candidata a ciclo se nada rodar
+      }
+      continue;
     }
+    // Claim atômico + raia da demanda — não bloqueia o loop (uma demanda longa de
+    // 25min não trava o re-poll do chat).
+    if (!(await claimRow('team_demands', d.id, 'todo', 'doing'))) continue;
+    runOnLane(`demand:${d.id}`, () => processDemand(d, teamIds)).catch(async (e) => {
+      console.error(`[erro] demanda ${d.id}:`, e.message);
+      const tries = d.retry_count || 0;
+      if (tries < DEMAND_AUTO_RETRY) {
+        await sb.from('team_demands').update({ status: 'todo', retry_count: tries + 1, started_at: null }).eq('id', d.id);
+        console.log(`[retry] demanda ${d.id} reenfileirada (${tries + 1}/${DEMAND_AUTO_RETRY})`);
+      } else {
+        await sb.from('team_demands').update({ status: 'error', error: String(e.message).slice(0, 500) }).eq('id', d.id);
+      }
+    });
+    return; // rodou 1 demanda neste tick
   }
+  // Nada rodou e há travadas por dependência → pode ser ciclo. Marca as envolvidas.
+  if (blocked.length) await flagDependencyCycles(blocked);
 }
 
 // ─── Respostas no thread da demanda (conversa dentro do MESMO card) ─────────
@@ -600,7 +1420,13 @@ async function processDemandReply(m) {
     content: result, status: 'done', cost_usd: r.usage?.costUsd ?? 0,
   });
   await sb.from('demand_messages').update({ status: 'done' }).eq('id', m.id);
-  await sb.from('team_demands').update({ status: 'done', error: null }).eq('id', d.id);
+  // custo/tokens ACUMULADOS na demanda (execução inicial + respostas no thread)
+  await sb.from('team_demands').update({
+    status: 'done', error: null,
+    finished_at: new Date().toISOString(),
+    cost_usd: (Number(d.cost_usd) || 0) + (r.usage?.costUsd ?? 0),
+    total_tokens: (Number(d.total_tokens) || 0) + (r.usage?.totalTokens ?? 0),
+  }).eq('id', d.id);
   await recordUsage({ userId: d.user_id, agentId: d.agent_id, kind: 'demand', refId: d.id, usage: r.usage });
   console.log(
     `[ok] ${agent.name} respondeu no thread "${d.title.slice(0, 40)}" (${result.length} chars` +
@@ -624,18 +1450,19 @@ async function tickDemandReplies(teamIds) {
     // só processa se a demanda é de um agente do time interno
     const { data: d } = await sb.from('team_demands').select('agent_id').eq('id', m.demand_id).single();
     if (!d || !teamIds.has(d.agent_id)) continue;
-    try {
-      await processDemandReply(m);
-    } catch (e) {
+    // Claim atômico + raia da demanda (mesma raia da demanda-mãe — não roda a
+    // demanda e sua resposta em paralelo, pois compartilham contexto).
+    if (!(await claimRow('demand_messages', m.id, 'pending', 'processing'))) continue;
+    runOnLane(`demand:${m.demand_id}`, () => processDemandReply(m)).catch(async (e) => {
       console.error(`[erro] thread ${m.id}:`, e.message);
       await sb.from('demand_messages').update({ status: 'error', error: String(e.message).slice(0, 500) }).eq('id', m.id);
       await sb.from('team_demands').update({ status: 'done' }).eq('id', m.demand_id); // não deixa travada em 'doing'
-    }
+    });
   }
 }
 
 // ─── Rotinas (demandas recorrentes) ─────────────────────────────────────────
-function computeNextRun(kind, runTime, weekday) {
+function computeNextRun(kind, runTime, weekday, dayOfMonth = 1) {
   const [h, m] = String(runTime || '09:00').split(':').map(Number);
   const now = new Date();
   const next = new Date(now);
@@ -645,6 +1472,17 @@ function computeNextRun(kind, runTime, weekday) {
     let add = (wd - next.getDay() + 7) % 7;
     if (add === 0 && next <= now) add = 7;
     next.setDate(next.getDate() + add);
+  } else if (kind === 'monthly') {
+    const dom = Number(dayOfMonth) || 1;
+    const clampDay = (y, mo) => Math.min(dom, new Date(y, mo + 1, 0).getDate());
+    let y = now.getFullYear(), mo = now.getMonth();
+    next.setFullYear(y, mo, clampDay(y, mo));
+    next.setHours(h || 0, m || 0, 0, 0);
+    if (next <= now) {
+      mo += 1; if (mo > 11) { mo = 0; y += 1; }
+      next.setFullYear(y, mo, clampDay(y, mo));
+      next.setHours(h || 0, m || 0, 0, 0);
+    }
   } else if (next <= now) {
     next.setDate(next.getDate() + 1);
   }
@@ -669,7 +1507,7 @@ async function tickRoutines(teamIds) {
         title: rt.title, description: rt.description, project: rt.project,
         status: 'todo', priority: 3,
       });
-      const next = computeNextRun(rt.schedule_kind, rt.run_time, rt.weekday);
+      const next = computeNextRun(rt.schedule_kind, rt.run_time, rt.weekday, rt.day_of_month);
       await sb.from('team_routines').update({ last_run_at: nowIso, next_run_at: next }).eq('id', rt.id);
       console.log(`[rotina] criou demanda "${String(rt.title).slice(0, 40)}" · próximo ${next}`);
     } catch (e) {
@@ -757,19 +1595,123 @@ console.log(
     '  chat + demandas (Kanban) + respostas no thread · uso em cortex_usage\n' +
     '  agentes de cliente: ignorados',
 );
+// Espelho da memória de longo prazo pro painel (padrão fs_browse_requests): PUSH das
+// ops que o painel marcou (pending_op) → VPS, e PULL (throttle 30s) dos fatos → mirror.
+let _lastMemPull = 0;
+async function tickMemorySync() {
+  if (!memoryReady()) return;
+  // PUSH — ops do painel (add/edit/delete) → VPS
+  try {
+    const { data: ops } = await sb.from('cortex_memory').select('*').not('pending_op', 'is', null).limit(50);
+    for (const op of ops ?? []) {
+      try {
+        const res = await applyOp(op);
+        if (op.pending_op === 'delete') {
+          await sb.from('cortex_memory').delete().eq('id', op.id);
+        } else {
+          const patch = { pending_op: null, synced_at: new Date().toISOString() };
+          if (res.remoteId) patch.remote_id = res.remoteId;
+          await sb.from('cortex_memory').update(patch).eq('id', op.id);
+        }
+      } catch (e) { console.error('[memory] push op falhou (fica pendente):', e.message); }
+    }
+  } catch (e) { console.error('[memory] push falhou:', e.message); }
+
+  // PULL — espelha os fatos da VPS no mirror (throttle 30s)
+  if (Date.now() - _lastMemPull < 30000) return;
+  _lastMemPull = Date.now();
+  try {
+    const facts = await listAllFacts();
+    if (!facts) return; // indisponível: não mexe no mirror
+    const { data: mirror } = await sb.from('cortex_memory').select('id,remote_id,pending_op');
+    const byRemote = new Map((mirror ?? []).filter((m) => m.remote_id != null).map((m) => [String(m.remote_id), m]));
+    const pendingRemote = new Set((mirror ?? []).filter((m) => m.pending_op).map((m) => String(m.remote_id)));
+    const seen = new Set();
+    for (const f of facts) {
+      seen.add(String(f.id));
+      if (pendingRemote.has(String(f.id))) continue; // não sobrescreve edição local pendente
+      const row = {
+        remote_id: f.id, agent_id: f.agent_id, category: f.category, entity: f.entity,
+        fact: f.fact, confidence: f.confidence, active: f.active,
+        pending_op: null, synced_at: new Date().toISOString(),
+      };
+      const existing = byRemote.get(String(f.id));
+      if (existing) await sb.from('cortex_memory').update(row).eq('id', existing.id);
+      else await sb.from('cortex_memory').insert(row);
+    }
+    // some da VPS (e sem op local) → remove do espelho
+    for (const m of mirror ?? []) {
+      if (m.remote_id != null && !seen.has(String(m.remote_id)) && !m.pending_op) {
+        await sb.from('cortex_memory').delete().eq('id', m.id);
+      }
+    }
+  } catch (e) { console.error('[memory] pull falhou:', e.message); }
+}
+
 async function loop() {
+  // Carrega o Cortex Router 1x (import do .mjs pré-buildado). Falhou → auto fica
+  // indisponível e a ponte segue no modo fixo; nunca derruba o loop.
+  try {
+    route = await loadRouter();
+    console.log('[router] Cortex Router carregado · auto disponível (profile painel)');
+  } catch (e) {
+    console.error('[router] falha ao carregar — auto indisponível, modo fixo:', e.message);
+    route = null;
+  }
   for (;;) {
-    const teamIds = await loadTeamIds();
-    await loadBrainConfig();        // modelo/esforço/teto vindos do painel (cache 15s)
-    await importSkills();           // espelha as skills reais no painel (1x)
-    await materializeSkills();      // skills do painel → ~/.claude/skills (cache 15s)
-    await tick(teamIds);            // chat interativo primeiro
-    await tickDemandReplies(teamIds); // respostas no thread (conversa ativa) têm prioridade
-    await tickRoutines(teamIds);    // rotinas vencidas viram demanda
-    await tickDemands(teamIds);     // depois 1 demanda nova da fila
+    try {
+      const teamIds = await loadTeamIds();
+      lastTeamIds = teamIds;
+      await loadBrainConfig();        // modelo/esforço/teto vindos do painel (cache 15s)
+      await fetchUsageLimits();       // limites do plano (5h + semana) → painel (cache 2min)
+      await importSkills();           // espelha as skills reais no painel (1x)
+      await materializeSkills();      // skills do painel → ~/.claude/skills (cache 15s)
+      await tick(teamIds);            // chat interativo primeiro
+      await tickCompaction(teamIds);  // compacta conversas (botão ou teto) → semente
+      await tickMemorySync();         // memória de longo prazo: espelho ↔ VPS (best-effort)
+      await tickDemandReplies(teamIds); // respostas no thread (conversa ativa) têm prioridade
+      await tickRoutines(teamIds);    // rotinas vencidas viram demanda
+      await tickDemands(teamIds);     // depois 1 demanda nova da fila
+    } catch (e) {
+      // Transitório (ex.: 'fetch failed' em blip de rede/Supabase) NÃO derruba o
+      // processo: antes loadTeamIds/loadBrainConfig sem catch subiam pro fatal
+      // handler → process.exit(1) → launchd respawn → crash-loop + demandas órfãs.
+      // Agora loga e segue no próximo ciclo.
+      console.error('[loop erro transitório]', e?.message || e);
+    }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 }
+// Navegador de pastas: poller próprio e rápido (independe do loop pesado) pra
+// navegar fluido no seletor "Abrir pasta…" do painel.
+setInterval(tickFsBrowse, 700);
+
+// ── Auto-limpeza de órfãs no boot ────────────────────────────────────────────
+// Um restart/deploy/crash do bridge pode matar o processo ENTRE um chunk de
+// streaming e o write final (status 'done'), deixando a msg presa em 'processing'
+// (spinner eterno no painel). No boot NÃO há sessão de chat ativa — toda msg em
+// 'processing' é resíduo de uma instância morta —, então destrava todas ANTES de
+// o loop principal começar a processar (sem race). Best-effort: falhou, segue.
+try {
+  const { data: reaped } = await sb.from('collaborator_messages')
+    .update({ status: 'done' })
+    .eq('status', 'processing')
+    .select('id');
+  if (reaped?.length) console.log(`[boot] destravadas ${reaped.length} msg(s) órfãs em 'processing'`);
+} catch (e) { console.error('[boot] auto-limpeza de órfãs falhou:', e.message); }
+
+// Mesma ideia pras DEMANDAS: uma demanda presa em 'doing' no boot é resíduo de uma
+// instância morta (o claim só vai de 'todo'→'doing' e não há execução ativa no boot).
+// Volta pra 'todo' pra ser reexecutada do zero — sem isso a demanda virava zumbi.
+try {
+  const { data: reapedD } = await sb.from('team_demands')
+    .update({ status: 'todo', started_at: null })
+    .eq('status', 'doing')
+    .select('id');
+  if (reapedD?.length) console.log(`[boot] destravadas ${reapedD.length} demanda(s) órfã(s) em 'doing' → 'todo'`);
+} catch (e) { console.error('[boot] reclaim de demandas órfãs falhou:', e.message); }
+
+await initMemory(); // memória de longo prazo (best-effort: se falhar, segue sem)
 loop().catch((e) => {
   console.error('fatal:', e);
   process.exit(1);

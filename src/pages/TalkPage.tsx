@@ -12,6 +12,8 @@ import { isStopPhrase } from '@/hooks/useOrbConversation';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
+import { RoutingBadge } from '@/components/cortex/RoutingBadge';
+import { getRoutingForRefs, subscribeUsage, cortexBrainConfigured, type RoutingInfo } from '@/services/cortexBrain';
 import { Markdown } from '@/components/shared/Markdown';
 import { ThinkingActivity, MessageSteps } from '@/components/shared/ThinkingActivity';
 import { listMessages, sendMessage, subscribeChat, chatConfigured, uploadAttachment, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
@@ -59,6 +61,7 @@ export function TalkPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [routing, setRouting] = useState<Record<string, RoutingInfo>>({});
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -172,6 +175,20 @@ export function TalkPage() {
     if (!userId) return;
     return subscribeChat(userId, refetch);
   }, [userId, refetch]);
+
+  // Badge de roteamento: em modo auto a ponte grava tier/reason em cortex_usage
+  // (ref_id = msg do usuário). Carrega por sessão e reage ao uso em tempo real.
+  const loadRouting = useCallback(async () => {
+    const userIds = messages.filter((m) => m.role === 'user').map((m) => m.id);
+    if (!userIds.length) { setRouting({}); return; }
+    try { setRouting(await getRoutingForRefs(userIds)); } catch { /* silencioso */ }
+  }, [messages]);
+
+  useEffect(() => { loadRouting(); }, [loadRouting]);
+  useEffect(() => {
+    if (!cortexBrainConfigured) return;
+    return subscribeUsage(loadRouting);
+  }, [loadRouting]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -644,16 +661,20 @@ export function TalkPage() {
             </div>
           ) : (
             <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 py-5 space-y-4">
-              {messages.map((m, mi) =>
-                m.role === 'user' ? (
-                  <div key={m.id} className="flex justify-end">
-                    <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[15px] leading-[1.7]">
-                      {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
-                      {m.content && <span className="whitespace-pre-wrap">{m.content}</span>}
-                      {m.status === 'error' && <div className="text-[11px] mt-1 text-white/80">erro: {m.error}</div>}
+              {messages.map((m, mi) => {
+                if (m.role === 'user') {
+                  return (
+                    <div key={m.id} className="flex justify-end">
+                      <div className="max-w-[78%] px-4 py-2.5 rounded-2xl rounded-br-md bg-brand text-white text-[15px] leading-[1.7]">
+                        {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
+                        {m.content && <span className="whitespace-pre-wrap">{m.content}</span>}
+                        {m.status === 'error' && <div className="text-[11px] mt-1 text-white/80">erro: {m.error}</div>}
+                      </div>
                     </div>
-                  </div>
-                ) : (
+                  );
+                }
+                const prevUserId = [...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null;
+                return (
                   <div key={m.id} className="flex gap-2.5 max-w-[90%]">
                     <div className="w-7 h-7 rounded-full bg-brand/15 text-brand-bright flex items-center justify-center text-[12px] font-bold shrink-0 mt-0.5">
                       {agent.name.charAt(0).toUpperCase()}
@@ -664,11 +685,12 @@ export function TalkPage() {
                         <Markdown text={m.content} />
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
-                      <MessageSteps refId={[...messages.slice(0, mi)].reverse().find((x) => x.role === 'user')?.id ?? null} />
+                      {prevUserId && <RoutingBadge info={routing[prevUserId]} />}
+                      <MessageSteps refId={prevUserId} />
                     </div>
                   </div>
-                ),
-              )}
+                );
+              })}
               {waiting && <ThinkingActivity agentName={agent.name} refId={lastUserMsgId} />}
             </div>
           )}
