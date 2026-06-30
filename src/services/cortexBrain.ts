@@ -107,6 +107,9 @@ export function effortIndex(e: CortexEffort): number {
 }
 
 // ─── Config ─────────────────────────────────────────────────────────────────
+/** 'auto' = Cortex Router decide o modelo por mensagem; 'manual' = modelo fixo. */
+export type CortexMode = 'auto' | 'manual';
+
 // Teto de contexto: quanto a conversa acumula (tokens do turno) antes de o daemon
 // rotacionar / a ponte resetar a sessão. Piso 250k; teto 1M (janela do Max).
 export const CONTEXT_LIMIT_MIN = 250_000;
@@ -117,6 +120,8 @@ const clampContext = (n: number) =>
   Math.min(CONTEXT_LIMIT_MAX, Math.max(CONTEXT_LIMIT_MIN, Math.round(n) || CONTEXT_LIMIT_MIN));
 
 export interface CortexBrainConfig {
+  /** 'auto' = roteador escolhe; 'manual' = o `model` abaixo é fixo (override). */
+  mode: CortexMode;
   model: CortexModel;
   effort: CortexEffort;
   monthlyBudgetUsd: number;
@@ -126,6 +131,7 @@ export interface CortexBrainConfig {
 }
 
 export const DEFAULT_CORTEX_CONFIG: CortexBrainConfig = {
+  mode: 'auto',
   model: 'opus',
   effort: 'high',
   monthlyBudgetUsd: 0,
@@ -134,6 +140,7 @@ export const DEFAULT_CORTEX_CONFIG: CortexBrainConfig = {
 };
 
 interface ConfigRow {
+  mode?: CortexMode | null;
   model: CortexModel;
   effort: CortexEffort;
   monthly_budget_usd: number | string;
@@ -145,13 +152,14 @@ export async function getCortexConfig(): Promise<CortexBrainConfig> {
   if (!supabase) return DEFAULT_CORTEX_CONFIG;
   const { data, error } = await supabase
     .from('cortex_brain_config')
-    .select('model,effort,monthly_budget_usd,max_budget_usd,context_limit_tokens')
+    .select('mode,model,effort,monthly_budget_usd,max_budget_usd,context_limit_tokens')
     .eq('scope', 'global')
     .maybeSingle();
   if (error) throw error;
   if (!data) return DEFAULT_CORTEX_CONFIG;
   const r = data as ConfigRow;
   return {
+    mode: r.mode === 'manual' ? 'manual' : 'auto',
     model: r.model,
     effort: r.effort,
     monthlyBudgetUsd: Number(r.monthly_budget_usd) || 0,
@@ -165,6 +173,7 @@ export async function saveCortexConfig(cfg: CortexBrainConfig): Promise<void> {
   const { error } = await supabase.from('cortex_brain_config').upsert(
     {
       scope: 'global',
+      mode: cfg.mode,
       model: cfg.model,
       effort: cfg.effort,
       monthly_budget_usd: cfg.monthlyBudgetUsd,
@@ -175,6 +184,42 @@ export async function saveCortexConfig(cfg: CortexBrainConfig): Promise<void> {
     { onConflict: 'scope' },
   );
   if (error) throw error;
+}
+
+// ─── Roteamento (badge por resposta) ────────────────────────────────────────
+// Em modo auto a ponte grava tier/reason em cortex_usage (ref_id = id da msg do
+// usuário). O chat lê isso pra mostrar "roteado: opus · high — sinal pesado".
+
+export interface RoutingInfo {
+  model: string;
+  effort: string | null;
+  tier: string | null;
+  reason: string | null;
+}
+
+interface RoutingRow {
+  ref_id: string | null;
+  model: string | null;
+  effort: string | null;
+  tier: string | null;
+  reason: string | null;
+}
+
+/** Roteamento por mensagem do usuário (ref_id → info). Vazio em erro/sem migration. */
+export async function getRoutingForRefs(refIds: string[]): Promise<Record<string, RoutingInfo>> {
+  if (!supabase || !refIds.length) return {};
+  const { data, error } = await supabase
+    .from('cortex_usage')
+    .select('ref_id,model,effort,tier,reason')
+    .eq('kind', 'chat')
+    .in('ref_id', refIds)
+    .not('tier', 'is', null);
+  if (error || !data) return {};
+  const out: Record<string, RoutingInfo> = {};
+  for (const r of data as RoutingRow[]) {
+    if (r.ref_id) out[r.ref_id] = { model: r.model ?? '', effort: r.effort, tier: r.tier, reason: r.reason };
+  }
+  return out;
 }
 
 /** Atualiza só o teto de contexto (usado pelo controle rápido dentro do chat). */

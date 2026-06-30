@@ -46,7 +46,7 @@ const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 // por execução. O default vem do env (fallback); o painel sobrescreve via a
 // tabela cortex_brain_config (scope='global'). Recarregada a cada ~15s no loop.
 const DEFAULT_MODEL = process.env.BRIDGE_MODEL || 'opus'; // alias do CLI — resolve sozinho pro modelo atual
-let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0, contextLimitTokens: 250000 };
+let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0, contextLimitTokens: 250000, mode: 'manual' };
 // Modo voz: modelo leve/rápido (conversa falada), independente do Brain global.
 const VOICE_MODEL = process.env.BRIDGE_VOICE_MODEL || 'sonnet';
 const VOICE_EFFORT = process.env.BRIDGE_VOICE_EFFORT || 'low';
@@ -85,6 +85,22 @@ if (!URL || !KEY) {
 }
 
 const sb = createClient(URL, KEY, { auth: { persistSession: false } });
+
+// ─── Cortex Router (Fase 3) ─────────────────────────────────────────────────
+// Roteamento por complexidade (perfil 'painel'): escolhe modelo/esforço por
+// mensagem de chat. O módulo é TS e foi PRÉ-COMPILADO num .mjs autocontido (com
+// stub do supabase) em ~/.thribus/bridge/cortex-router.built.mjs — o bridge real
+// não tem esbuild, então NÃO buildamos em runtime; só importamos o .mjs pronto.
+// (rebuild: esbuild do repo → cortex-router.built.mjs quando o módulo mudar.)
+let route = null; // null = auto indisponível → cai no modo fixo (nunca derruba)
+const ROUTER_BUILT = join(homedir(), '.thribus', 'bridge', 'cortex-router.built.mjs');
+async function loadRouter() {
+  const mod = await import(ROUTER_BUILT);
+  return mod.route;
+}
+// Sticky model por conversa (session_id → alias). Dentro da sessão o modelo só
+// SOBE (protege o prompt cache), conforme route() decide. Cache em memória.
+const stickyByCortexSession = new Map();
 
 // ── Concorrência: semáforo global + raias por conversa (portado do daemon) ────
 // Conversas/demandas DIFERENTES rodam EM PARALELO (até MAX_CONCURRENCY); a MESMA
@@ -129,7 +145,7 @@ async function loadBrainConfig() {
   try {
     const { data } = await sb
       .from('cortex_brain_config')
-      .select('model,effort,max_budget_usd,context_limit_tokens')
+      .select('*')
       .eq('scope', 'global')
       .maybeSingle();
     if (data) {
@@ -138,6 +154,7 @@ async function loadBrainConfig() {
         effort: data.effort || 'high',
         maxBudgetUsd: Number(data.max_budget_usd) || 0,
         contextLimitTokens: Number(data.context_limit_tokens) || BRAIN.contextLimitTokens || 250000,
+        mode: data.mode === 'auto' ? 'auto' : 'manual',
       };
     }
     brainLoadedAt = Date.now();
@@ -260,17 +277,18 @@ async function tickFsBrowse() {
 }
 
 // Grava o custo/tokens reais de uma execução (best-effort; nunca derruba o loop).
-async function recordUsage({ userId, agentId, kind, refId, sessionId, usage }) {
+async function recordUsage({ userId, agentId, kind, refId, sessionId, usage, routing = null }) {
   if (!usage) return;
   try {
-    await sb.from('cortex_usage').insert({
+    const row = {
       user_id: userId ?? null,
       agent_id: agentId ?? null,
       kind,
       ref_id: refId ?? null,
       session_id: sessionId ?? null,
-      model: usage.model || BRAIN.model,
-      effort: effortApplies(BRAIN.model) ? BRAIN.effort : null,
+      // modo auto: grava o que o ROUTER escolheu; senão o modelo/esforço fixos.
+      model: routing?.model || usage.model || BRAIN.model,
+      effort: routing ? routing.effort : (effortApplies(BRAIN.model) ? BRAIN.effort : null),
       cost_usd: usage.costUsd,
       total_tokens: usage.totalTokens,
       input_tokens: usage.inputTokens,
@@ -278,7 +296,10 @@ async function recordUsage({ userId, agentId, kind, refId, sessionId, usage }) {
       cache_read_tokens: usage.cacheReadTokens,
       duration_ms: usage.durationMs,
       num_turns: usage.numTurns,
-    });
+    };
+    // tier/reason: colunas da migration da Fase 3, só no modo auto (pós-migration).
+    if (routing) { row.tier = routing.tier; row.reason = routing.reason; }
+    await sb.from('cortex_usage').insert(row);
   } catch (e) {
     console.error('[usage] falha ao gravar:', e.message);
   }
@@ -373,7 +394,15 @@ const GUARD =
   'Pra OPÇÕES/ESCOLHAS (o Charles vai escolher UMA — ex: canal, conta, plano), inclua "action" em cada ' +
   'card = a frase exata que o painel envia quando ele CLICAR no card (ex: ' +
   '{"title":"WhatsApp ...8912-1001","status":"Opção A","action":"Pode usar o canal ...8912-1001 (opção A)"}). ' +
-  'Com "action" o card fica clicável e o Charles escolhe num toque, sem digitar.\n\n' +
+  'Com "action" o card fica clicável e o Charles escolhe num toque, sem digitar.\n' +
+  'ESCOLHA MÚLTIPLA: quando ele puder escolher VÁRIOS (não exclusivo — ex: marcar 2+ canais, selecionar ' +
+  'várias tarefas/relatórios pra rodar), use um OBJETO {"multi":true,"items":[...]} no lugar do array — ' +
+  'cada item com "action". O painel vira toggle (marca/desmarca) + botão "Confirmar" que junta as escolhas ' +
+  'numa só mensagem. Use multi SÓ quando fizer sentido escolher mais de um; pra escolha única, array normal.\n' +
+  'SINTAXE OBRIGATÓRIA (cards/chart/confirm/artifact): abra a cerca ```cards (ou ```chart/```confirm) ' +
+  'numa LINHA SOZINHA, o JSON nas linhas seguintes, e FECHE com ``` numa linha sozinha. NUNCA cole o JSON ' +
+  'solto no meio do texto nem deixe uma ``` órfã (sem par) — senão o painel mostra o JSON cru, não os cards. ' +
+  'Se for só MOSTRAR/explicar um JSON de exemplo (sem renderizar), use um bloco ```json comum.\n\n' +
   'GRÁFICO: quando os números pedirem leitura visual (evolução no tempo, composição, comparação) devolva ' +
   'um bloco ```chart JSON: {"type":"bar|line|donut","title":"Faturamento por mês","unit":"R$","data":' +
   '[{"label":"Jan","value":12000},{"label":"Fev","value":15000}]}. bar = comparar categorias, line = ' +
@@ -676,7 +705,25 @@ async function processMessage(msg) {
   // painel/demandas) segue no modelo forte do cortex_brain_config global.
   const voice = msg.is_voice ? { model: VOICE_MODEL, effort: VOICE_EFFORT } : {};
   const cwd = await cwdForSession(msg.agent_id, sess?.working_dir);
-  const opts = { model: BRAIN.model, effort: BRAIN.effort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent, cwd };
+
+  // ─── Roteamento (modo auto) ────────────────────────────────────────────────
+  // Cortex Router decide modelo/esforço pelo texto (profile 'painel'), com sticky
+  // por sessão e imagem→sonnet. Voz tem modelo próprio (VOICE_*), então pula o
+  // roteamento. Manual: model/effort fixos do config vencem (comportamento atual).
+  let runModel = BRAIN.model;
+  let runEffort = BRAIN.effort;
+  let routing = null;
+  if (BRAIN.mode === 'auto' && route && !msg.is_voice) {
+    const hasImage = files.some((f) => /^image\//.test(f.mime));
+    const sticky = (msg.session_id && stickyByCortexSession.get(msg.session_id)) || null;
+    const rt = route({ text: msg.content, hasImage, currentModel: sticky, profile: 'painel' });
+    runModel = rt.model;
+    runEffort = rt.effort || BRAIN.effort; // route() devolve effort null em modelo sem esforço/sticky
+    if (rt.stickyModel && msg.session_id) stickyByCortexSession.set(msg.session_id, rt.stickyModel);
+    routing = { model: runModel, effort: effortApplies(runModel) ? runEffort : null, tier: rt.tier, reason: rt.reason };
+    console.log(`[router] ${runModel}${routing.effort ? ' · ' + routing.effort : ''} (${rt.tier} — ${rt.reason})${sticky ? ` · sticky=${sticky}` : ''}`);
+  }
+  const opts = { model: runModel, effort: runEffort, ...voice, maxBudgetUsd: BRAIN.maxBudgetUsd, onEvent, cwd };
 
   // ── Streaming ──────────────────────────────────────────────────────────────
   // A msg do assistente NASCE no 1º token de texto e o conteúdo cresce em chunks
@@ -792,7 +839,7 @@ async function processMessage(msg) {
       await sb.from('chat_sessions').update(patch).eq('id', msg.session_id);
     }
 
-    await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, sessionId: msg.session_id, usage: r.usage });
+    await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, sessionId: msg.session_id, usage: r.usage, routing });
     console.log(
       `[ok] ${agent.name} respondeu (${reply.length} chars` +
         `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,
@@ -1155,19 +1202,70 @@ async function createSubDemands(parent, subs, teamIds) {
     console.warn(`[subdemanda] colaborador '${ref}' não encontrado no time → atribuída a ${fallback}`);
     return fallback;
   };
-  let n = 0;
-  for (const s of subs.slice(0, 20)) {
-    const { error } = await sb.from('team_demands').insert({
+  const list = subs.slice(0, 20);
+  const keyOf = (s, i) => (s && s.key != null ? String(s.key) : `#${i}`);
+  const allKeys = new Set(list.map(keyOf));
+  const keyToId = new Map(); // key local → uuid real (preenchido conforme insere)
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // Resolve uma ref de depends_on: key local já inserida → uuid; uuid externo → ele mesmo;
+  // ref desconhecida (key inexistente / ainda não inserida) → null (ignorada).
+  const resolveDep = (ref) => {
+    const r = String(ref);
+    if (keyToId.has(r)) return keyToId.get(r);
+    if (UUID_RE.test(r)) return r;
+    return null;
+  };
+
+  const buildRow = (s, depsUuids) => {
+    const tags = Array.isArray(s.tags) ? s.tags.map(String) : [];
+    let description = s.description ? String(s.description) : null;
+    if (s.gate === true) {
+      if (!tags.includes('gate')) tags.push('gate');
+      const aviso = '⚠️ GATE: requer OK explícito do Charles antes de QUALQUER ação de produção/deploy/SQL/gasto/DNS/exclusão. Pare e peça confirmação.';
+      description = description ? `${aviso}\n\n${description}` : aviso;
+    }
+    return {
       user_id: parent.user_id,
       agent_id: resolveAgent(s.agent),
       title: String(s.title).slice(0, 200),
-      description: s.description ? String(s.description) : null,
+      description,
       project: s.project || parent.project || null,
       status: 'todo',
       priority: Number(s.priority) || 0,
       parent_id: parent.id || null,
-    });
-    if (!error) n++;
+      orchestrate: s.orchestrate === true,
+      tags,
+      depends_on: depsUuids,
+    };
+  };
+
+  // Insere em ORDEM TOPOLÓGICA: uma demanda só entra quando todas as deps que são KEYS
+  // LOCAIS já viraram uuid — assim depends_on entra resolvido no próprio INSERT, sem race
+  // com o poller (que poderia pegar a dependente antes de um UPDATE pós-insert).
+  const depKeysLocal = (s) =>
+    (Array.isArray(s.depends_on) ? s.depends_on.map(String) : []).filter((r) => allKeys.has(r));
+  const isReady = (s) => depKeysLocal(s).every((r) => keyToId.has(r));
+
+  let n = 0;
+  let pending = list.map((s, i) => ({ s, key: keyOf(s, i) }));
+  let guard = 0;
+  while (pending.length && guard++ <= list.length + 1) {
+    const ready = pending.filter(({ s }) => isReady(s));
+    // Trava (ciclo ou dep inexistente): força o resto, resolvendo só as deps que já dá.
+    const batch = ready.length ? ready : pending;
+    if (!ready.length) {
+      console.warn(`[subdemanda] dep não resolvível (ciclo/inexistente) — inserindo ${pending.length} sem as deps faltantes`);
+    }
+    const insertedKeys = new Set();
+    for (const { s, key } of batch) {
+      const uuids = (Array.isArray(s.depends_on) ? s.depends_on : []).map(resolveDep).filter(Boolean);
+      const { data, error } = await sb.from('team_demands').insert(buildRow(s, uuids)).select('id').single();
+      if (!error && data) { keyToId.set(key, data.id); n++; insertedKeys.add(key); }
+      else console.warn(`[subdemanda] insert falhou (${key}): ${error?.message ?? 'sem id'}`);
+    }
+    pending = pending.filter((p) => !insertedKeys.has(p.key));
+    if (!insertedKeys.size) break; // nada inseriu nesta volta → evita loop infinito
   }
   return n;
 }
@@ -1551,19 +1649,36 @@ async function tickMemorySync() {
 }
 
 async function loop() {
+  // Carrega o Cortex Router 1x (import do .mjs pré-buildado). Falhou → auto fica
+  // indisponível e a ponte segue no modo fixo; nunca derruba o loop.
+  try {
+    route = await loadRouter();
+    console.log('[router] Cortex Router carregado · auto disponível (profile painel)');
+  } catch (e) {
+    console.error('[router] falha ao carregar — auto indisponível, modo fixo:', e.message);
+    route = null;
+  }
   for (;;) {
-    const teamIds = await loadTeamIds();
-    lastTeamIds = teamIds;
-    await loadBrainConfig();        // modelo/esforço/teto vindos do painel (cache 15s)
-    await fetchUsageLimits();       // limites do plano (5h + semana) → painel (cache 2min)
-    await importSkills();           // espelha as skills reais no painel (1x)
-    await materializeSkills();      // skills do painel → ~/.claude/skills (cache 15s)
-    await tick(teamIds);            // chat interativo primeiro
-    await tickCompaction(teamIds);  // compacta conversas (botão ou teto) → semente
-    await tickMemorySync();         // memória de longo prazo: espelho ↔ VPS (best-effort)
-    await tickDemandReplies(teamIds); // respostas no thread (conversa ativa) têm prioridade
-    await tickRoutines(teamIds);    // rotinas vencidas viram demanda
-    await tickDemands(teamIds);     // depois 1 demanda nova da fila
+    try {
+      const teamIds = await loadTeamIds();
+      lastTeamIds = teamIds;
+      await loadBrainConfig();        // modelo/esforço/teto vindos do painel (cache 15s)
+      await fetchUsageLimits();       // limites do plano (5h + semana) → painel (cache 2min)
+      await importSkills();           // espelha as skills reais no painel (1x)
+      await materializeSkills();      // skills do painel → ~/.claude/skills (cache 15s)
+      await tick(teamIds);            // chat interativo primeiro
+      await tickCompaction(teamIds);  // compacta conversas (botão ou teto) → semente
+      await tickMemorySync();         // memória de longo prazo: espelho ↔ VPS (best-effort)
+      await tickDemandReplies(teamIds); // respostas no thread (conversa ativa) têm prioridade
+      await tickRoutines(teamIds);    // rotinas vencidas viram demanda
+      await tickDemands(teamIds);     // depois 1 demanda nova da fila
+    } catch (e) {
+      // Transitório (ex.: 'fetch failed' em blip de rede/Supabase) NÃO derruba o
+      // processo: antes loadTeamIds/loadBrainConfig sem catch subiam pro fatal
+      // handler → process.exit(1) → launchd respawn → crash-loop + demandas órfãs.
+      // Agora loga e segue no próximo ciclo.
+      console.error('[loop erro transitório]', e?.message || e);
+    }
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
 }
@@ -1584,6 +1699,17 @@ try {
     .select('id');
   if (reaped?.length) console.log(`[boot] destravadas ${reaped.length} msg(s) órfãs em 'processing'`);
 } catch (e) { console.error('[boot] auto-limpeza de órfãs falhou:', e.message); }
+
+// Mesma ideia pras DEMANDAS: uma demanda presa em 'doing' no boot é resíduo de uma
+// instância morta (o claim só vai de 'todo'→'doing' e não há execução ativa no boot).
+// Volta pra 'todo' pra ser reexecutada do zero — sem isso a demanda virava zumbi.
+try {
+  const { data: reapedD } = await sb.from('team_demands')
+    .update({ status: 'todo', started_at: null })
+    .eq('status', 'doing')
+    .select('id');
+  if (reapedD?.length) console.log(`[boot] destravadas ${reapedD.length} demanda(s) órfã(s) em 'doing' → 'todo'`);
+} catch (e) { console.error('[boot] reclaim de demandas órfãs falhou:', e.message); }
 
 await initMemory(); // memória de longo prazo (best-effort: se falhar, segue sem)
 loop().catch((e) => {

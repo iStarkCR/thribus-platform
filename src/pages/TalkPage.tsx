@@ -17,6 +17,7 @@ import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { UsageLimitsBadge } from '@/components/cortex/UsageLimitsBadge';
+import { RoutingBadge } from '@/components/cortex/RoutingBadge';
 import { WorkFolderBar } from '@/components/cortex/WorkFolderBar';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
 import { type RunEvent } from '@/services/runEvents';
@@ -39,7 +40,7 @@ const FOLDER_COLORS = ['#6B8F5E', '#3b82f6', '#8b5cf6', '#ef4444', '#f59e0b', '#
 import { AgentInfoModal } from '@/components/agents/AgentInfoModal';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
 import { getVoiceConfig, ttsBlob, transcribeBlob, quickAck, greetLine, type VoiceConfig } from '@/services/voiceSkill';
-import { getCortexConfig, updateContextLimit, CONTEXT_LIMIT_MIN, CONTEXT_LIMIT_MAX, CONTEXT_LIMIT_STEP } from '@/services/cortexBrain';
+import { getCortexConfig, updateContextLimit, getRoutingForRefs, CONTEXT_LIMIT_MIN, CONTEXT_LIMIT_MAX, CONTEXT_LIMIT_STEP, type RoutingInfo } from '@/services/cortexBrain';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
 
@@ -101,6 +102,7 @@ export function TalkPage() {
     return map;
   }, [messages]);
   const [input, setInput] = useState('');
+  const [routingMap, setRoutingMap] = useState<Record<string, RoutingInfo>>({});
   // "Editar & reenviar": a partir desta msg (inclusive) tudo é apagado ao reenviar.
   const [editingFrom, setEditingFrom] = useState<{ id: string; sessionId: string; createdAt: string } | null>(null);
   // Pasta de trabalho escolhida na landing → vira o working_dir da 1ª conversa criada.
@@ -231,6 +233,13 @@ export function TalkPage() {
   const handleSuggestion = useCallback((t: string) => sendRef.current(t), []);
   // troca de conversa cancela edição pendente (evita truncar a sessão errada)
   useEffect(() => { setEditingFrom((e) => (e && e.sessionId !== activeId ? null : e)); }, [activeId]);
+
+  // Carrega routing info (tier/reason) das msgs done pra exibir no RoutingBadge
+  useEffect(() => {
+    const userIds = messages.filter((m) => m.role === 'user').map((m) => m.id);
+    if (!userIds.length) { setRoutingMap({}); return; }
+    getRoutingForRefs(userIds).then(setRoutingMap).catch(() => {});
+  }, [messages]);
 
   // ─── Modo voz do painel (VoiceController na sessão ativa) ────────────────────
   // Manda o texto falado p/ a conversa ATIVA (is_voice) e resolve com a resposta
@@ -1606,6 +1615,7 @@ export function TalkPage() {
                         {m.status === 'error' && <div className="text-[11px] mt-1 text-semantic-red">erro: {m.error}</div>}
                       </div>
                       <MessageSteps refId={precedingUserId.get(m.id) ?? null} live={m.status === 'pending' || m.status === 'processing'} onAct={handleStepAct} />
+                      <RoutingBadge info={routingMap[precedingUserId.get(m.id) ?? '']} />
                       {/* Ações ao passar o mouse */}
                       {m.status === 'done' && (
                         <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">

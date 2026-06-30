@@ -86,11 +86,12 @@ export function CortexBrainPage() {
   }
 
   const pickModel = (model: CortexModel) => {
-    const b = brainOf(model);
-    // ao trocar pra um modelo sem esforço, mantém o valor mas ele fica inerte
-    persist({ ...cfg, model, effort: b.effortable ? cfg.effort : cfg.effort });
+    // fixar um modelo = modo manual (vence o roteador automático).
+    persist({ ...cfg, mode: 'manual', model });
   };
+  const pickAuto = () => persist({ ...cfg, mode: 'auto' });
   const setEffort = (effort: CortexEffort) => persist({ ...cfg, effort });
+  const isAuto = cfg.mode === 'auto';
 
   const budgetPct = useMemo(() => {
     if (!usage || cfg.monthlyBudgetUsd <= 0) return null;
@@ -130,10 +131,34 @@ export function CortexBrainPage() {
           <span className="text-[12px] text-creme-faint">— qual cérebro e quanto ele pensa</span>
         </div>
 
-        {/* Modelos (Cortex Brain) */}
+        {/* Auto (Cortex Router) — padrão, destacado acima dos modelos manuais */}
+        <button
+          onClick={pickAuto}
+          className={clsx(
+            'w-full text-left rounded-lg border p-3.5 transition-all',
+            isAuto
+              ? 'border-brand bg-brand/5 ring-1 ring-brand/40'
+              : 'border-default bg-surface-2 hover:border-hover',
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-[14px] text-creme flex items-center gap-1.5">
+              <Sparkles size={14} className={isAuto ? 'text-brand-bright' : 'text-creme-faint'} />
+              Cortex Brain Auto
+              <span className="rounded bg-brand/15 text-brand-bright px-1.5 py-0.5 text-[10px] font-semibold">padrão</span>
+            </span>
+            {isAuto && <Check size={15} className="text-brand-bright" />}
+          </div>
+          <p className="mt-2 text-[12.5px] text-creme-mute leading-snug">
+            O roteador escolhe o cérebro por mensagem — Fast pra trivial, Core no dia a dia, Max pra
+            raciocínio/código/estratégia. Cada resposta mostra o que foi roteado.
+          </p>
+        </button>
+
+        {/* Modelos (Cortex Brain) — fixar um = modo manual */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {CORTEX_BRAINS.map((b) => {
-            const active = cfg.model === b.model;
+            const active = !isAuto && cfg.model === b.model;
             return (
               <button
                 key={b.model}
@@ -201,9 +226,18 @@ export function CortexBrainPage() {
 
         <p className="text-[11.5px] text-creme-faint flex items-center gap-1.5">
           <Brain size={12} />
-          Em uso agora: <strong className="text-creme-mute font-semibold">{brain.name}</strong>
-          <span className="font-mono">({brain.real})</span>
-          {brain.effortable && <>· esforço <strong className="text-creme-mute font-semibold">{EFFORT_LEVELS[effortIndex(cfg.effort)].label}</strong></>}
+          {isAuto ? (
+            <>
+              Em uso agora: <strong className="text-creme-mute font-semibold">Cortex Brain Auto</strong>
+              — o roteador escolhe o cérebro por mensagem (esforço acima = piso quando cai num modelo fixo).
+            </>
+          ) : (
+            <>
+              Em uso agora: <strong className="text-creme-mute font-semibold">{brain.name}</strong>
+              <span className="font-mono">({brain.real})</span>
+              {brain.effortable && <>· esforço <strong className="text-creme-mute font-semibold">{EFFORT_LEVELS[effortIndex(cfg.effort)].label}</strong></>}
+            </>
+          )}
         </p>
       </section>
 
