@@ -788,7 +788,7 @@ async function processMessage(msg) {
           .from('collaborator_messages')
           .select('role,content,created_at')
           .eq('session_id', msg.session_id)
-          .in('status', ['done'])
+          .or('role.eq.user,status.eq.done') // user: sempre (mesmo se erraram); assistant: só done (respostas completas)
           .order('created_at', { ascending: false })
           .limit(HISTORY);
         recent = (history ?? []).reverse(); // mais recentes, em ordem cronológica
