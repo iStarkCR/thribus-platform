@@ -43,7 +43,7 @@ export function CortexUsageBadge() {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11.5px] text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
+        className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[13px] text-creme-mute hover:text-creme hover:bg-surface-hover transition-colors"
         title="Carga do Cortex Brain"
       >
         <Activity size={13} className="text-brand-bright" />

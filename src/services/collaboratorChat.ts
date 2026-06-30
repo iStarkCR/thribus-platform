@@ -7,8 +7,8 @@
 
 import { supabase } from '@/lib/supabase';
 
-export type ChatRole = 'user' | 'assistant';
-export type ChatStatus = 'pending' | 'processing' | 'done' | 'error';
+export type ChatRole = 'user' | 'assistant' | 'system'; // 'system' = marcador de compactação (divisor + TL;DR)
+export type ChatStatus = 'pending' | 'processing' | 'done' | 'error' | 'cancelled';
 export type ChatChannel = 'thribus' | 'telegram' | 'talki';
 
 export interface Attachment {
@@ -103,13 +103,14 @@ export async function sendMessage(
   userId: string,
   content: string,
   attachments?: Attachment[],
+  isVoice = false,
 ): Promise<ChatMessage> {
   if (!supabase) throw new Error('Supabase não configurado');
   const { data, error } = await supabase
     .from('collaborator_messages')
     .insert({
       session_id: sessionId, agent_id: agentId, user_id: userId, role: 'user',
-      content, status: 'pending', channel: 'thribus',
+      content, status: 'pending', channel: 'thribus', is_voice: isVoice,
       attachments: attachments && attachments.length ? attachments : null,
     })
     .select('*')
@@ -118,23 +119,95 @@ export async function sendMessage(
   return toMsg(data as Row);
 }
 
-/** Realtime do thread do usuário. Chama onChange a cada insert/update. */
+/**
+ * "Editar & reenviar": apaga a mensagem a partir de `fromCreatedAt` (inclusive) e
+ * tudo que veio depois nela, pra não duplicar a conversa ao reenviar editado.
+ */
+export async function deleteMessagesFrom(sessionId: string, fromCreatedAt: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('collaborator_messages')
+    .delete()
+    .eq('session_id', sessionId)
+    .gte('created_at', fromCreatedAt);
+  if (error) throw error;
+}
+
+/** Botão "Parar": marca a msg do usuário como cancelada → a ponte mata o claude. */
+export async function cancelMessage(messageId: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('collaborator_messages')
+    .update({ status: 'cancelled' })
+    .eq('id', messageId)
+    .in('status', ['pending', 'processing']);
+  if (error) throw error;
+}
+
+/**
+ * Realtime do thread do usuário. Chama onChange a cada insert/update, passando a
+ * sessão afetada (pra quem quiser ignorar eventos de outras conversas). Reconecta
+ * sozinho com backoff se o canal cair (Mac dorme, wifi oscila) — antes parava de
+ * receber resposta silenciosamente.
+ */
 let chanSeq = 0;
-export function subscribeChat(userId: string, onChange: () => void): () => void {
+export function subscribeChat(
+  userId: string,
+  onChange: (info?: { sessionId: string | null }) => void,
+): () => void {
   const sb = supabase;
   if (!sb) return () => {};
-  // Nome de canal único por assinante — vários componentes (TalkPage + orbe) podem
-  // assinar o mesmo userId ao mesmo tempo. Reusar o nome quebra: o Supabase recusa
-  // `.on()` num canal já `subscribe()`d.
-  const ch = sb
-    .channel(`collab-chat:${userId}:${++chanSeq}`)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'collaborator_messages', filter: `user_id=eq.${userId}` },
-      () => onChange(),
-    )
-    .subscribe();
-  return () => {
-    sb.removeChannel(ch);
+  let channel: ReturnType<typeof sb.channel> | null = null;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let attempt = 0;
+  let closed = false;
+
+  const connect = () => {
+    if (closed) return;
+    // Nome de canal único por assinante — vários componentes (TalkPage + orbe) podem
+    // assinar o mesmo userId ao mesmo tempo. Reusar o nome quebra: o Supabase recusa
+    // `.on()` num canal já `subscribe()`d.
+    const ch = sb
+      .channel(`collab-chat:${userId}:${++chanSeq}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'collaborator_messages', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as { session_id?: string } | null;
+          onChange({ sessionId: row?.session_id ?? null });
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') { attempt = 0; return; }
+        if (closed) return;
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (retry) clearTimeout(retry);
+          const delay = Math.min(15000, 1000 * 2 ** attempt++); // 1s,2s,4s… até 15s
+          retry = setTimeout(() => { sb.removeChannel(ch); connect(); }, delay);
+        }
+      });
+    channel = ch;
   };
+
+  connect();
+
+  return () => {
+    closed = true;
+    if (retry) clearTimeout(retry);
+    if (channel) sb.removeChannel(channel);
+  };
+}
+
+/**
+ * Reescreve a mensagem do usuário num prompt mais claro/estruturado via edge
+ * function `improve-prompt` (a chave OpenAI fica server-side, nunca no front).
+ * Devolve o texto reescrito.
+ */
+export async function improvePrompt(agentId: string, text: string): Promise<string> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { data, error } = await supabase.functions.invoke('improve-prompt', {
+    body: { agentId, text },
+  });
+  if (error) throw error;
+  return ((data as { improved?: string } | null)?.improved ?? '').trim();
 }

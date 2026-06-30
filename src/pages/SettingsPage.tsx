@@ -2,15 +2,15 @@ import { useMemo, useState } from 'react';
 import {
   Settings, Database, Cable, ShieldCheck, HardDrive,
   CheckCircle2, XCircle, AlertTriangle, ExternalLink, Copy,
-  Server, KeyRound, Bot, Wrench, Pencil, Sun, Moon, Palette,
-  Sparkles, Ear,
+  Server, KeyRound, Bot, Wrench, Pencil, Palette,
+  Sparkles, Ear, Check, Droplets, Type,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { isWakeWordSupported } from '@/hooks/useWakeWordListener';
 import { VoiceAssistantConfig } from '@/components/settings/VoiceAssistantConfig';
 import { WorkspaceEditModal } from '@/components/settings/WorkspaceEditModal';
 import { supabase } from '@/lib/supabase';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme, useGlass, useAccent, useFontScale, type Accent, type UiScale } from '@/hooks/useTheme';
 
 /**
  * Configurações — visão operacional do sistema.
@@ -27,6 +27,15 @@ export function SettingsPage() {
   const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
   const setWakeWordEnabled = useAppStore((s) => s.setWakeWordEnabled);
   const { theme, setTheme } = useTheme();
+  const { glass, toggle: toggleGlass } = useGlass();
+  const { accent, setAccent } = useAccent();
+  const { scale, setScale } = useFontScale();
+  const appearance: 'light' | 'dark' | 'vidro' = glass ? 'vidro' : theme;
+  const selectAppearance = (id: 'light' | 'dark' | 'vidro') => {
+    if (id === 'vidro') { if (!glass) toggleGlass(); return; }
+    setTheme(id);
+    if (glass) toggleGlass();
+  };
 
   // ─── Env vars (frontend-side via Vite) ─────────────────────────────────────
   const env = useMemo(() => ({
@@ -125,35 +134,78 @@ export function SettingsPage() {
         />
       </div>
 
-      {/* ─── Aparência / Tema ───────────────────────────────────────────── */}
-      <div className="bg-surface-1 border border-default rounded-[10px] p-4 mb-5">
-        <div className="flex items-center gap-2 text-[13.5px] font-bold text-creme mb-0.5">
-          <Palette size={15} className="text-creme-mute" /> Aparência
+      {/* ─── Preferências (aparência + accent) ──────────────────────────── */}
+      <div className="glass-panel bg-surface-1 border border-default rounded-2xl p-5 mb-5">
+        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-creme-mute mb-3.5">
+          <Palette size={13} className="text-brand" /> Aparência
         </div>
-        <div className="text-[12.5px] text-creme-faint mb-3">Tema do painel.</div>
-        <div className="flex gap-2.5 max-w-md">
+        <div className="grid grid-cols-3 gap-3 max-w-2xl">
           {([
-            { id: 'dark', label: 'Escuro', icon: <Moon size={15} /> },
-            { id: 'light', label: 'Claro', icon: <Sun size={15} /> },
+            { id: 'light', label: 'Claro' },
+            { id: 'dark', label: 'Escuro' },
+            { id: 'vidro', label: 'Vidro' },
           ] as const).map((opt) => (
-            <button
-              key={opt.id}
-              onClick={() => setTheme(opt.id)}
-              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-[13.5px] font-semibold transition-colors ${
-                theme === opt.id
-                  ? 'bg-brand/10 border-brand/40 text-creme'
-                  : 'bg-surface-2 border-default text-creme-mute hover:bg-surface-hover'
-              }`}
-            >
-              {opt.icon} {opt.label}
-              {theme === opt.id && <CheckCircle2 size={14} className="text-brand" />}
+            <button key={opt.id} onClick={() => selectAppearance(opt.id)} className={`rounded-2xl p-2 border-2 transition-all ${appearance === opt.id ? 'border-brand' : 'border-default hover:border-hover'}`}>
+              <ThemePreview kind={opt.id} />
+              <div className={`mt-2 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold ${appearance === opt.id ? 'text-creme' : 'text-creme-mute'}`}>
+                {opt.id === 'vidro' && <Droplets size={12} className={appearance === opt.id ? 'text-brand-bright' : ''} />}
+                {opt.label}
+                {appearance === opt.id && <CheckCircle2 size={13} className="text-brand-bright" />}
+              </div>
             </button>
           ))}
+        </div>
+
+        <div className="h-px bg-default my-5" />
+
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-creme-mute">
+            <Sparkles size={13} className="text-brand" /> Cor de destaque
+          </div>
+          <div className="flex items-center gap-3">
+            {(['sage', 'gold', 'blue', 'violet', 'coral'] as Accent[]).map((a) => {
+              const c = ACCENT_DOT[a];
+              return (
+                <button key={a} onClick={() => setAccent(a)} title={a} className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${accent === a ? 'ring-2 ring-offset-2 ring-offset-surface-1 ring-creme/40' : ''}`} style={{ background: c }}>
+                  {accent === a && <Check size={14} className="text-black/65" strokeWidth={3} />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="h-px bg-default my-5" />
+
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-creme-mute">
+              <Type size={13} className="text-brand" /> Tamanho da fonte
+            </div>
+            <div className="text-[12px] text-creme-faint mt-1">Escala a interface inteira — texto, botões e espaçamento.</div>
+          </div>
+          <div className="flex items-center rounded-xl border border-default overflow-hidden shrink-0">
+            {([
+              { id: 'sm', label: 'A', px: 13 },
+              { id: 'md', label: 'A', px: 15 },
+              { id: 'lg', label: 'A', px: 18 },
+              { id: 'xl', label: 'A', px: 21 },
+            ] as const).map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setScale(opt.id as UiScale)}
+                title={{ sm: 'Compacto', md: 'Padrão', lg: 'Grande', xl: 'Maior' }[opt.id]}
+                className={`w-11 h-10 flex items-center justify-center font-bold leading-none border-l first:border-l-0 border-default transition-colors ${scale === opt.id ? 'bg-brand/15 text-brand-bright' : 'text-creme-mute hover:text-creme hover:bg-surface-hover'}`}
+                style={{ fontSize: opt.px }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* ─── Assistente de voz (orbe + wake word) ───────────────────────── */}
-      <div className="bg-surface-1 border border-default rounded-[10px] p-4 mb-5">
+      <div className="glass-panel bg-surface-1 border border-default rounded-2xl p-4 mb-5">
         <div className="flex items-center gap-2 text-[13.5px] font-bold text-creme mb-0.5">
           <Sparkles size={15} className="text-creme-mute" /> Assistente de voz
         </div>
@@ -366,7 +418,7 @@ export function SettingsPage() {
         </Section>
       </div>
 
-      <div className="mt-5 p-4 rounded-[10px] border border-dashed border-default text-[12.5px] text-creme-faint flex items-start gap-2.5">
+      <div className="mt-5 p-4 rounded-2xl border border-dashed border-default text-[12.5px] text-creme-faint flex items-start gap-2.5">
         <Database size={14} className="text-creme-mute shrink-0 mt-0.5" />
         <div>
           Workspace agora pode ser <span className="font-semibold text-creme-dim">editado pelo botão acima</span>.
@@ -387,6 +439,53 @@ export function SettingsPage() {
 
 // ─── Subcomponentes ────────────────────────────────────────────────────────
 
+const ACCENT_DOT: Record<Accent, string> = {
+  sage:   'rgb(140 196 122)',
+  gold:   'rgb(226 198 132)',
+  blue:   'rgb(130 175 250)',
+  violet: 'rgb(180 165 245)',
+  coral:  'rgb(245 165 145)',
+};
+
+// Mini-preview do tema (estilo "Preferences"): uma telinha com sidebar + linhas.
+function ThemePreview({ kind }: { kind: 'light' | 'dark' | 'vidro' }) {
+  if (kind === 'light') {
+    return (
+      <div className="aspect-[16/10] rounded-xl overflow-hidden flex" style={{ background: '#eef2eb' }}>
+        <div className="w-1/4" style={{ background: '#dee4d8' }} />
+        <div className="flex-1 p-2 flex flex-col gap-1.5">
+          <div className="h-1.5 rounded-full" style={{ background: '#9fb592', width: '58%' }} />
+          <div className="h-1.5 rounded-full" style={{ background: '#cdd4c6', width: '90%' }} />
+          <div className="h-1.5 rounded-full" style={{ background: '#cdd4c6', width: '48%' }} />
+        </div>
+      </div>
+    );
+  }
+  if (kind === 'dark') {
+    return (
+      <div className="aspect-[16/10] rounded-xl overflow-hidden flex" style={{ background: '#0c0f0e' }}>
+        <div className="w-1/4" style={{ background: '#161a18' }} />
+        <div className="flex-1 p-2 flex flex-col gap-1.5">
+          <div className="h-1.5 rounded-full" style={{ background: '#5d7a52', width: '58%' }} />
+          <div className="h-1.5 rounded-full" style={{ background: '#262c29', width: '90%' }} />
+          <div className="h-1.5 rounded-full" style={{ background: '#262c29', width: '48%' }} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="aspect-[16/10] rounded-xl overflow-hidden relative" style={{ background: 'radial-gradient(130% 100% at 82% 8%, rgba(140,196,122,.4), #0a0d0c 70%)' }}>
+      <div className="absolute inset-[7px] rounded-lg flex overflow-hidden" style={{ background: 'rgba(255,255,255,.08)', backdropFilter: 'blur(3px)', border: '1px solid rgba(255,255,255,.14)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.18)' }}>
+        <div className="w-1/4 h-full" style={{ background: 'rgba(255,255,255,.07)' }} />
+        <div className="flex-1 p-2 flex flex-col gap-1.5">
+          <div className="h-1.5 rounded-full" style={{ background: 'rgba(168,212,150,.6)', width: '58%' }} />
+          <div className="h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,.16)', width: '90%' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Section({
   icon, title, subtitle, children, action,
 }: {
@@ -397,7 +496,7 @@ function Section({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="bg-surface-2 border border-default rounded-[10px] p-5">
+    <div className="glass-panel bg-surface-2 border border-default rounded-2xl p-5">
       <div className="flex items-center justify-between mb-3.5">
         <div className="flex items-center gap-2">
           <span className="text-brand">{icon}</span>
@@ -490,7 +589,7 @@ function SystemStat({
   accent?: 'brand' | 'green' | 'amber';
 }) {
   return (
-    <div className={`bg-gradient-to-br ${STAT_BG[accent]} border rounded-[10px] p-4 transition-all hover:border-hover`}>
+    <div className={`bg-gradient-to-br ${STAT_BG[accent]} border rounded-2xl p-4 transition-all hover:border-hover`}>
       <div className="flex items-center justify-between mb-2">
         <span className={`w-6 h-6 rounded-md bg-surface-1/50 flex items-center justify-center ${STAT_FG[accent]}`}>
           {icon}

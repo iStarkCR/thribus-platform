@@ -18,6 +18,16 @@ export interface Demand {
   result: string | null;
   error: string | null;
   parentId: string | null;
+  costUsd: number;
+  durationMs: number;
+  totalTokens: number;
+  retryCount: number;
+  dependsOn: string[];
+  dueDate: string | null;
+  tags: string[];
+  orchestrate: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -29,13 +39,22 @@ interface Row {
   description: string | null; project: string | null; status: DemandStatus;
   priority: number; result: string | null; error: string | null;
   parent_id: string | null; created_at: string; updated_at: string;
+  cost_usd: number | null; duration_ms: number | null; total_tokens: number | null;
+  retry_count: number | null; depends_on: string[] | null; due_date: string | null;
+  tags: string[] | null; orchestrate: boolean | null;
+  started_at: string | null; finished_at: string | null;
 }
 
 const toDemand = (r: Row): Demand => ({
   id: r.id, userId: r.user_id, agentId: r.agent_id, title: r.title,
   description: r.description, project: r.project, status: r.status,
   priority: r.priority, result: r.result, error: r.error,
-  parentId: r.parent_id, createdAt: r.created_at, updatedAt: r.updated_at,
+  parentId: r.parent_id,
+  costUsd: r.cost_usd ?? 0, durationMs: r.duration_ms ?? 0, totalTokens: r.total_tokens ?? 0,
+  retryCount: r.retry_count ?? 0, dependsOn: r.depends_on ?? [], dueDate: r.due_date,
+  tags: r.tags ?? [], orchestrate: r.orchestrate ?? false,
+  startedAt: r.started_at, finishedAt: r.finished_at,
+  createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
 export async function listDemands(_userId: string): Promise<Demand[]> {
@@ -51,7 +70,10 @@ export async function listDemands(_userId: string): Promise<Demand[]> {
 
 export async function createDemand(
   userId: string,
-  input: { title: string; description?: string; project?: string; agentId?: string; priority?: number; parentId?: string },
+  input: {
+    title: string; description?: string; project?: string; agentId?: string; priority?: number;
+    parentId?: string; dueDate?: string | null; tags?: string[]; dependsOn?: string[]; orchestrate?: boolean;
+  },
 ): Promise<Demand> {
   if (!supabase) throw new Error('Supabase não configurado');
   const { data, error } = await supabase
@@ -64,6 +86,10 @@ export async function createDemand(
       project: input.project ?? null,
       priority: input.priority ?? 0,
       parent_id: input.parentId ?? null,
+      due_date: input.dueDate ?? null,
+      tags: input.tags ?? [],
+      depends_on: input.dependsOn ?? [],
+      orchestrate: input.orchestrate ?? false,
     })
     .select('*')
     .single();
@@ -130,7 +156,11 @@ export function subscribeDemandMessages(demandId: string, onChange: () => void):
 
 export async function updateDemand(
   id: string,
-  patch: { status?: DemandStatus; title?: string; description?: string | null; project?: string | null; agentId?: string; priority?: number },
+  patch: {
+    status?: DemandStatus; title?: string; description?: string | null; project?: string | null;
+    agentId?: string; priority?: number; dueDate?: string | null; tags?: string[]; dependsOn?: string[];
+    orchestrate?: boolean;
+  },
 ): Promise<void> {
   if (!supabase) return;
   const row: Record<string, unknown> = {};
@@ -140,7 +170,27 @@ export async function updateDemand(
   if (patch.project !== undefined) row.project = patch.project;
   if (patch.agentId !== undefined) row.agent_id = patch.agentId;
   if (patch.priority !== undefined) row.priority = patch.priority;
+  if (patch.dueDate !== undefined) row.due_date = patch.dueDate;
+  if (patch.tags !== undefined) row.tags = patch.tags;
+  if (patch.dependsOn !== undefined) row.depends_on = patch.dependsOn;
+  if (patch.orchestrate !== undefined) row.orchestrate = patch.orchestrate;
   const { error } = await supabase.from('team_demands').update(row).eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Re-enfileira uma demanda (ex: após erro): volta pra 'todo', limpa erro e zera a
+ * contabilidade desnormalizada (a ponte faz SET no re-run, então recomeça do zero).
+ */
+export async function retryDemand(id: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('team_demands')
+    .update({
+      status: 'todo', error: null, retry_count: 0, started_at: null, finished_at: null,
+      cost_usd: 0, total_tokens: 0, duration_ms: 0,
+    })
+    .eq('id', id);
   if (error) throw error;
 }
 

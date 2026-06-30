@@ -44,6 +44,7 @@ import { OptimizerPage } from '@/pages/OptimizerPage';
 import { CompliancePage } from '@/pages/CompliancePage';
 import { VaultPage } from '@/pages/VaultPage';
 import { LoginPage } from '@/pages/LoginPage';
+import { PayPage } from '@/pages/PayPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { AccessPage } from '@/pages/AccessPage';
 import { TalkPage } from '@/pages/TalkPage';
@@ -53,10 +54,28 @@ import { FloatingOrb } from '@/components/voice/FloatingOrb';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { ConfirmDialog, PromptDialog } from '@/components/shared/Dialogs';
+import { ImageLightbox } from '@/components/shared/ImageLightbox';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
 import { useAccess } from '@/hooks/useRole';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
+
+// Permite forçar o id da cobrança (testes / futuro Worker). Opcional.
+declare global {
+  interface Window { __PAY_ID__?: string }
+}
+
+// No subdomínio pagamento.thribustech.com, o id da cobrança vem do path
+// (URL limpa, sem hash): pagamento.thribustech.com/<chargeId>.
+function resolvePayId(): string {
+  if (typeof window === 'undefined') return '';
+  if (window.__PAY_ID__) return window.__PAY_ID__;
+  if (window.location.hostname.startsWith('pagamento.')) {
+    const seg = window.location.pathname.split('/').filter(Boolean).pop() ?? '';
+    return decodeURIComponent(seg);
+  }
+  return '';
+}
 
 export function App() {
   const initialize = useAppStore((s) => s.initialize);
@@ -65,10 +84,19 @@ export function App() {
     initialize();
   }, [initialize]);
 
+  // Subdomínio de pagamento — renderiza o checkout direto, sem shell nem
+  // login, e sem inicializar o painel.
+  const payId = resolvePayId();
+  if (payId) {
+    return <PayPage chargeId={payId} />;
+  }
+
   return (
     <HashRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        {/* Página de pagamento pública (sem login) — checkout Thribus sobre Asaas */}
+        <Route path="/pay/:id" element={<PayRoute />} />
         <Route path="/*" element={
           <ProtectedShell />
         } />
@@ -77,8 +105,15 @@ export function App() {
       <CommandPalette />
       <GlobalConfirm />
       <GlobalPrompt />
+      <ImageLightbox />
     </HashRouter>
   );
+}
+
+// Lê o :id da rota hash (#/pay/:id) e injeta no PayPage.
+function PayRoute() {
+  const { id = '' } = useParams();
+  return <PayPage chargeId={id} />;
 }
 
 function ProtectedShell() {

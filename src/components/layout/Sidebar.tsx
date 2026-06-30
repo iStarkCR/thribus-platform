@@ -3,9 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   ChevronRight, Zap, Settings, Building2, Bell, Lock,
-  LogOut, User, Moon, HelpCircle, PanelLeftClose, PanelLeft,
+  LogOut, User, Moon, HelpCircle, PanelLeftClose, PanelLeft, Sparkles, X,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { useGlass } from '@/hooks/useTheme';
 import { useSession } from '@/hooks/useSession';
 import { useAccess } from '@/hooks/useRole';
 import { NAV_ITEMS } from '@/lib/nav';
@@ -15,8 +17,13 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const agents = useAppStore((s) => s.agents);
-  const collapsed = useAppStore((s) => s.sidebarCollapsed);
+  const collapsedPref = useAppStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
+  const mobileNavOpen = useAppStore((s) => s.mobileNavOpen);
+  const setMobileNavOpen = useAppStore((s) => s.setMobileNavOpen);
+  const isMobile = useIsMobile();
+  // Em mobile o drawer é sempre EXPANDIDO (a preferência de recolher só vale no desktop).
+  const collapsed = collapsedPref && !isMobile;
   const { allowedPaths } = useAccess();
 
   // allowedPaths null = admin (vê tudo). Caso contrário filtra pelos grants do
@@ -25,8 +32,28 @@ export function Sidebar() {
     .map((g) => ({ ...g, items: allowedPaths ? g.items.filter((i) => allowedPaths.has(i.path)) : g.items }))
     .filter((g) => g.items.length > 0);
 
+  // Seções colapsáveis — só as principais abertas por padrão (são ~45 itens).
+  // Estado persistido; o grupo da rota ativa abre sempre.
+  const DEFAULT_OPEN = ['Principal', 'Cérebro', 'Operação'];
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    try { const s = localStorage.getItem('thribus.navGroups'); if (s) return new Set<string>(JSON.parse(s)); } catch { /* noop */ }
+    return new Set(DEFAULT_OPEN);
+  });
+  const toggleGroup = (g: string) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(g)) next.delete(g); else next.add(g);
+    try { localStorage.setItem('thribus.navGroups', JSON.stringify([...next])); } catch { /* noop */ }
+    return next;
+  });
+
   return (
-    <aside className={clsx('fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-50 transition-[width] duration-200', collapsed ? 'w-[64px]' : 'w-[244px]')}>
+    <aside className={clsx(
+      'glass-strong fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-[60] transition-[width,transform] duration-200',
+      collapsed ? 'w-[64px]' : 'w-[244px]',
+      // Drawer em mobile: desliza pra dentro quando aberto; no desktop fica sempre visível.
+      mobileNavOpen ? 'translate-x-0 shadow-2xl md:shadow-none' : '-translate-x-full',
+      'md:translate-x-0',
+    )}>
       {/* Brand + sino + recolher */}
       <div className={clsx('h-14 flex items-center border-b border-default shrink-0', collapsed ? 'justify-center px-2' : 'px-3 gap-2.5')}>
         <div className="w-[30px] h-[30px] rounded-lg bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center shrink-0">
@@ -39,8 +66,8 @@ export function Sidebar() {
               <span className="text-[11.5px] font-semibold text-brand uppercase tracking-wider leading-tight truncate">Colaboradores Digitais</span>
             </div>
             <NotifBell onClick={() => navigate('/notifications')} />
-            <button onClick={() => setSidebarCollapsed(true)} title="Recolher" className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
-              <PanelLeftClose size={15} />
+            <button onClick={() => (isMobile ? setMobileNavOpen(false) : setSidebarCollapsed(true))} title={isMobile ? 'Fechar' : 'Recolher'} className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
+              {isMobile ? <X size={16} /> : <PanelLeftClose size={15} />}
             </button>
           </>
         )}
@@ -57,14 +84,22 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 p-2.5 overflow-y-auto">
-        {groups.map((group) => (
-          <div key={group.group} className={collapsed ? 'mb-2' : 'mb-5'}>
+        {groups.map((group) => {
+          const hasActive = group.items.some((i) => i.path === location.pathname);
+          const expanded = collapsed || openGroups.has(group.group) || hasActive;
+          return (
+          <div key={group.group} className={collapsed ? 'mb-2' : 'mb-1.5'}>
             {!collapsed && (
-              <div className="text-[11.5px] font-bold uppercase tracking-widest text-creme-faint px-2.5 mb-1.5">
-                {group.group}
-              </div>
+              <button
+                onClick={() => toggleGroup(group.group)}
+                className="w-full flex items-center gap-1 px-2 py-1.5 mb-0.5 rounded-md text-[11px] font-bold uppercase tracking-widest text-creme-mute hover:text-creme hover:bg-surface-hover/60 transition-colors"
+              >
+                <ChevronRight size={12} className={clsx('shrink-0 transition-transform', expanded && 'rotate-90')} />
+                <span className="flex-1 text-left truncate">{group.group}</span>
+                {!expanded && <span className="shrink-0 text-[10px] font-mono text-creme-faint/60">{group.items.length}</span>}
+              </button>
             )}
-            {group.items.map((item) => {
+            {expanded && group.items.map((item) => {
               const isActive = location.pathname === item.path;
               const Icon = item.icon;
               return (
@@ -73,17 +108,17 @@ export function Sidebar() {
                   onClick={() => navigate(item.path)}
                   title={collapsed ? item.label : undefined}
                   className={clsx(
-                    'w-full flex items-center py-2 rounded-lg text-[15px] font-medium transition-all duration-150 relative min-w-0',
+                    'w-full flex items-center py-2 rounded-[10px] text-[14px] font-medium transition-all duration-150 relative min-w-0',
                     collapsed ? 'justify-center px-0' : 'gap-2.5 px-2.5',
                     isActive
-                      ? 'bg-brand/10 text-brand-bright'
-                      : 'text-creme-mute hover:bg-surface-hover hover:text-creme-dim',
+                      ? 'bg-brand/[0.18] text-creme font-semibold'
+                      : 'text-creme-dim hover:bg-surface-hover hover:text-creme',
                   )}
                 >
                   {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2.5px] h-4 bg-brand rounded-r" />
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-brand-bright rounded-r-full" />
                   )}
-                  <Icon size={16} className={clsx('shrink-0', isActive ? 'opacity-100' : 'opacity-50')} />
+                  <Icon size={17} className={clsx('shrink-0', isActive ? 'opacity-100 text-brand-bright' : 'opacity-70')} />
                   {!collapsed && <span className="truncate min-w-0 text-left">{item.label}</span>}
                   {!collapsed && item.badge && (
                     <span className="ml-auto shrink-0 text-[12px] font-semibold font-mono bg-brand/10 text-brand px-1.5 py-px rounded-full">
@@ -94,7 +129,8 @@ export function Sidebar() {
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </nav>
 
       {/* Footer — User menu */}
@@ -122,6 +158,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   const role = (user?.user_metadata?.role as string | undefined) ?? 'CEO · Thribus Tech';
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase();
 
+  const { glass, toggle: toggleGlass } = useGlass();
   const go = (path: string) => { navigate(path); setOpen(false); };
   const logout = async () => {
     setOpen(false);
@@ -157,25 +194,31 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
       {open && (
         <div
           className={clsx(
-            'absolute bg-surface-1 border border-default rounded-lg shadow-2xl overflow-hidden z-50',
+            'glass-strong absolute bg-surface-1 border border-default rounded-2xl shadow-2xl overflow-hidden z-50 py-1.5',
             // recolhido: flyout pra direita com largura fixa (não espreme nos 64px)
-            collapsed ? 'left-full ml-2 bottom-2.5 w-60' : 'left-2.5 right-2.5 bottom-[60px]',
+            collapsed ? 'left-full ml-2 bottom-2.5 w-72' : 'left-2 right-2 bottom-[64px]',
           )}
         >
-          <div className="px-3 py-2.5 border-b border-default">
-            <div className="text-[12.5px] font-semibold text-creme truncate">{displayName}</div>
-            <div className="text-[10.5px] font-mono text-creme-faint truncate">{displayEmail}</div>
+          <div className="flex items-center gap-2.5 px-3.5 py-3 mb-1 border-b border-default">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-dim to-brand border border-hover flex items-center justify-center text-[13px] font-bold text-creme shrink-0">
+              {initials}
+            </div>
+            <div className="min-w-0">
+              <div className="text-[13.5px] font-bold text-creme truncate">{displayName}</div>
+              <div className="text-[11px] font-mono text-creme-faint truncate">{displayEmail}</div>
+            </div>
           </div>
-          <MenuItem icon={<User size={13} />} label="Meu perfil" onClick={() => go('/profile')} />
-          <MenuItem icon={<Bell size={13} />} label="Notificações" onClick={() => go('/notifications')} />
-          <MenuItem icon={<Building2 size={13} />} label="Workspaces" onClick={() => go('/clients')} />
-          <MenuItem icon={<Settings size={13} />} label="Configurações" onClick={() => go('/settings')} />
-          <MenuItem icon={<Lock size={13} />} label="Vault & API Keys" onClick={() => go('/vault')} />
-          <div className="border-t border-default" />
-          <MenuItem icon={<HelpCircle size={13} />} label="Ajuda & Academy" onClick={() => go('/help')} />
-          <MenuItem icon={<Moon size={13} />} label="Aparência / Tema" onClick={() => go('/settings')} />
-          <div className="border-t border-default" />
-          <MenuItem icon={<LogOut size={13} />} label="Sair" danger onClick={logout} />
+          <MenuItem icon={<User size={16} />} label="Meu perfil" onClick={() => go('/profile')} />
+          <MenuItem icon={<Bell size={16} />} label="Notificações" onClick={() => go('/notifications')} />
+          <MenuItem icon={<Building2 size={16} />} label="Workspaces" onClick={() => go('/clients')} />
+          <MenuItem icon={<Settings size={16} />} label="Configurações" onClick={() => go('/settings')} />
+          <MenuItem icon={<Lock size={16} />} label="Vault & API Keys" onClick={() => go('/vault')} />
+          <div className="border-t border-default my-1" />
+          <MenuItem icon={<HelpCircle size={16} />} label="Ajuda & Academy" onClick={() => go('/help')} />
+          <MenuItem icon={<Moon size={16} />} label="Aparência / Tema" onClick={() => go('/settings')} />
+          <MenuItem icon={<Sparkles size={16} />} label={glass ? 'Liquid Glass · ligado' : 'Liquid Glass'} onClick={() => toggleGlass()} />
+          <div className="border-t border-default my-1" />
+          <MenuItem icon={<LogOut size={16} />} label="Sair" danger onClick={logout} />
         </div>
       )}
     </div>
@@ -187,7 +230,7 @@ function MenuItem({ icon, label, subtitle, danger, onClick }: { icon: React.Reac
     <button
       onClick={onClick}
       className={clsx(
-        'w-full flex items-center gap-2.5 px-3 py-2 text-[12.5px] font-medium transition-colors',
+        'w-full flex items-center gap-3 px-3.5 py-2.5 text-[13.5px] font-medium transition-colors',
         danger ? 'text-semantic-red hover:bg-semantic-red/10' : 'text-creme-mute hover:text-creme hover:bg-surface-hover',
       )}
     >
@@ -204,20 +247,23 @@ function NotifBell({ onClick }: { onClick: () => void }) {
 
   useEffect(() => {
     let mounted = true;
+    let unsub: (() => void) | undefined;
     import('@/services/notifications').then(async (mod) => {
-      if (!mod.notificationsConfigured) return;
+      if (!mod.notificationsConfigured || !mounted) return;
       try {
         const list = await mod.listNotifications('ws_texnet', 50);
         if (mounted) setUnread(list.filter((n) => !n.read).length);
-        const unsub = mod.subscribeNotifications('ws_texnet', () => {
+        const u = mod.subscribeNotifications('ws_texnet', () => {
           if (mounted) setUnread((c) => c + 1);
         });
-        return () => unsub();
+        // O cleanup do effect roda síncrono; guarda o unsub aqui. Se já desmontou
+        // durante o await, encerra o canal na hora (senão vaza WebSocket órfão).
+        if (mounted) unsub = u; else u();
       } catch {
         // silencioso — sem Supabase ou sem RLS adequada, badge fica 0
       }
     });
-    return () => { mounted = false; };
+    return () => { mounted = false; unsub?.(); };
   }, []);
 
   return (

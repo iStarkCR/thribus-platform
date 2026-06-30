@@ -16,11 +16,12 @@ const KW = new Set(
     .split(','),
 );
 
+// Cores via tokens (--code-*) que escurecem no light mode (contraste). Ver globals.css.
 const CLS: Record<string, string> = {
   cmt: 'text-creme-faint italic',
-  str: 'text-emerald-300/90',
-  num: 'text-sky-300/90',
-  kw: 'text-violet-300/90',
+  str: 'text-[rgb(var(--code-str))]',
+  num: 'text-[rgb(var(--code-num))]',
+  kw: 'text-[rgb(var(--code-kw))]',
   id: 'text-creme-dim',
   pun: 'text-creme-mute',
 };

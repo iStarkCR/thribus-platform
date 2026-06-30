@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useWakeWordListener } from '@/hooks/useWakeWordListener';
@@ -43,6 +44,7 @@ export function FloatingOrb() {
   const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
   const voiceModeActive = useAppStore((s) => s.voiceModeActive);
   const sttBusy = useAppStore((s) => s.sttBusy);
+  const { pathname } = useLocation();
 
   const conv = useOrbConversation();
 
@@ -51,7 +53,7 @@ export function FloatingOrb() {
   const [hovered, setHovered] = useState(false);
   const [wakeFlash, setWakeFlash] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number } | null>(null);
+  const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number; shift: boolean; right: boolean } | null>(null);
 
   // Mantém o orbe dentro da viewport ao redimensionar.
   useEffect(() => {
@@ -78,7 +80,7 @@ export function FloatingOrb() {
   // ─── Drag ──────────────────────────────────────────────────────────────────
   const onPointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    dragState.current = { moved: false, offX: e.clientX - pos.x, offY: e.clientY - pos.y, startX: e.clientX, startY: e.clientY };
+    dragState.current = { moved: false, offX: e.clientX - pos.x, offY: e.clientY - pos.y, startX: e.clientX, startY: e.clientY, shift: e.shiftKey, right: e.button === 2 };
     setDragging(true);
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -96,28 +98,39 @@ export function FloatingOrb() {
       const final = clamp({ x: e.clientX - ds.offX, y: e.clientY - ds.offY });
       setPos(final);
       if (typeof localStorage !== 'undefined') localStorage.setItem(POS_KEY, JSON.stringify(final));
+    } else if (ds.shift || ds.right) {
+      // Shift+click ou botão direito → conversa por TEXTO (popover). Igual ao CORTEX.
+      if (conv.voiceActive) conv.stopVoice();
+      setChatOpen((o) => !o);
     } else {
-      setChatOpen((o) => !o); // clique sem arrastar → abre/fecha a conversa
+      // Clique normal → MODO VOZ inline na própria orbe (toggle), igual ao CORTEX.
+      // Sem tela cheia: o status aparece na esfera (Ouvindo/Pensando/Respondendo).
+      setChatOpen(false);
+      if (conv.voiceActive) conv.stopVoice(); else conv.startVoice();
     }
   };
 
-  if (!orbEnabled) return null;
+  // No /talk a própria página já renderiza esferas (welcome + modo voz). O orbe
+  // global aqui empilharia outro contexto WebGL por cima → trava ao entrar no chat.
+  if (!orbEnabled || pathname.startsWith('/talk')) return null;
 
   const active = conv.voiceActive || chatOpen;
   const intensity = conv.voiceActive ? 0.95 : chatOpen ? 0.85 : hovered ? 0.7 : wakeFlash ? 0.6 : 0.32;
   const listening = wakeWordEnabled && !conv.voiceActive && !chatOpen && !voiceModeActive;
   // Esfera muda de cor pelo estado do modo voz: verde (ouvindo) → âmbar (pensando) → azul (respondendo).
-  const hue = conv.voiceActive ? (conv.state === 'thinking' ? -62 : conv.state === 'speaking' ? 95 : 6) : 0;
+  const hue = conv.voiceActive ? (conv.state === 'thinking' ? -62 : conv.state === 'speaking' ? 95 : conv.state === 'talking' ? 0 : 6) : 0;
   const haloColor = conv.state === 'thinking' ? '250 190 90' : conv.state === 'speaking' ? '110 170 250' : 'var(--brand-bright)';
+  const stateLabel = conv.state === 'thinking' ? 'Pensando' : conv.state === 'speaking' ? 'Respondendo' : conv.state === 'talking' ? 'Você falando' : 'Ouvindo';
 
   return (
     <>
       <button
-        aria-label="Conversar com o Bukowiski"
-        title="Conversar com o Bukowiski"
+        aria-label="Falar com o Bukowiski"
+        title="Clique pra falar · Shift+click pra texto · Arraste pra mover"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onContextMenu={(e) => e.preventDefault()}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
         className="fixed z-[60] rounded-full select-none touch-none group transition-transform duration-200"
@@ -166,16 +179,23 @@ export function FloatingOrb() {
             Bukowiski 👂
           </span>
         )}
+        {/* Estado do modo voz — Ouvindo / Pensando / Respondendo (cor por estado) */}
+        {conv.voiceActive && (
+          <span
+            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.16em] shadow-lg pointer-events-none flex items-center gap-1.5 backdrop-blur"
+            style={{ background: `rgba(${haloColor}/0.16)`, color: `rgb(${haloColor})`, border: `1px solid rgba(${haloColor}/0.45)` }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: `rgb(${haloColor})` }} />
+            {stateLabel}
+          </span>
+        )}
       </button>
 
+      {/* O orbe é à parte: voz SEMPRE inline (status na esfera) e chat próprio.
+          O modo voz em tela cheia é do TalkPage, atrelado à conversa aberta. */}
       {chatOpen && (
         <OrbChat orb={{ x: pos.x, y: pos.y, size: ORB_SIZE }} onClose={() => setChatOpen(false)} conv={conv} />
       )}
-
-      {/* Modo voz por fala (wake word) NÃO abre tela cheia — só a orbe pequena
-          reage (cor/pulso por conv.state). "Bukowiski off" encerra. Igual ao
-          FloatingAssistantOrb do CORTEX. O OrbVoiceOverlay foi removido daqui de
-          propósito; a conversa por voz é gerenciada inteira pelo useOrbConversation. */}
     </>
   );
 }

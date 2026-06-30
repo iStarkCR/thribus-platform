@@ -20,11 +20,31 @@ export interface ChatSession {
   title: string;
   updatedAt: string;
   contextTokens: number;
+  archivedAt: string | null;
+  color: string | null;
+  pinnedAt: string | null;
+  workingDir: string | null;
+  compactedAt: string | null;     // última compactação (caminho C)
+  compactRequested: boolean;      // botão "Compactar" disparado, aguardando a ponte
+  source: string;                 // 'panel' (digitada) | 'claude_code' (espelho cc-mirror)
 }
 
 const FOLDER_COLS = 'id,name,sort_order,parent_id,color';
 const toFolder = (r: { id: string; name: string; sort_order: number; parent_id: string | null; color: string | null }): ChatFolder => ({
   id: r.id, name: r.name, sortOrder: r.sort_order, parentId: r.parent_id, color: r.color,
+});
+
+const SESSION_COLS = 'id,agent_id,folder_id,title,updated_at,context_tokens,archived_at,color,pinned_at,working_dir,compacted_at,compact_requested,source';
+interface SessionRow {
+  id: string; agent_id: string; folder_id: string | null; title: string; updated_at: string;
+  context_tokens: number | null; archived_at: string | null; color: string | null; pinned_at: string | null;
+  working_dir: string | null; compacted_at: string | null; compact_requested: boolean | null; source: string | null;
+}
+const toSession = (r: SessionRow): ChatSession => ({
+  id: r.id, agentId: r.agent_id, folderId: r.folder_id, title: r.title, updatedAt: r.updated_at,
+  contextTokens: r.context_tokens ?? 0, archivedAt: r.archived_at ?? null, color: r.color ?? null, pinnedAt: r.pinned_at ?? null,
+  workingDir: r.working_dir ?? null, compactedAt: r.compacted_at ?? null, compactRequested: r.compact_requested ?? false,
+  source: r.source ?? 'panel',
 });
 
 export async function listFolders(agentId: string, userId: string): Promise<ChatFolder[]> {
@@ -75,25 +95,18 @@ export async function listSessions(agentId: string, userId: string): Promise<Cha
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('chat_sessions')
-    .select('id,agent_id,folder_id,title,updated_at,context_tokens')
+    .select(SESSION_COLS)
     .eq('agent_id', agentId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((r) => ({
-    id: r.id,
-    agentId: r.agent_id,
-    folderId: r.folder_id,
-    title: r.title,
-    updatedAt: r.updated_at,
-    contextTokens: r.context_tokens ?? 0,
-  }));
+  return ((data ?? []) as SessionRow[]).map(toSession);
 }
 
 export async function createSession(
   agentId: string,
   userId: string,
-  opts: { folderId?: string | null; title?: string } = {},
+  opts: { folderId?: string | null; title?: string; workingDir?: string | null } = {},
 ): Promise<ChatSession> {
   if (!supabase) throw new Error('Supabase não configurado');
   const { data, error } = await supabase
@@ -103,11 +116,12 @@ export async function createSession(
       user_id: userId,
       folder_id: opts.folderId ?? null,
       title: opts.title ?? 'Nova conversa',
+      working_dir: opts.workingDir ?? null,
     })
-    .select('id,agent_id,folder_id,title,updated_at,context_tokens')
+    .select(SESSION_COLS)
     .single();
   if (error) throw error;
-  return { id: data.id, agentId: data.agent_id, folderId: data.folder_id, title: data.title, updatedAt: data.updated_at, contextTokens: data.context_tokens ?? 0 };
+  return toSession(data as SessionRow);
 }
 
 export async function renameSession(id: string, title: string): Promise<void> {
@@ -128,7 +142,176 @@ export async function deleteSession(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function setSessionArchived(id: string, archived: boolean): Promise<string | null> {
+  if (!supabase) return null;
+  const archivedAt = archived ? new Date().toISOString() : null;
+  const { error } = await supabase.from('chat_sessions').update({ archived_at: archivedAt }).eq('id', id);
+  if (error) throw error;
+  return archivedAt;
+}
+
+export async function setSessionColor(id: string, color: string | null): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('chat_sessions').update({ color }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function setSessionPinned(id: string, pinned: boolean): Promise<string | null> {
+  if (!supabase) return null;
+  const pinnedAt = pinned ? new Date().toISOString() : null;
+  const { error } = await supabase.from('chat_sessions').update({ pinned_at: pinnedAt }).eq('id', id);
+  if (error) throw error;
+  return pinnedAt;
+}
+
+// Pasta de trabalho da conversa — o bridge usa como cwd do claude (null = default
+// do colaborador). Ver cortex_work_folders (allowlist) + [[work-folders]].
+export async function setSessionWorkingDir(id: string, path: string | null): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('chat_sessions').update({ working_dir: path }).eq('id', id);
+  if (error) throw error;
+}
+
+// Compactar conversa (caminho C): seta a flag; a ponte gera o resumo, insere o
+// marcador (role='system'), grava a semente e zera a sessão do claude. O
+// histórico visual fica intacto. Ver bukowiski-bridge.mjs / [[chat-blocos-ricos]].
+export async function requestCompaction(sessionId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { error } = await supabase.from('chat_sessions').update({ compact_requested: true }).eq('id', sessionId);
+  if (error) throw error;
+}
+
+// ─── Pastas de trabalho (curadas + "Abrir pasta…") ─────────────────────────
+export interface WorkFolder { id: string; label: string; path: string; sort: number }
+export async function listWorkFolders(): Promise<WorkFolder[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('cortex_work_folders')
+    .select('id,label,path,sort')
+    .eq('active', true)
+    .order('sort', { ascending: true })
+    .order('label', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ id: r.id, label: r.label, path: r.path, sort: r.sort }));
+}
+export async function addWorkFolder(label: string, path: string): Promise<WorkFolder> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { data, error } = await supabase
+    .from('cortex_work_folders')
+    .insert({ label, path, sort: 90 })
+    .select('id,label,path,sort')
+    .single();
+  if (error) throw error;
+  return { id: data.id, label: data.label, path: data.path, sort: data.sort };
+}
+
+// ─── Navegador de pastas (via bridge) ──────────────────────────────────────
+// O painel não acessa o filesystem; pede pro bridge listar os subdiretórios de
+// um caminho (vazio = home do daemon) e espera a resposta. Ver [[work-folders]].
+export interface FsEntry { name: string; path: string }
+export interface FsListing { base: string; items: FsEntry[] }
+export async function browseFolder(path: string | null): Promise<FsListing> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { data: ins, error } = await supabase
+    .from('fs_browse_requests')
+    .insert({ path: path ?? '' })
+    .select('id')
+    .single();
+  if (error) throw error;
+  const id = ins.id as string;
+
+  return new Promise<FsListing>((res, rej) => {
+    let done = false;
+    const finish = (fn: () => void) => { if (done) return; done = true; clearInterval(poll); clearTimeout(timer); fn(); };
+    const check = async () => {
+      const { data } = await supabase!
+        .from('fs_browse_requests')
+        .select('status,entries,error')
+        .eq('id', id)
+        .maybeSingle();
+      if (!data || data.status === 'pending') return;
+      if (data.status === 'error') finish(() => rej(new Error(data.error || 'erro ao listar pasta')));
+      else finish(() => res((data.entries as FsListing) ?? { base: path ?? '', items: [] }));
+    };
+    const poll = setInterval(check, 500);
+    const timer = setTimeout(() => finish(() => rej(new Error('o bridge não respondeu (offline?)'))), 15000);
+    check();
+  });
+}
+
+/**
+ * Duplica uma conversa (fork): cria uma nova sessão com o mesmo histórico, pra
+ * ramificar sem mexer na original. A nova NÃO herda a sessão do claude nem a
+ * janela de contexto — o daemon recomeça o contexto semeando com o histórico
+ * copiado na próxima mensagem.
+ */
+export async function forkSession(source: ChatSession, userId: string): Promise<ChatSession> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const created = await createSession(source.agentId, userId, { folderId: source.folderId, title: `${source.title} (cópia)` });
+  if (source.color) await setSessionColor(created.id, source.color);
+  const { data: msgs, error } = await supabase
+    .from('collaborator_messages')
+    .select('role,content,channel,attachments,created_at')
+    .eq('session_id', source.id)
+    .eq('status', 'done')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  if (msgs && msgs.length) {
+    const rows = msgs.map((m) => ({
+      session_id: created.id, agent_id: source.agentId, user_id: userId,
+      role: m.role, content: m.content, status: 'done', channel: m.channel,
+      attachments: m.attachments ?? null, created_at: m.created_at,
+    }));
+    const { error: insErr } = await supabase.from('collaborator_messages').insert(rows);
+    if (insErr) throw insErr;
+  }
+  return { ...created, color: source.color };
+}
+
 export async function touchSession(id: string): Promise<void> {
   if (!supabase) return;
   await supabase.from('chat_sessions').update({ updated_at: new Date().toISOString() }).eq('id', id);
+}
+
+// ─── Uso agregado por sessão (tokens/custo consumidos por conversa) ───────────
+export interface SessionUsage {
+  costUsd: number;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  runs: number;
+  lastAt: string | null;
+}
+
+/** Mapa session_id → canal de origem (telegram/talki/thribus). */
+export async function getSessionsChannels(agentId: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!supabase) return out;
+  const { data, error } = await supabase.rpc('chat_session_channels', { p_agent_id: agentId });
+  if (error) throw error;
+  for (const r of (data ?? []) as Array<{ session_id: string; channel: string }>) {
+    out.set(String(r.session_id), r.channel);
+  }
+  return out;
+}
+
+/** Mapa session_id → uso somado (via RPC chat_session_usage). */
+export async function getSessionsUsage(agentId: string): Promise<Map<string, SessionUsage>> {
+  const out = new Map<string, SessionUsage>();
+  if (!supabase) return out;
+  const { data, error } = await supabase.rpc('chat_session_usage', { p_agent_id: agentId });
+  if (error) throw error;
+  for (const r of (data ?? []) as Array<Record<string, number | string | null>>) {
+    out.set(String(r.session_id), {
+      costUsd: Number(r.cost_usd) || 0,
+      totalTokens: Number(r.total_tokens) || 0,
+      inputTokens: Number(r.input_tokens) || 0,
+      outputTokens: Number(r.output_tokens) || 0,
+      cacheReadTokens: Number(r.cache_read_tokens) || 0,
+      runs: Number(r.runs) || 0,
+      lastAt: (r.last_at as string) ?? null,
+    });
+  }
+  return out;
 }

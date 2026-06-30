@@ -6,8 +6,10 @@ import { useEffect, useState } from 'react';
 import { FileText, Download, Eye } from 'lucide-react';
 import { attachmentUrl, type Attachment } from '@/services/collaboratorChat';
 import { CodeViewerModal, langFromName } from '@/components/shared/CodeViewer';
+import { useAppStore } from '@/hooks/useAppStore';
 
 export function MessageAttachments({ items }: { items: Attachment[] }) {
+  const openLightbox = useAppStore((s) => s.openLightbox);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<{ name: string; content: string; lang?: string } | null>(null);
 
@@ -41,7 +43,7 @@ export function MessageAttachments({ items }: { items: Attachment[] }) {
           const url = urls[a.path];
           if (/^image\//.test(a.mime)) {
             return url
-              ? <a key={a.path} href={url} target="_blank" rel="noreferrer"><img src={url} alt={a.name} className="max-h-44 rounded-lg border border-default object-cover" /></a>
+              ? <button key={a.path} type="button" onClick={() => openLightbox(url, a.name)} className="block cursor-zoom-in"><img src={url} alt={a.name} className="max-h-44 rounded-lg border border-default object-cover" /></button>
               : <Chip key={a.path} a={a} />;
           }
           if (/^video\//.test(a.mime)) {

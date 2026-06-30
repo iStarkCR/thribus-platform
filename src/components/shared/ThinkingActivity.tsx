@@ -3,11 +3,27 @@
  * trás: a lista ao vivo dos passos (tool calls) que o colaborador executa.
  */
 import { useEffect, useState } from 'react';
-import { Loader2, ChevronDown, ChevronRight, Wrench, X } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronRight, ChevronLeft, Wrench, X, Copy, Check, Download, MessageCircleQuestion, ListChecks, UploadCloud } from 'lucide-react';
 import { listRunEvents, subscribeRunEvents, type RunEvent } from '@/services/runEvents';
+import { CodeViewer } from '@/components/shared/CodeViewer';
+import { Markdown } from '@/components/shared/Markdown';
+
+// Identa JSON quando o input é JSON (tool params); senão devolve cru.
+function prettyInput(raw: string, label: string | null): { text: string; lang: string } {
+  const t = raw.trim();
+  if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+    try { return { text: JSON.stringify(JSON.parse(t), null, 2), lang: 'json' }; } catch { /* não é JSON */ }
+  }
+  return { text: raw, lang: label === 'Bash' ? 'bash' : 'texto' };
+}
+const looksMarkdown = (s: string) => /(^|\n)#{1,4}\s|\n\s*\|.*\|\s*\n\s*\|?[-:| ]+\||\*\*[^*\n]+\*\*|```|(^|\n)[-*]\s/.test(s);
+
+/** Ação disparada a partir do resultado de um passo (vai pro chat / demandas / hub). */
+export type StepAction = 'explica' | 'edai' | 'resume' | 'demand' | 'hub';
+export type OnStepAct = (action: StepAction, ev: RunEvent) => void;
 
 /** Linha de um passo — clicável quando tem input/resultado pra abrir o processo. */
-function StepRow({ e, onOpen }: { e: RunEvent; onOpen: (e: RunEvent) => void }) {
+function StepRow({ e, onOpen }: { e: RunEvent; onOpen: () => void }) {
   const openable = Boolean(e.input || e.result);
   const inner = (
     <>
@@ -18,35 +34,86 @@ function StepRow({ e, onOpen }: { e: RunEvent; onOpen: (e: RunEvent) => void }) 
     </>
   );
   return openable ? (
-    <button onClick={() => onOpen(e)} className="w-full flex items-start gap-1.5 text-[11.5px] leading-snug text-left hover:bg-surface-hover rounded px-1 -mx-1 py-0.5">{inner}</button>
+    <button onClick={onOpen} className="w-full flex items-start gap-1.5 text-[11.5px] leading-snug text-left hover:bg-surface-hover rounded px-1 -mx-1 py-0.5">{inner}</button>
   ) : (
     <div className="flex items-start gap-1.5 text-[11.5px] leading-snug px-1 py-0.5">{inner}</div>
   );
 }
 
-/** Modal com o processo completo de um passo: comando/input + resultado. */
-export function StepDetailModal({ event, onClose }: { event: RunEvent; onClose: () => void }) {
+/** Modal com o processo completo de um passo: comando/input + resultado + ações. */
+export function StepDetailModal({ events, index, onIndex, onClose, onAct }: {
+  events: RunEvent[]; index: number; onIndex: (i: number) => void; onClose: () => void; onAct?: OnStepAct;
+}) {
+  const event = events[index];
+  const inp = event.input ? prettyInput(event.input, event.label) : null;
+  const result = event.result ?? '';
+  const [tab, setTab] = useState<'fmt' | 'raw'>(looksMarkdown(result) ? 'fmt' : 'raw');
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { setTab(looksMarkdown(event.result ?? '') ? 'fmt' : 'raw'); setCopied(false); }, [index, event.result]);
+  const copyResult = () => { navigator.clipboard?.writeText(result).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {}); };
+  const download = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([result], { type: 'text/markdown' }));
+    a.download = `${(event.label || 'resultado').toLowerCase()}-${event.id.slice(0, 6)}.md`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const act = (a: StepAction) => { onAct?.(a, event); onClose(); };
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[85] p-4" onClick={onClose}>
       <div className="bg-surface-1 border border-default rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-default shrink-0">
-          <div className="text-[13.5px] font-semibold text-creme flex items-center gap-2"><Wrench size={14} className="text-brand-bright" /> {verbFor(event.label)} <span className="font-mono text-[11px] text-creme-faint">{event.label}</span></div>
-          <button onClick={onClose} className="text-creme-faint hover:text-creme"><X size={17} /></button>
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-default shrink-0">
+          <div className="text-[13.5px] font-semibold text-creme flex items-center gap-2 min-w-0"><Wrench size={14} className="text-brand-bright shrink-0" /> <span className="truncate">{verbFor(event.label)}</span> <span className="font-mono text-[11px] text-creme-faint shrink-0">{event.label}</span></div>
+          <div className="flex items-center gap-1 shrink-0">
+            {events.length > 1 && (
+              <div className="flex items-center gap-0.5 mr-1 text-[11px] text-creme-faint">
+                <button onClick={() => onIndex(Math.max(0, index - 1))} disabled={index === 0} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-surface-hover disabled:opacity-30 disabled:hover:bg-transparent"><ChevronLeft size={15} /></button>
+                <span className="tabular-nums">{index + 1}/{events.length}</span>
+                <button onClick={() => onIndex(Math.min(events.length - 1, index + 1))} disabled={index === events.length - 1} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-surface-hover disabled:opacity-30 disabled:hover:bg-transparent"><ChevronRight size={15} /></button>
+              </div>
+            )}
+            <button onClick={onClose} className="text-creme-faint hover:text-creme"><X size={17} /></button>
+          </div>
         </div>
-        <div className="p-4 overflow-y-auto space-y-3">
-          {event.input && (
+        <div className="p-4 overflow-y-auto space-y-4">
+          {inp && (
             <div>
-              <div className="text-[10.5px] font-bold uppercase tracking-wider text-creme-faint mb-1">Comando / input</div>
-              <pre className="rounded-lg bg-surface-3 border border-default p-3 font-mono text-[12px] text-creme-dim whitespace-pre-wrap break-words overflow-x-auto">{event.input}</pre>
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-creme-faint mb-1.5">Comando / input</div>
+              <CodeViewer content={inp.text} language={inp.lang} maxHeight="26vh" />
             </div>
           )}
           <div>
-            <div className="text-[10.5px] font-bold uppercase tracking-wider text-creme-faint mb-1">Resultado</div>
-            {event.result
-              ? <pre className="rounded-lg bg-surface-3 border border-default p-3 font-mono text-[12px] text-creme-mute whitespace-pre-wrap break-words overflow-x-auto max-h-[44vh] overflow-y-auto">{event.result}</pre>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-creme-faint">Resultado</div>
+              {result && (
+                <div className="flex items-center gap-1.5">
+                  <div className="flex rounded-lg border border-default overflow-hidden text-[11px] font-semibold">
+                    <button onClick={() => setTab('fmt')} className={`px-2.5 py-1 transition-colors ${tab === 'fmt' ? 'bg-brand/15 text-brand-bright' : 'text-creme-faint hover:text-creme'}`}>Formatado</button>
+                    <button onClick={() => setTab('raw')} className={`px-2.5 py-1 transition-colors ${tab === 'raw' ? 'bg-brand/15 text-brand-bright' : 'text-creme-faint hover:text-creme'}`}>Bruto</button>
+                  </div>
+                  <button onClick={copyResult} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-default text-[11px] text-creme-faint hover:text-creme transition-colors">{copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'copiado' : 'copiar'}</button>
+                  <button onClick={download} title="Baixar .md" className="flex items-center justify-center w-7 h-7 rounded-lg border border-default text-creme-faint hover:text-creme transition-colors"><Download size={12} /></button>
+                </div>
+              )}
+            </div>
+            {result
+              ? tab === 'fmt'
+                ? <div className="rounded-lg border border-default bg-surface-2/40 px-4 py-3 max-h-[50vh] overflow-y-auto text-[14px] leading-relaxed"><Markdown text={result} /></div>
+                : <CodeViewer content={result} language="texto" maxHeight="50vh" />
               : <div className="text-creme-faint text-[12px]">(sem saída registrada)</div>}
           </div>
         </div>
+        {onAct && result && (
+          <div className="flex items-center gap-2 flex-wrap px-4 py-3 border-t border-default shrink-0">
+            <span className="text-[10.5px] font-bold uppercase tracking-wider text-creme-faint mr-0.5">No chat:</span>
+            <button onClick={() => act('explica')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-3 border border-default text-[12px] font-medium text-creme-dim hover:text-creme hover:border-brand/40 transition-colors"><MessageCircleQuestion size={13} className="text-brand-bright" /> Explica</button>
+            <button onClick={() => act('edai')} className="px-2.5 py-1.5 rounded-lg bg-surface-3 border border-default text-[12px] font-medium text-creme-dim hover:text-creme hover:border-brand/40 transition-colors">E daí?</button>
+            <button onClick={() => act('resume')} className="px-2.5 py-1.5 rounded-lg bg-surface-3 border border-default text-[12px] font-medium text-creme-dim hover:text-creme hover:border-brand/40 transition-colors">Resume</button>
+            <div className="w-px h-5 bg-creme/12 mx-0.5" />
+            <button onClick={() => act('demand')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-3 border border-default text-[12px] font-medium text-creme-dim hover:text-creme hover:border-brand/40 transition-colors"><ListChecks size={13} className="text-brand-bright" /> Virar demanda</button>
+            <button onClick={() => act('hub')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gold/10 border border-gold/40 text-[12px] font-semibold text-gold-bright hover:bg-gold/20 transition-colors"><UploadCloud size={13} /> Publicar no Hub</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -64,43 +131,55 @@ const verbFor = (label: string | null) => (label && VERB[label]) || `usando ${la
  * "Executado N passos" — o processo que o colaborador fez (tool calls), expansível,
  * numa mensagem/demanda JÁ concluída. Lê os run_events do ref (msg do usuário ou demanda).
  */
-export function MessageSteps({ refId, className }: { refId?: string | null; className?: string }) {
+// `live`: enquanto a resposta ainda está sendo gerada, assina os run_events em
+// tempo real (mostra "Executando… rodando X" atualizando) — pra ver o que o
+// colaborador consulta NO MEIO da resposta. Concluída, vira estática.
+export function MessageSteps({ refId, className, onAct, live }: { refId?: string | null; className?: string; onAct?: OnStepAct; live?: boolean }) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [open, setOpen] = useState(false);
-  const [detail, setDetail] = useState<RunEvent | null>(null);
+  const [detailIdx, setDetailIdx] = useState<number | null>(null);
 
   useEffect(() => {
     if (!refId) { setEvents([]); return; }
     let on = true;
-    listRunEvents(refId).then((e) => { if (on) setEvents(e); }).catch(() => {});
+    const refetch = () => listRunEvents(refId).then((e) => { if (on) setEvents(e); }).catch(() => {});
+    refetch();
+    if (live) {
+      const unsub = subscribeRunEvents(refId, refetch);
+      return () => { on = false; unsub(); };
+    }
     return () => { on = false; };
-  }, [refId]);
+  }, [refId, live]);
 
   if (!events.length) return null;
+
+  const latest = events[events.length - 1];
+  const latestLabel = `${verbFor(latest.label)}${latest.detail ? ` ${latest.detail}` : ''}`;
 
   return (
     <div className={className ?? 'mt-1.5'}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 text-[11.5px] text-creme-faint hover:text-creme-mute transition-colors"
+        className={`flex items-center gap-1.5 text-[11.5px] transition-colors ${live ? 'text-brand-bright/90 hover:text-brand-bright' : 'text-creme-faint hover:text-creme-mute'}`}
       >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        Executado {events.length} {events.length === 1 ? 'passo' : 'passos'}
+        {live ? <Loader2 size={12} className="animate-spin shrink-0" /> : open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span>{live ? 'Executando' : 'Executado'} {events.length} {events.length === 1 ? 'passo' : 'passos'}</span>
+        {live && <span className="text-creme-faint font-normal truncate max-w-[280px]">· {latestLabel}</span>}
       </button>
       {open && (
         <div className="mt-1 ml-1 border-l border-default pl-3 space-y-0.5">
-          {events.map((e) => <StepRow key={e.id} e={e} onOpen={setDetail} />)}
+          {events.map((e, i) => <StepRow key={e.id} e={e} onOpen={() => setDetailIdx(i)} />)}
         </div>
       )}
-      {detail && <StepDetailModal event={detail} onClose={() => setDetail(null)} />}
+      {detailIdx != null && <StepDetailModal events={events} index={detailIdx} onIndex={setDetailIdx} onAct={onAct} onClose={() => setDetailIdx(null)} />}
     </div>
   );
 }
 
-export function ThinkingActivity({ agentName, refId }: { agentName: string; refId?: string | null }) {
+export function ThinkingActivity({ agentName, refId, onAct }: { agentName: string; refId?: string | null; onAct?: OnStepAct }) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [open, setOpen] = useState(false);
-  const [detail, setDetail] = useState<RunEvent | null>(null);
+  const [detailIdx, setDetailIdx] = useState<number | null>(null);
 
   useEffect(() => {
     if (!refId) { setEvents([]); return; }
@@ -111,7 +190,11 @@ export function ThinkingActivity({ agentName, refId }: { agentName: string; refI
     return () => { on = false; unsub(); };
   }, [refId]);
 
-  const latest = events[events.length - 1];
+  // Estágios do colaborador:
+  //   • sem tool steps ainda → "pensando…" (com os pontinhos animados)
+  //   • com tool steps       → o verbo real da ferramenta (rodando/lendo/…)
+  const hasSteps = events.length > 0;
+  const latest = hasSteps ? events[events.length - 1] : null;
   const status = latest ? `${verbFor(latest.label)}${latest.detail ? ` ${latest.detail}` : ''}` : 'pensando';
 
   return (
@@ -120,10 +203,12 @@ export function ThinkingActivity({ agentName, refId }: { agentName: string; refI
         {agentName.charAt(0).toUpperCase()}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme-mute text-[14px] max-w-full">
-          <Loader2 size={14} className="animate-spin shrink-0" />
+        <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl rounded-tl-md bg-surface-2 border border-default text-creme-mute text-[15px] max-w-full">
+          {hasSteps
+            ? <Loader2 size={15} className="animate-spin shrink-0" />
+            : <span className="flex items-center gap-1 shrink-0"><span className="typing-dot" /><span className="typing-dot" style={{ animationDelay: '.16s' }} /><span className="typing-dot" style={{ animationDelay: '.32s' }} /></span>}
           <span className="truncate">{agentName} está <span className="text-creme-dim">{status}</span>…</span>
-          {events.length > 0 && (
+          {hasSteps && (
             <button
               onClick={() => setOpen((o) => !o)}
               className="shrink-0 text-creme-faint hover:text-creme inline-flex items-center gap-0.5 text-[11px]"
@@ -136,11 +221,11 @@ export function ThinkingActivity({ agentName, refId }: { agentName: string; refI
         </div>
         {open && events.length > 0 && (
           <div className="mt-1.5 rounded-lg border border-default bg-surface-1 p-2 space-y-0.5 max-h-52 overflow-y-auto">
-            {events.map((e) => <StepRow key={e.id} e={e} onOpen={setDetail} />)}
+            {events.map((e, i) => <StepRow key={e.id} e={e} onOpen={() => setDetailIdx(i)} />)}
           </div>
         )}
       </div>
-      {detail && <StepDetailModal event={detail} onClose={() => setDetail(null)} />}
+      {detailIdx != null && <StepDetailModal events={events} index={detailIdx} onIndex={setDetailIdx} onAct={onAct} onClose={() => setDetailIdx(null)} />}
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
   CORTEX_BRAINS, EFFORT_LEVELS, DEFAULT_CORTEX_CONFIG, brainOf, effortIndex,
   getCortexConfig, saveCortexConfig, getUsageSummary, subscribeUsage,
   cortexBrainConfigured,
+  CONTEXT_LIMIT_MIN, CONTEXT_LIMIT_MAX, CONTEXT_LIMIT_STEP,
   type CortexBrainConfig, type CortexModel, type CortexEffort, type UsageSummary,
 } from '@/services/cortexBrain';
 import { EffortSlider } from '@/components/cortex/EffortSlider';
@@ -217,6 +218,12 @@ export function CortexBrainPage() {
           )}
         </div>
 
+        {/* Teto de contexto — quando rotacionar/resetar a conversa */}
+        <ContextLimitControl
+          value={cfg.contextLimitTokens}
+          onSave={(v) => persist({ ...cfg, contextLimitTokens: v })}
+        />
+
         <p className="text-[11.5px] text-creme-faint flex items-center gap-1.5">
           <Brain size={12} />
           {isAuto ? (
@@ -365,6 +372,44 @@ function BudgetInput({ label, hint, value, onSave }: { label: string; hint: stri
         />
       </div>
       <p className="mt-1 text-[10.5px] text-creme-faint">{hint}</p>
+    </div>
+  );
+}
+
+const fmtTokens = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 1)}M` : `${Math.round(n / 1000)}k`;
+
+function ContextLimitControl({ value, onSave }: { value: number; onSave: (v: number) => void }) {
+  const [v, setV] = useState(value);
+  useEffect(() => { setV(value); }, [value]);
+  const commit = () => { if (v !== value) onSave(v); };
+  return (
+    <div className="rounded-lg border border-default bg-surface-2 p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-semibold text-creme flex items-center gap-1.5">
+          <Gauge size={14} className="text-brand-bright" /> Teto de contexto
+        </span>
+        <span className="text-[12px] font-mono text-creme-mute">{fmtTokens(v)} tokens</span>
+      </div>
+      <input
+        type="range"
+        min={CONTEXT_LIMIT_MIN}
+        max={CONTEXT_LIMIT_MAX}
+        step={CONTEXT_LIMIT_STEP}
+        value={v}
+        onChange={(e) => setV(Number(e.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        className="mt-3 w-full accent-brand-bright cursor-pointer"
+      />
+      <div className="mt-1 flex justify-between text-[10.5px] text-creme-faint font-mono">
+        <span>250k · enxuto, barato</span>
+        <span>1M · memória longa</span>
+      </div>
+      <p className="mt-2 text-[11.5px] text-creme-mute">
+        Quando a conversa passa de <strong className="text-creme-mute font-semibold">{fmtTokens(v)}</strong>, o time
+        reseta a sessão resumindo o fio. Menor responde melhor e custa menos; maior lembra mais e fica mais caro.
+      </p>
     </div>
   );
 }

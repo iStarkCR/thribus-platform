@@ -8,6 +8,8 @@
  */
 
 import OpenAI from 'openai';
+import { ttsCostUsd, logAuxCost } from '../llm/cost.js';
+import { recordAuxUsage } from '../llm/aux-usage.js';
 
 let cachedClient: OpenAI | null = null;
 let cachedKey: string | null = null;
@@ -56,6 +58,10 @@ export async function generateSpeech(
     const arrayBuffer = await response.arrayBuffer();
     const buf = Buffer.from(arrayBuffer);
     const ms = Date.now() - start;
+    const ttsModel = opts.model ?? 'tts-1';
+    const ttsCost = ttsCostUsd(ttsModel, text.length);
+    logAuxCost('tts', ttsModel, ttsCost, { chars: text.length, ms });
+    void recordAuxUsage({ kind: 'tts', model: ttsModel, costUsd: ttsCost, durationMs: ms });
     console.log(`[tts] ok durationMs=${ms} chars=${text.length} bytes=${buf.length}`);
     return buf;
   } catch (err) {

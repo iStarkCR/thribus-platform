@@ -107,9 +107,17 @@ export function effortIndex(e: CortexEffort): number {
 }
 
 // ─── Config ─────────────────────────────────────────────────────────────────
-
 /** 'auto' = Cortex Router decide o modelo por mensagem; 'manual' = modelo fixo. */
 export type CortexMode = 'auto' | 'manual';
+
+// Teto de contexto: quanto a conversa acumula (tokens do turno) antes de o daemon
+// rotacionar / a ponte resetar a sessão. Piso 250k; teto 1M (janela do Max).
+export const CONTEXT_LIMIT_MIN = 250_000;
+export const CONTEXT_LIMIT_MAX = 1_000_000;
+export const CONTEXT_LIMIT_STEP = 50_000;
+
+const clampContext = (n: number) =>
+  Math.min(CONTEXT_LIMIT_MAX, Math.max(CONTEXT_LIMIT_MIN, Math.round(n) || CONTEXT_LIMIT_MIN));
 
 export interface CortexBrainConfig {
   /** 'auto' = roteador escolhe; 'manual' = o `model` abaixo é fixo (override). */
@@ -118,6 +126,8 @@ export interface CortexBrainConfig {
   effort: CortexEffort;
   monthlyBudgetUsd: number;
   maxBudgetUsd: number;
+  /** Teto de contexto (tokens) antes de rotacionar/resetar a conversa. */
+  contextLimitTokens: number;
 }
 
 export const DEFAULT_CORTEX_CONFIG: CortexBrainConfig = {
@@ -126,6 +136,7 @@ export const DEFAULT_CORTEX_CONFIG: CortexBrainConfig = {
   effort: 'high',
   monthlyBudgetUsd: 0,
   maxBudgetUsd: 0,
+  contextLimitTokens: CONTEXT_LIMIT_MIN,
 };
 
 interface ConfigRow {
@@ -134,13 +145,14 @@ interface ConfigRow {
   effort: CortexEffort;
   monthly_budget_usd: number | string;
   max_budget_usd: number | string;
+  context_limit_tokens: number | string | null;
 }
 
 export async function getCortexConfig(): Promise<CortexBrainConfig> {
   if (!supabase) return DEFAULT_CORTEX_CONFIG;
   const { data, error } = await supabase
     .from('cortex_brain_config')
-    .select('mode,model,effort,monthly_budget_usd,max_budget_usd')
+    .select('mode,model,effort,monthly_budget_usd,max_budget_usd,context_limit_tokens')
     .eq('scope', 'global')
     .maybeSingle();
   if (error) throw error;
@@ -152,6 +164,7 @@ export async function getCortexConfig(): Promise<CortexBrainConfig> {
     effort: r.effort,
     monthlyBudgetUsd: Number(r.monthly_budget_usd) || 0,
     maxBudgetUsd: Number(r.max_budget_usd) || 0,
+    contextLimitTokens: clampContext(Number(r.context_limit_tokens)),
   };
 }
 
@@ -165,6 +178,7 @@ export async function saveCortexConfig(cfg: CortexBrainConfig): Promise<void> {
       effort: cfg.effort,
       monthly_budget_usd: cfg.monthlyBudgetUsd,
       max_budget_usd: cfg.maxBudgetUsd,
+      context_limit_tokens: clampContext(cfg.contextLimitTokens),
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'scope' },
@@ -206,6 +220,16 @@ export async function getRoutingForRefs(refIds: string[]): Promise<Record<string
     if (r.ref_id) out[r.ref_id] = { model: r.model ?? '', effort: r.effort, tier: r.tier, reason: r.reason };
   }
   return out;
+}
+
+/** Atualiza só o teto de contexto (usado pelo controle rápido dentro do chat). */
+export async function updateContextLimit(tokens: number): Promise<void> {
+  if (!supabase) throw new Error('Supabase não configurado');
+  const { error } = await supabase
+    .from('cortex_brain_config')
+    .update({ context_limit_tokens: clampContext(tokens), updated_at: new Date().toISOString() })
+    .eq('scope', 'global');
+  if (error) throw error;
 }
 
 // ─── Uso & limites ──────────────────────────────────────────────────────────
@@ -305,6 +329,50 @@ export function subscribeUsage(onChange: () => void): () => void {
   const ch = sb
     .channel(`cortex-usage:${++usageSeq}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'cortex_usage' }, () => onChange())
+    .subscribe();
+  return () => { sb.removeChannel(ch); };
+}
+
+// ─── Limites do plano (5h + semana) — espelho do /usage do Claude ───────────
+// A ponte sonda os headers anthropic-ratelimit-unified-* e grava em
+// cortex_brain_limits. Aqui o painel lê pra mostrar quanto resta de cada janela.
+export interface BrainLimits {
+  fiveHUtil: number | null;   // 0..1
+  fiveHReset: string | null;  // ISO
+  fiveHStatus: string | null;
+  sevenDUtil: number | null;
+  sevenDReset: string | null;
+  sevenDStatus: string | null;
+  updatedAt: string | null;
+}
+
+export async function getBrainLimits(): Promise<BrainLimits | null> {
+  const sb = supabase;
+  if (!sb) return null;
+  const { data } = await sb
+    .from('cortex_brain_limits')
+    .select('five_h_utilization,five_h_reset,five_h_status,seven_d_utilization,seven_d_reset,seven_d_status,updated_at')
+    .eq('id', 'global')
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    fiveHUtil: data.five_h_utilization == null ? null : Number(data.five_h_utilization),
+    fiveHReset: data.five_h_reset,
+    fiveHStatus: data.five_h_status,
+    sevenDUtil: data.seven_d_utilization == null ? null : Number(data.seven_d_utilization),
+    sevenDReset: data.seven_d_reset,
+    sevenDStatus: data.seven_d_status,
+    updatedAt: data.updated_at,
+  };
+}
+
+let limitsSeq = 0;
+export function subscribeBrainLimits(onChange: () => void): () => void {
+  const sb = supabase;
+  if (!sb) return () => {};
+  const ch = sb
+    .channel(`cortex-limits:${++limitsSeq}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'cortex_brain_limits' }, () => onChange())
     .subscribe();
   return () => { sb.removeChannel(ch); };
 }

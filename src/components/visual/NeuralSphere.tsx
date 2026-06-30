@@ -8,7 +8,7 @@ const OUTER_COUNT = 110;
 const OUTER_RADIUS = 2.4;
 const OUTER_RADIAL_VARIATION = 0; // raio externo fixo → silhueta sempre círculo perfeito
 const OUTER_ANGULAR_JITTER = 0.018;
-const OUTER_POINT_SIZE = 0.1;
+const OUTER_POINT_SIZE = 0.15;
 const OUTER_POINT_OPACITY = 1.0;
 const OUTER_LINE_OPACITY = 0.55;
 const OUTER_CONNECT_DISTANCE = 1.55;
@@ -37,13 +37,14 @@ const WAVE_AMP = 0.075; // radial — só miolo interno
 const WAVE_AMP_TAN = 0.22; // tangencial — superfície externa flui, sem mexer na borda
 const WAVE_FREQ = 1.05;
 const WAVE_SPEED = 0.75; // bem mais lento
-const HUE_DRIFT = 0.06; // desvio de matiz (verde ↔ teal/azulado) — toque Siri
+const HUE_DRIFT = 0.018; // desvio de matiz pequeno — não vira lime/amarelado
 
 function readPrimaryColor(): THREE.Color {
-  const v = getComputedStyle(document.documentElement).getPropertyValue('--brand-bright').trim();
+  // Sage da marca (--brand) — verde mais suave/nosso, não o bright que puxava lime.
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--brand').trim();
   const m = v.match(/(\d+)\s+(\d+)\s+(\d+)/);
   if (m) return new THREE.Color().setRGB(+m[1] / 255, +m[2] / 255, +m[3] / 255);
-  return new THREE.Color('#8cc47a');
+  return new THREE.Color('#6B8F5E');
 }
 
 interface Shell {
@@ -72,6 +73,26 @@ function buildShell({ count, radius, radialVar, angularJitter = 0 }: { count: nu
     velocities.push(new THREE.Vector3());
   }
   return { positions, originals, velocities };
+}
+
+// Textura de "ponto redondo" (gradiente radial). Sem ela o PointsMaterial
+// renderiza QUADRADOS — com ela os pontos e os pulsos ficam redondos/suaves.
+function makeDotTexture(): THREE.Texture {
+  const s = 64;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const ctx = cv.getContext('2d')!;
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0.92)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2);
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(cv);
+  tex.needsUpdate = true;
+  return tex;
 }
 
 function makePointsAndLines(shell: Shell, opts: { count: number; pointSize: number; pointOpacity: number; lineOpacity: number }, color: THREE.Color) {
@@ -108,6 +129,8 @@ interface NeuralSphereProps {
   intensity?: number;
   /** Escala a distância de conexão → <1 = menos linhas (esfera pequena). */
   connectScale?: number;
+  /** Velocidade dos pulsos sinápticos (1 = padrão; <1 = mais lento/contemplativo). */
+  pulseSpeed?: number;
 }
 
 export function NeuralSphere({
@@ -118,6 +141,7 @@ export function NeuralSphere({
   ambient = true,
   intensity = 0,
   connectScale = 1,
+  pulseSpeed = 1,
 }: NeuralSphereProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const intensityRef = useRef(intensity);
@@ -132,8 +156,10 @@ export function NeuralSphere({
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     camera.position.z = 6;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'low-power' });
+    // Retina renderiza 4× os pixels (dpr 2). Cap em 1.5 corta ~44% da carga de GPU
+    // por frame sem borrar perceptível — é o que mantém o movimento fluido leve.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 
     const parallaxGroup = new THREE.Group();
     const outerGroup = new THREE.Group();
@@ -142,14 +168,111 @@ export function NeuralSphere({
     scene.add(parallaxGroup);
 
     const baseColor = readPrimaryColor();
+    const dotTex = makeDotTexture(); // pontos/pulsos redondos (não quadrados)
+    // White mode: blending aditivo SOME no branco (cor + branco = branco) → usa
+    // blending normal e cores mais firmes; e reforça opacidade de linhas/pulsos.
+    const isLight = document.documentElement.classList.contains('light');
+    const opBoost = isLight ? 1.7 : 1;
 
     const outerShell = buildShell({ count: OUTER_COUNT, radius: OUTER_RADIUS, radialVar: OUTER_RADIAL_VARIATION, angularJitter: OUTER_ANGULAR_JITTER });
     const outer = makePointsAndLines(outerShell, { count: OUTER_COUNT, pointSize: OUTER_POINT_SIZE, pointOpacity: OUTER_POINT_OPACITY, lineOpacity: OUTER_LINE_OPACITY }, baseColor);
+    outer.pointsMaterial.map = dotTex;
+    outer.pointsMaterial.needsUpdate = true; // recompila com a textura (USE_MAP)
     outerGroup.add(outer.points, outer.lines);
+
+    // ─── Pulsos sinápticos — "neurônios" viajando pelas linhas do córtex ──────
+    const TRAV_COUNT = 32;
+    const NEIGH_DIST = OUTER_CONNECT_DISTANCE * connectScale * 1.05;
+    const neighbors: number[][] = [];
+    for (let a = 0; a < OUTER_COUNT; a++) {
+      const list: number[] = [];
+      for (let b = 0; b < OUTER_COUNT; b++) {
+        if (a !== b && outerShell.originals[a].distanceTo(outerShell.originals[b]) < NEIGH_DIST) list.push(b);
+      }
+      neighbors.push(list);
+    }
+    const travA = new Int32Array(TRAV_COUNT);
+    const travB = new Int32Array(TRAV_COUNT);
+    const travT = new Float32Array(TRAV_COUNT);
+    const travSpeed = new Float32Array(TRAV_COUNT);
+    const pickEdge = (k: number, from?: number) => {
+      let a = from ?? Math.floor(Math.random() * OUTER_COUNT);
+      let tries = 0;
+      while (neighbors[a].length === 0 && tries++ < 8) a = Math.floor(Math.random() * OUTER_COUNT);
+      const nb = neighbors[a];
+      travA[k] = a;
+      travB[k] = nb.length ? nb[Math.floor(Math.random() * nb.length)] : (a + 1) % OUTER_COUNT;
+      travSpeed[k] = 0.5 + Math.random() * 0.9;
+    };
+    for (let k = 0; k < TRAV_COUNT; k++) { pickEdge(k); travT[k] = Math.random(); }
+    // Cada pulso = rastro CONTÍNUO de pontos macios sobrepostos. A COR é cheia
+    // (dourado/azul ATÉ a ponta — nada de preto/branco), e o esmaecimento é por
+    // ALPHA por vértice (cabeça opaca → cauda some). ~67% DOURADOS, ~33% AZUIS.
+    const TAIL = 24;          // mais amostras → rastro mais LONGO
+    const SEGS = TAIL + 1;
+    const TAIL_LAG = 0.016;   // espaçamento pequeno → continua colado (sem virar bolinhas)
+    const TRAV_TOTAL = TRAV_COUNT * SEGS;
+    const travArr = new Float32Array(TRAV_TOTAL * 3);
+    const travCol = new Float32Array(TRAV_TOTAL * 3);
+    const travAlpha = new Float32Array(TRAV_TOTAL);
+    const goldPulse = new THREE.Color('#e8b93a'); // dourado vivo
+    const bluePulse = new THREE.Color('#5aa6ff'); // azul vivo
+    const isGoldPulse = (_k: number) => true; // todos os pulsos dourados
+    for (let k = 0; k < TRAV_COUNT; k++) {
+      const c = isGoldPulse(k) ? goldPulse : bluePulse;
+      for (let s = 0; s < SEGS; s++) {
+        const fade = 1 - s / SEGS;
+        const i3 = (k * SEGS + s) * 3;
+        travCol[i3] = c.r; travCol[i3 + 1] = c.g; travCol[i3 + 2] = c.b; // cor cheia até a ponta
+        travAlpha[k * SEGS + s] = fade * fade;                            // só o alpha esmaece
+      }
+    }
+    const travGeo = new THREE.BufferGeometry();
+    travGeo.setAttribute('position', new THREE.BufferAttribute(travArr, 3));
+    travGeo.setAttribute('color', new THREE.BufferAttribute(travCol, 3));
+    travGeo.setAttribute('alpha', new THREE.BufferAttribute(travAlpha, 1));
+    const travMat = new THREE.PointsMaterial({ size: 0.085, map: dotTex, vertexColors: true, transparent: true, opacity: 1, sizeAttenuation: true, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
+    // Alpha por vértice: a cabeça fica opaca e a cauda some — mantendo a cor cheia.
+    travMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float alpha;\nvarying float vAlpha;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n\tvAlpha = alpha;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vAlpha;')
+        .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse, opacity * vAlpha );');
+    };
+    const travPoints = new THREE.Points(travGeo, travMat);
+    outerGroup.add(travPoints);
+    const easeTrav = (x: number) => x * x * (3 - 2 * x);
+
+    // Flash dos nós: quando um pulso PASSA por um nó, ele pulsa (cresce + acende) na
+    // cor do pulso (dourado/azul). Cor E TAMANHO por vértice.
+    const FLASH_TIME = 0.6;
+    const nodeFlash = new Float32Array(OUTER_COUNT);
+    const nodeFlashGold = new Uint8Array(OUTER_COUNT);
+    const flashGold = new THREE.Color('#ffce4d'); // dourado bem vivo no pico
+    const flashBlue = new THREE.Color('#7cbcff'); // azul vivo no pico
+    const outerPtCol = new Float32Array(OUTER_COUNT * 3);
+    outer.pointsGeometry.setAttribute('color', new THREE.BufferAttribute(outerPtCol, 3));
+    const nodeSize = new Float32Array(OUTER_COUNT).fill(1);
+    outer.pointsGeometry.setAttribute('aSize', new THREE.BufferAttribute(nodeSize, 1));
+    outer.pointsMaterial.vertexColors = true;
+    outer.pointsMaterial.color.set(0xffffff);
+    // Tamanho por vértice → o nó "pulsa" (cresce) no flash.
+    outer.pointsMaterial.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aSize;')
+        .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize;');
+    };
+    outer.pointsMaterial.needsUpdate = true;
+    const baseNodeC = new THREE.Color();
+    const flashTmp = new THREE.Color();
 
     const innerShell = buildShell({ count: INNER_COUNT, radius: INNER_RADIUS, radialVar: INNER_RADIAL_VARIATION, angularJitter: 0.05 });
     const innerColor = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.18);
     const inner = makePointsAndLines(innerShell, { count: INNER_COUNT, pointSize: INNER_POINT_SIZE, pointOpacity: INNER_POINT_OPACITY, lineOpacity: INNER_LINE_OPACITY }, innerColor);
+    inner.pointsMaterial.map = dotTex;
+    inner.pointsMaterial.needsUpdate = true;
     innerGroup.add(inner.points, inner.lines);
 
     const mouse = { x: 0, y: 0, active: false };
@@ -194,6 +317,14 @@ export function NeuralSphere({
     const baseHSL = { h: 0, s: 0, l: 0 };
     baseColor.getHSL(baseHSL);
     let raf = 0;
+    let lastFrame = 0;
+    const minFrameMs = 1000 / 60; // cap 60fps — fluido, mas 4× mais leve que os 240Hz nativos que queimavam GPU
+    // Performance: mantém o movimento FLUIDO (rAF nativo — sem cap, que picotava em
+    // ProMotion), mas PAUSA quando sai da tela (IntersectionObserver). A carga é
+    // contida pelo pixelRatio menor (ver setPixelRatio) em vez de cortar frames.
+    let visible = true;
+    const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0.01 });
+    io.observe(container);
     let smoothI = 0;
     const startTime = performance.now();
 
@@ -279,7 +410,18 @@ export function NeuralSphere({
     };
 
     const animate = () => {
-      const now = performance.now() * 0.001;
+      raf = requestAnimationFrame(animate);
+      if (!visible) return; // fora da tela → não gasta GPU
+      const tNow = performance.now();
+      const elapsed = tNow - lastFrame;
+      if (elapsed < minFrameMs) return; // cap de fps (não recalcula a cada frame nativo)
+      lastFrame = tNow;
+      // Anima por TEMPO real, não por frame. O dt fixo (0.016) foi calibrado p/ 60fps,
+      // mas o Charles está numa tela 240Hz e se acostumou com a velocidade NATIVA — que
+      // era ~4× a de 60fps (o passo fixo escalava com o refresh rate). O ×4 mantém essa
+      // velocidade AGORA independente do fps real, sem voltar a queimar a CPU a 240fps.
+      const frameScale = Math.min(elapsed / 16.67, 3) * 4;
+      const now = tNow * 0.001;
       const ambientPulse = ambient ? 0.18 + Math.sin(now * 0.5) * 0.06 : 0;
       // attack rápido / decay lento — sensação de respiração natural
       const target = Math.max(ambientPulse, Math.min(1, intensityRef.current));
@@ -293,21 +435,68 @@ export function NeuralSphere({
       updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now, waveBoost, OUTER_RADIUS);
       updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now, waveBoost, null);
 
-      // Drift de cor — matiz desliza suave (verde ↔ teal/azulado).
+      // Pulsos viajando pelas linhas (lerp nó A→B; ao chegar, parte do B). Cada um
+      // deixa um rastro CONTÍNUO (linha) que esmaece atrás da cabeça.
+      const travDt = 0.016 * frameScale * pulseSpeed * (1 + I * 0.8); // pulseSpeed calibra por instância; +rápido na voz
+      for (let k = 0; k < TRAV_COUNT; k++) {
+        travT[k] += travSpeed[k] * travDt;
+        if (travT[k] >= 1) {
+          travT[k] -= 1;
+          const arrived = travB[k]; // nó onde o pulso chegou → pulsa
+          nodeFlash[arrived] = FLASH_TIME;
+          nodeFlashGold[arrived] = isGoldPulse(k) ? 1 : 0; // mesma cor do pulso
+          pickEdge(k, travB[k]);
+        }
+        const a = outerShell.positions[travA[k]];
+        const b = outerShell.positions[travB[k]];
+        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+        for (let s = 0; s < SEGS; s++) {
+          const e = easeTrav(Math.max(0, travT[k] - s * TAIL_LAG));
+          const idx = (k * SEGS + s) * 3;
+          travArr[idx] = a.x + dx * e;
+          travArr[idx + 1] = a.y + dy * e;
+          travArr[idx + 2] = a.z + dz * e;
+        }
+      }
+      travGeo.attributes.position.needsUpdate = true;
+
+      // Drift de cor — matiz desliza suave. No modo claro/glass, linhas e nós ficam
+      // mais profundos/saturados (contraste no fundo branco → "mais vivos").
       const h = ((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1;
-      outer.pointsMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
-      outer.lineMaterial.color.setHSL(h, baseHSL.s, baseHSL.l);
-      inner.pointsMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.1), Math.min(1, baseHSL.l + 0.12));
-      inner.lineMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.1), Math.min(1, baseHSL.l + 0.12));
+      const vivL = isLight ? baseHSL.l * 0.62 : baseHSL.l;
+      const vivS = isLight ? Math.min(1, baseHSL.s + 0.16) : baseHSL.s;
+      outer.lineMaterial.color.setHSL(h, vivS, vivL);
+      // Pontos do outer: cor base + flash dourado/azul + pulso de tamanho ao ser tocado.
+      baseNodeC.setHSL(h, vivS, vivL);
+      for (let n = 0; n < OUTER_COUNT; n++) {
+        let r = baseNodeC.r, g = baseNodeC.g, bl = baseNodeC.b;
+        if (nodeFlash[n] > 0) {
+          nodeFlash[n] = Math.max(0, nodeFlash[n] - travDt);
+          const amt = nodeFlash[n] / FLASH_TIME;
+          flashTmp.copy(nodeFlashGold[n] ? flashGold : flashBlue);
+          r += (flashTmp.r - r) * amt;
+          g += (flashTmp.g - g) * amt;
+          bl += (flashTmp.b - bl) * amt;
+          nodeSize[n] = 1 + amt * 1.3; // cresce no flash e volta ao normal
+        } else if (nodeSize[n] !== 1) {
+          nodeSize[n] = 1;
+        }
+        const ci = n * 3;
+        outerPtCol[ci] = r; outerPtCol[ci + 1] = g; outerPtCol[ci + 2] = bl;
+      }
+      outer.pointsGeometry.attributes.color.needsUpdate = true;
+      outer.pointsGeometry.attributes.aSize.needsUpdate = true;
+      inner.pointsMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
+      inner.lineMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
 
       const t = (performance.now() - startTime) * 0.00085;
       const breath = 1 + Math.sin(t * 0.85) * 0.018;
       parallaxGroup.scale.setScalar(breath);
 
       const innerPulse = 0.86 + Math.sin(t * 1.3) * 0.08 + I * 0.22;
-      inner.pointsMaterial.opacity = Math.min(1, INNER_POINT_OPACITY * innerPulse);
-      inner.lineMaterial.opacity = Math.min(1, INNER_LINE_OPACITY * (innerPulse + I * 0.5));
-      outer.lineMaterial.opacity = Math.min(1, OUTER_LINE_OPACITY * (1 + I * 1.2));
+      inner.pointsMaterial.opacity = Math.min(1, INNER_POINT_OPACITY * innerPulse * opBoost);
+      inner.lineMaterial.opacity = Math.min(1, INNER_LINE_OPACITY * (innerPulse + I * 0.5) * opBoost);
+      outer.lineMaterial.opacity = Math.min(1, OUTER_LINE_OPACITY * (1 + I * 1.2) * opBoost);
 
       const speedBoost = 1 + I * 1.6;
       const wobbleAmp = I * 0.1;
@@ -320,17 +509,17 @@ export function NeuralSphere({
       parallaxGroup.rotation.y += (targetRot.y + wobbleY - parallaxGroup.rotation.y) * PARALLAX_LERP;
       parallaxGroup.rotation.z += (wobbleZ - parallaxGroup.rotation.z) * 0.18;
 
-      outerGroup.rotation.y += AUTO_ROTATE_SPEED_OUTER * speedMultiplier * speedBoost;
-      innerGroup.rotation.y += AUTO_ROTATE_SPEED_INNER * speedMultiplier * speedBoost;
-      innerGroup.rotation.x += AUTO_ROTATE_SPEED_INNER * 0.4 * speedMultiplier * speedBoost;
+      outerGroup.rotation.y += AUTO_ROTATE_SPEED_OUTER * speedMultiplier * speedBoost * frameScale;
+      innerGroup.rotation.y += AUTO_ROTATE_SPEED_INNER * speedMultiplier * speedBoost * frameScale;
+      innerGroup.rotation.x += AUTO_ROTATE_SPEED_INNER * 0.4 * speedMultiplier * speedBoost * frameScale;
 
       renderer.render(scene, camera);
-      raf = requestAnimationFrame(animate);
     };
     animate();
 
     return () => {
       cancelAnimationFrame(raf);
+      io.disconnect();
       container.removeEventListener('mousemove', onMouseMove);
       container.removeEventListener('mouseleave', onMouseLeave);
       ro.disconnect();
@@ -338,11 +527,18 @@ export function NeuralSphere({
       outer.pointsMaterial.dispose();
       outer.linesGeometry.dispose();
       outer.lineMaterial.dispose();
+      travGeo.dispose();
+      travMat.dispose();
       inner.pointsGeometry.dispose();
       inner.pointsMaterial.dispose();
       inner.linesGeometry.dispose();
       inner.lineMaterial.dispose();
+      dotTex.dispose();
       renderer.dispose();
+      // CRÍTICO: dispose() libera os recursos mas NÃO o contexto WebGL. Sem
+      // forceContextLoss, cada remontagem (ir pro chat e voltar pro orbe) deixa um
+      // contexto vazado — o navegador acumula até engasgar (o "fica lento com o tempo").
+      renderer.forceContextLoss();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -36,7 +36,7 @@ export function CortexBrainBar({ className }: { className?: string }) {
     <div className={clsx('relative', className)}>
       <button
         onClick={() => { if (!open) load(); setOpen((o) => !o); }}
-        className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11.5px] hover:bg-surface-hover transition-colors"
+        className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[13px] hover:bg-surface-hover transition-colors"
         title="Cortex Brain — modelo e capacidade"
       >
         {isAuto ? <Sparkles size={13} className="text-brand-bright" /> : <Brain size={13} className="text-brand-bright" />}

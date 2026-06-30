@@ -53,3 +53,4 @@ worker/.env
 # Claude Code — local user permissions (not shared)
 .claude/settings.local.json
 .vercel
+supabase/.temp/

@@ -28,6 +28,8 @@ interface AppState {
   /** Sidebar recolhida (só ícones). Padrão recolhido no chat. */
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
+  mobileNavOpen: boolean; // drawer da nav global em mobile (< md)
+  setMobileNavOpen: (v: boolean) => void;
   /** Orbe flutuante Bukowiski — acompanha por todos os módulos. Persistido. */
   orbEnabled: boolean;
   setOrbEnabled: (v: boolean) => void;
@@ -100,6 +102,11 @@ interface AppState {
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
   removeToast: (id: string) => void;
 
+  /** Visualização de imagem em modal (lightbox) — evita abrir em nova aba. */
+  lightbox: { url: string; alt?: string } | null;
+  openLightbox: (url: string, alt?: string) => void;
+  closeLightbox: () => void;
+
   // Confirmação (modal do sistema)
   askConfirm: (opts: { title: string; message: string; confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
   resolveConfirm: (v: boolean) => void;
@@ -127,6 +134,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (typeof localStorage !== 'undefined') localStorage.setItem('sidebarCollapsed', v ? '1' : '0');
     set({ sidebarCollapsed: v });
   },
+  mobileNavOpen: false,
+  setMobileNavOpen: (v) => {
+    set({ mobileNavOpen: v });
+  },
   orbEnabled: typeof localStorage !== 'undefined' && localStorage.getItem('orbEnabled') === '1',
   setOrbEnabled: (v) => {
     if (typeof localStorage !== 'undefined') localStorage.setItem('orbEnabled', v ? '1' : '0');
@@ -145,6 +156,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sttBusy: false,
   setSttBusy: (v) => set({ sttBusy: v }),
   toasts: [],
+  lightbox: null,
   confirmRequest: null,
   promptRequest: null,
 
@@ -157,18 +169,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       const valid = stored && workspaces.some((w) => w.id === stored) ? stored : null;
       const preferred = workspaces.find((w) => w.name.trim().toLowerCase() === 'thribus tech');
       const activeWorkspaceId = valid ?? preferred?.id ?? workspaces[0]?.id ?? null;
+      // Persiste a conta resolvida pra manter o accent (por cliente) consistente já no boot.
+      if (typeof localStorage !== 'undefined' && activeWorkspaceId) {
+        localStorage.setItem('activeWorkspaceId', activeWorkspaceId);
+      }
 
-      const [agents, tools, executions, escalations, metrics, skills, templates, sectors] = await Promise.all([
+      const [agents, tools, executions, escalations, skills, templates, sectors] = await Promise.all([
         agentsApi.list(activeWorkspaceId),
         toolsApi.list(),
         executionsApi.list(),
         escalationsApi.listPending(),
-        dashboardApi.getMetrics(),
         // skillsApi.list já degrada pra [] se schema não existe — não precisa catch
         skillsApi.list(),
         templatesApi.list().catch(() => [] as AgentTemplate[]),
         listSectors(activeWorkspaceId).catch(() => [] as Sector[]),
       ]);
+      // Métricas derivam dos agents JÁ carregados (escopados por workspace) — sem
+      // re-listar todos os workspaces como o getMetrics() fazia por dentro.
+      const metrics = await dashboardApi.getMetrics(agents);
 
       // Escopa execuções/escalações pelos agentes da conta ativa.
       const agentIds = new Set(agents.map((a) => a.id));
@@ -188,6 +206,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         templates,
         loading: false,
       });
+      // Avisa o tema que a conta ativa mudou → reaplica o accent (cor de destaque) do cliente.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('thribus-workspace-change', { detail: { id: activeWorkspaceId } }));
+      }
     } catch {
       set({ loading: false });
       get().addToast('Erro ao carregar dados', 'red');
@@ -453,6 +475,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeToast: (id) => {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
   },
+
+  openLightbox: (url, alt) => set({ lightbox: { url, alt } }),
+  closeLightbox: () => set({ lightbox: null }),
 
   askConfirm: (opts) =>
     new Promise<boolean>((resolve) => set({ confirmRequest: { ...opts, resolve } })),

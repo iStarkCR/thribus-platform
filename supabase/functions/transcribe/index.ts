@@ -35,6 +35,9 @@ Deno.serve(async (req) => {
   oa.append('file', file, 'audio.webm');
   oa.append('model', 'whisper-1');
   oa.append('language', 'pt');
+  // Glossário — ajuda o Whisper com nomes próprios da casa (senão "Bukowiski"
+  // vira "bucovis"). O prompt do Whisper viesa o vocabulário da transcrição.
+  oa.append('prompt', 'Bukowiski. Thribus Tech. Charles Andrade. VPS, Coolify, Vercel, Supabase, Cloudflare, n8n, Evolution. Bianca, CORTEX, Talki, TexNet, Asaas.');
   try {
     const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',

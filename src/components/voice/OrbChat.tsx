@@ -10,7 +10,7 @@ const PANEL_H = 460;
 
 /** Chat popover do Bukowiski — só uma view da conversa (texto + voz) do orbe. */
 export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; size: number }; onClose: () => void; conv: OrbConversation }) {
-  const { messages, voiceActive, listening, speaking, waiting } = conv;
+  const { messages, voiceActive, listening, talking, speaking, waiting } = conv;
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -37,7 +37,7 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
   const submit = () => { const t = input.trim(); if (!t) return; setInput(''); conv.send(t); };
 
   return (
-    <div className="fixed z-[61] flex flex-col rounded-2xl border border-default bg-surface-1/95 backdrop-blur-xl shadow-2xl overflow-hidden" style={style}>
+    <div className="fixed z-[61] flex flex-col rounded-2xl border border-default bg-surface-1/95 backdrop-blur-md shadow-2xl overflow-hidden" style={style}>
       {/* Cabeçalho */}
       <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-default shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -47,7 +47,7 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
           <div className="min-w-0">
             <div className="text-[13.5px] font-bold text-creme leading-tight">Bukowiski</div>
             <div className="text-[10.5px] text-creme-faint leading-tight">
-              {speaking ? 'respondendo…' : waiting ? 'pensando…' : listening ? 'ouvindo…' : voiceActive ? 'modo voz' : 'COO · agente principal'}
+              {speaking ? 'respondendo…' : waiting ? 'pensando…' : talking ? 'você falando…' : listening ? 'ouvindo…' : voiceActive ? 'modo voz' : 'COO · agente principal'}
             </div>
           </div>
         </div>
