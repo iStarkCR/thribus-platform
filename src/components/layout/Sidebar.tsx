@@ -3,11 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   ChevronRight, Zap, Settings, Building2, Bell, Lock,
-  LogOut, User, Moon, HelpCircle, PanelLeftClose, PanelLeft, Sparkles, X,
+  LogOut, User, Moon, Sun, HelpCircle, PanelLeftClose, PanelLeft, Sparkles, X,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { useGlass } from '@/hooks/useTheme';
+import { useGlass, useTheme } from '@/hooks/useTheme';
 import { useSession } from '@/hooks/useSession';
 import { useAccess } from '@/hooks/useRole';
 import { NAV_ITEMS } from '@/lib/nav';
@@ -159,7 +159,9 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase();
 
   const { glass, toggle: toggleGlass } = useGlass();
-  const go = (path: string) => { navigate(path); setOpen(false); };
+  const { theme, setTheme } = useTheme();
+  const [showTheme, setShowTheme] = useState(false);
+  const go = (path: string) => { navigate(path); setOpen(false); setShowTheme(false); };
   const logout = async () => {
     setOpen(false);
     if (configured) await signOut();
@@ -215,7 +217,47 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
           <MenuItem icon={<Lock size={16} />} label="Vault & API Keys" onClick={() => go('/vault')} />
           <div className="border-t border-default my-1" />
           <MenuItem icon={<HelpCircle size={16} />} label="Ajuda & Academy" onClick={() => go('/help')} />
-          <MenuItem icon={<Moon size={16} />} label="Aparência / Tema" onClick={() => go('/settings')} />
+          <button
+            onClick={() => setShowTheme((v) => !v)}
+            className="w-full flex items-center gap-3 px-3.5 py-2.5 text-[13.5px] font-medium transition-colors text-creme-mute hover:text-creme hover:bg-surface-hover"
+          >
+            <span className="shrink-0 text-creme-faint">
+              {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
+            </span>
+            <span className="flex-1 text-left">Aparência / Tema</span>
+            <ChevronRight
+              size={13}
+              className={clsx('text-creme-faint shrink-0 transition-transform duration-150', showTheme && 'rotate-90')}
+            />
+          </button>
+          {showTheme && (
+            <div className="px-3.5 pb-2.5 flex gap-2">
+              <button
+                onClick={() => setTheme('light')}
+                className={clsx(
+                  'flex-1 flex flex-col items-center gap-1 py-2 rounded-lg text-[12px] font-medium transition-colors',
+                  theme === 'light'
+                    ? 'bg-brand/20 text-brand border border-brand/30'
+                    : 'bg-surface-hover text-creme-mute hover:text-creme',
+                )}
+              >
+                <Sun size={15} />
+                <span>Claro</span>
+              </button>
+              <button
+                onClick={() => setTheme('dark')}
+                className={clsx(
+                  'flex-1 flex flex-col items-center gap-1 py-2 rounded-lg text-[12px] font-medium transition-colors',
+                  theme === 'dark'
+                    ? 'bg-brand/20 text-brand border border-brand/30'
+                    : 'bg-surface-hover text-creme-mute hover:text-creme',
+                )}
+              >
+                <Moon size={15} />
+                <span>Escuro</span>
+              </button>
+            </div>
+          )}
           <MenuItem icon={<Sparkles size={16} />} label={glass ? 'Liquid Glass · ligado' : 'Liquid Glass'} onClick={() => toggleGlass()} />
           <div className="border-t border-default my-1" />
           <MenuItem icon={<LogOut size={16} />} label="Sair" danger onClick={logout} />
