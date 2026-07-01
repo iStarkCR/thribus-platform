@@ -555,6 +555,12 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
   let circuitBreakerTripped = false; // se true, escala ao final do turno
   let promiseRetries = 0;
   const MAX_PROMISE_RETRIES = 1;
+  // Força a tool APENAS na iteração imediatamente após o anti-promise disparar.
+  // ⚠️ Antes era `promiseRetries > 0` (permanente) — uma vez disparado, a LLM
+  // ficava com tool_choice forçado em TODA iteração e NUNCA conseguia emitir
+  // texto final (a API proíbe texto quando força tool) → loop até
+  // MAX_TOOL_ITERATIONS. Fix portado do thribus-agents #202 (f83c5c2).
+  let forceToolPending = false;
   // Idempotência: se o LLM tentar a MESMA tool com EXATAMENTE o MESMO input
   // que já rodou nesta sessão, devolvemos o output anterior + aviso —
   // evita criar OSes duplicadas no IXC, gastar API n8n à toa e loop infinito
@@ -588,7 +594,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
     // está disponível, força ela especificamente (mais determinístico).
     let forceToolName: string | undefined;
     let forceTool = false;
-    if (promiseRetries > 0 && toolDefs.length > 0) {
+    if (forceToolPending && toolDefs.length > 0) {
       const expected = SALES_FLOW_STATES[currentState]?.expectedTool;
       if (expected && toolDefs.some((t) => t.name === expected)) {
         forceToolName = expected;
@@ -800,6 +806,9 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
         // Sem texto e sem tools? Algo bem estranho. Deixa cair no fluxo padrão.
       }
 
+      // A tool prometida já foi executada — libera a LLM pra responder texto
+      // na próxima iteração (senão tool_choice forçado a prende em loop).
+      forceToolPending = false;
       continue;
     }
 
@@ -822,6 +831,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
           `[loop] anti-promise tripped iter=${iter} retry=${promiseRetries + 1} text="${response.text.slice(0, 100).replace(/\n/g, ' ')}..." — sending ack and forcing tool`,
         );
         promiseRetries++;
+        forceToolPending = true; // força a tool SÓ na próxima iteração (liberada após rodar)
 
         // 1. Envia o anúncio ao cliente (assim ele sabe que o sistema entendeu).
         const connected = await crm.isChannelConnected(job.channel, workspace ?? undefined);
