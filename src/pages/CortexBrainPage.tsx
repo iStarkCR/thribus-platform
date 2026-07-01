@@ -5,7 +5,7 @@
  *   • Modelo (Cortex Brain) — rebrand dos modelos reais, com mapeamento claro.
  *   • Capacidade — slider de esforço (rápido ↔ inteligente), igual ao Ultracode.
  *   • Uso & Limites — custo/tokens reais do time + teto de gasto configurável.
- *   • Skills — cadastro direto pelo sistema (em breve).
+ *   • Skills — cadastro direto pelo sistema; a ponte instala em ~/.claude/skills.
  *
  * A ponte (bridge) lê esta config e aplica em toda execução do time, gravando
  * o custo real em cortex_usage.
@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Brain, Gauge, Activity, DollarSign, Clock, Hash, Zap, Sparkles,
+  Brain, Gauge, Activity, DollarSign, Clock, Hash, Zap,
   Lock, Check, Cpu, AlertTriangle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -24,6 +24,7 @@ import {
   cortexBrainConfigured,
   type CortexBrainConfig, type CortexModel, type CortexEffort, type UsageSummary,
 } from '@/services/cortexBrain';
+import { CortexBrainSkills } from '@/components/cortex/CortexBrainSkills';
 
 const money = (n: number) => `US$ ${n.toFixed(n < 1 ? 4 : 2)}`;
 const compact = (n: number) =>
@@ -284,19 +285,8 @@ export function CortexBrainPage() {
         </p>
       </section>
 
-      {/* ── Skills (em breve) ────────────────────────────────────────────── */}
-      <section className="rounded-xl border border-dashed border-default bg-surface-1/50 p-5">
-        <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-creme-faint" />
-          <h2 className="text-[15px] font-bold text-creme-mute">Skills</h2>
-          <span className="ml-1 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-creme-faint uppercase tracking-wide">Em breve</span>
-        </div>
-        <p className="mt-2 text-[12.5px] text-creme-faint leading-snug max-w-2xl">
-          Cadastrar skills direto pelo sistema e alimentar o Claude automaticamente — sem mexer em arquivo.
-          Vai virar a próxima etapa do espelho: você escreve a skill aqui, a ponte instala em{' '}
-          <span className="font-mono">~/.claude/skills</span> e o time já passa a usar.
-        </p>
-      </section>
+      {/* ── Skills ───────────────────────────────────────────────────────── */}
+      <CortexBrainSkills />
     </div>
   );
 }

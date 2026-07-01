@@ -29,7 +29,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -81,6 +81,104 @@ async function loadBrainConfig() {
     console.error('[brain config]', e.message);
   }
   return BRAIN;
+}
+
+// ─── Cortex Skills (espelho do Claude) ──────────────────────────────────────
+// O painel cadastra skills em cortex_skills; aqui a ponte as materializa em
+// ~/.claude/skills/<slug>/SKILL.md pro time usar. Cada pasta que a ponte cria
+// recebe um marcador `.cortex-managed` — só pastas com esse marcador são
+// tocadas/removidas, então skills feitas à mão (apple-notes, coolify-api…)
+// nunca são sobrescritas nem apagadas. Recarregado a cada ~15s no loop.
+const SKILLS_DIR = join(homedir(), '.claude', 'skills');
+const SKILL_MARKER = '.cortex-managed';
+const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+let skillsLoadedAt = 0;
+
+// YAML double-quoted seguro pra qualquer texto (JSON é subconjunto do YAML em
+// flow scalar): escapa aspas, barra e quebra de linha.
+const yamlString = (s) => JSON.stringify(String(s ?? ''));
+// Tira frontmatter que o usuário tenha colado por engano no corpo da skill.
+const stripFrontmatter = (s) => String(s ?? '').replace(/^---[\s\S]*?---\s*/, '');
+
+function composeSkillMd(s) {
+  const body = stripFrontmatter(s.content).trim();
+  const fm = `---\nname: ${s.slug}\ndescription: ${yamlString(s.description)}\n---\n`;
+  return `${fm}\n${body}\n`;
+}
+
+// Escreve/atualiza ~/.claude/skills/<slug>/SKILL.md (só quando muda) e grava
+// installed_at de volta. Devolve true se (re)escreveu.
+async function materializeSkill(s) {
+  const dir = join(SKILLS_DIR, s.slug);
+  const file = join(dir, 'SKILL.md');
+  const marker = join(dir, SKILL_MARKER);
+  const desired = composeSkillMd(s);
+
+  if (existsSync(dir)) {
+    if (!existsSync(marker)) {
+      console.error(`[skills] "${s.slug}" já existe em ~/.claude/skills sem a marca da ponte — pulando pra não sobrescrever skill manual`);
+      return false;
+    }
+    const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    if (current === desired) return false; // já em dia
+  }
+
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, desired, 'utf8');
+  writeFileSync(marker, JSON.stringify({ id: s.id, slug: s.slug }) + '\n', 'utf8');
+  try {
+    await sb.from('cortex_skills').update({ installed_at: new Date().toISOString() }).eq('id', s.id);
+  } catch (e) {
+    console.error(`[skills] installed_at ${s.slug}:`, e.message);
+  }
+  console.log(`[skills] instalada ~/.claude/skills/${s.slug}/SKILL.md`);
+  return true;
+}
+
+// Remove as pastas que a ponte gerencia e que não estão mais habilitadas
+// (skill desativada ou excluída no painel). Só toca em pastas com o marcador.
+function cleanupManagedSkills(enabledSlugs) {
+  let entries;
+  try { entries = readdirSync(SKILLS_DIR, { withFileTypes: true }); }
+  catch { return; }
+  for (const ent of entries) {
+    if (!ent.isDirectory() || enabledSlugs.has(ent.name)) continue;
+    const dir = join(SKILLS_DIR, ent.name);
+    if (!existsSync(join(dir, SKILL_MARKER))) continue; // não é da ponte → nunca mexe
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      console.log(`[skills] removida ~/.claude/skills/${ent.name}/ (desativada/excluída)`);
+    } catch (e) {
+      console.error(`[skills] remover ${ent.name}:`, e.message);
+    }
+  }
+}
+
+// Sincroniza cortex_skills → ~/.claude/skills (cache 15s; nunca derruba o loop).
+async function syncSkills() {
+  if (Date.now() - skillsLoadedAt < 15_000) return;
+  let rows;
+  try {
+    const { data, error } = await sb
+      .from('cortex_skills')
+      .select('id,slug,name,description,content,enabled,installed_at');
+    if (error) throw error;
+    rows = data ?? [];
+  } catch (e) {
+    console.error('[skills] load:', e.message);
+    return;
+  }
+  skillsLoadedAt = Date.now();
+
+  const enabledSlugs = new Set();
+  for (const s of rows) {
+    if (!s.enabled) continue;
+    if (!SLUG_RE.test(s.slug || '')) { console.error(`[skills] slug inválido, pulando: ${s.slug}`); continue; }
+    enabledSlugs.add(s.slug);
+    try { await materializeSkill(s); }
+    catch (e) { console.error(`[skills] ${s.slug}:`, e.message); }
+  }
+  cleanupManagedSkills(enabledSlugs);
 }
 
 // Grava o custo/tokens reais de uma execução (best-effort; nunca derruba o loop).
@@ -372,12 +470,13 @@ console.log(
   `Ponte Bukowiski no ar · model=${BRAIN.model} (config do painel) · poll=${POLL_MS}ms\n` +
     `  atende: time interno (client="${TEAM_CLIENT}") com acesso total\n` +
     '  chat + fila de demandas (Kanban) · uso real gravado em cortex_usage\n' +
-    '  agentes de cliente: ignorados',
+    '  skills do painel → ~/.claude/skills · agentes de cliente: ignorados',
 );
 async function loop() {
   for (;;) {
     const teamIds = await loadTeamIds();
     await loadBrainConfig();    // modelo/esforço/teto vindos do painel (cache 15s)
+    await syncSkills();         // skills do painel → ~/.claude/skills (cache 15s)
     await tick(teamIds);        // chat interativo primeiro
     await tickDemands(teamIds); // depois 1 demanda da fila
     await new Promise((r) => setTimeout(r, POLL_MS));
