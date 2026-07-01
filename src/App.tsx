@@ -43,6 +43,7 @@ import { CompliancePage } from '@/pages/CompliancePage';
 import { VaultPage } from '@/pages/VaultPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { ProfilePage } from '@/pages/ProfilePage';
+import { InternalTeamPage } from '@/pages/InternalTeamPage';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { ToastContainer } from '@/components/shared/ToastContainer';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -99,6 +100,7 @@ function InnerRoutes() {
   return (
     <Routes>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/team" element={<InternalTeamPage />} />
           <Route path="/agents" element={<AgentsPage />} />
           <Route path="/tools" element={<ToolsPage />} />
           <Route path="/skills" element={<SkillsPage />} />

@@ -8,7 +8,7 @@ import {
   FlaskConical, UserCircle2, Inbox, Blocks, Phone, Store, FileBarChart, TestTube2,
   ShieldCheck, Lightbulb, Handshake, Activity, Code2, BookMarked, Smartphone,
   CreditCard, Rocket, Bell, Webhook, Beaker, Radio, Gauge, FileCheck, Lock,
-  LogOut, User, Moon, HelpCircle,
+  LogOut, User, Users, Moon, HelpCircle,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
@@ -38,6 +38,7 @@ const NAV_ITEMS = [
   {
     group: 'Operação',
     items: [
+      { path: '/team', label: 'Time Interno', icon: Users },
       { path: '/inbox', label: 'Inbox Unificada', icon: Inbox },
       { path: '/customers', label: 'Customer 360', icon: UserCircle2 },
       { path: '/voice', label: 'Canal de Voz', icon: Phone },
