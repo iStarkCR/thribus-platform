@@ -32,7 +32,7 @@ export function SessionContextMenu({
   return (
     <>
       <div className="fixed inset-0 z-[58]" onClick={onClose} />
-      <div className="fixed z-[59] w-52 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px] max-h-[360px] overflow-y-auto" style={{ left, top }}>
+      <div className="ui-no-zoom fixed z-[59] w-52 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px] max-h-[360px] overflow-y-auto" style={{ left, top }}>
         <Row icon={<Pencil size={14} />} label="Renomear" onClick={run(onRename)} />
         <Row icon={session.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />} label={session.pinnedAt ? 'Desafixar' : 'Fixar no topo'} onClick={run(onTogglePin)} />
 

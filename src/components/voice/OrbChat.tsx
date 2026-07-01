@@ -37,7 +37,7 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
   const submit = () => { const t = input.trim(); if (!t) return; setInput(''); conv.send(t); };
 
   return (
-    <div className="fixed z-[61] flex flex-col rounded-2xl border border-default bg-surface-1/95 backdrop-blur-xl shadow-2xl overflow-hidden" style={style}>
+    <div className="ui-no-zoom fixed z-[61] flex flex-col rounded-2xl border border-default bg-surface-1/95 backdrop-blur-xl shadow-2xl overflow-hidden" style={style}>
       {/* Cabeçalho */}
       <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-default shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">

@@ -3,14 +3,21 @@ import {
   Settings, Database, Cable, ShieldCheck, HardDrive,
   CheckCircle2, XCircle, AlertTriangle, ExternalLink, Copy,
   Server, KeyRound, Bot, Wrench, Pencil, Palette,
-  Sparkles, Ear, Check, Droplets,
+  Sparkles, Ear, Check, Droplets, Type,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { isWakeWordSupported } from '@/hooks/useWakeWordListener';
 import { VoiceAssistantConfig } from '@/components/settings/VoiceAssistantConfig';
 import { WorkspaceEditModal } from '@/components/settings/WorkspaceEditModal';
 import { supabase } from '@/lib/supabase';
-import { useTheme, useGlass, useAccent, type Accent } from '@/hooks/useTheme';
+import { useTheme, useGlass, useAccent, useUiScale, type Accent } from '@/hooks/useTheme';
+
+const SCALE_PRESETS = [
+  { label: 'Compacto', value: 1.0 },
+  { label: 'Padrão', value: 1.08 },
+  { label: 'Confortável', value: 1.18 },
+  { label: 'Grande', value: 1.3 },
+] as const;
 
 /**
  * Configurações — visão operacional do sistema.
@@ -29,6 +36,7 @@ export function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { glass, toggle: toggleGlass } = useGlass();
   const { accent, setAccent } = useAccent();
+  const { scale, setScale } = useUiScale();
   const appearance: 'light' | 'dark' | 'vidro' = glass ? 'vidro' : theme;
   const selectAppearance = (id: 'light' | 'dark' | 'vidro') => {
     if (id === 'vidro') { if (!glass) toggleGlass(); return; }
@@ -171,6 +179,46 @@ export function SettingsPage() {
               );
             })}
           </div>
+        </div>
+
+        <div className="h-px bg-default my-5" />
+
+        {/* Tamanho da interface — zoom global ajustável (#root { zoom: --ui-scale }) */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-creme-mute">
+            <Type size={13} className="text-brand" /> Tamanho da interface
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-surface-2 border border-default">
+              {SCALE_PRESETS.map((p) => {
+                const active = Math.abs(scale - p.value) < 0.005;
+                return (
+                  <button
+                    key={p.value}
+                    onClick={() => setScale(p.value)}
+                    className={`px-3 py-1.5 rounded-lg text-[12.5px] font-semibold transition-all ${active ? 'bg-brand text-white shadow-sm' : 'text-creme-mute hover:text-creme'}`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="text-[12px] font-mono text-creme-faint tabular-nums w-11 text-right">{Math.round(scale * 100)}%</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 mt-3 max-w-md">
+          <span className="text-[12px] text-creme-faint leading-none">A</span>
+          <input
+            type="range"
+            min={90}
+            max={140}
+            step={2}
+            value={Math.round(scale * 100)}
+            onChange={(e) => setScale(Number(e.target.value) / 100)}
+            className="flex-1 accent-brand cursor-pointer"
+            aria-label="Tamanho da interface"
+          />
+          <span className="text-[18px] text-creme-faint leading-none">A</span>
         </div>
       </div>
 

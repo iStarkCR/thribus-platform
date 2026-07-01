@@ -162,6 +162,49 @@ export function useAccent(): { accent: Accent; setAccent: (a: Accent) => void } 
   return { accent, setAccent };
 }
 
+/* ─── Tamanho da interface — zoom global ajustável (#root { zoom: --ui-scale }) ──
+ * Escala fonte + ícone + espaçamento mantendo proporções. Persiste por browser.
+ * Default levemente acima de 1: as fontes em px do painel eram pequenas demais. */
+const SCALE_KEY = 'thribus.uiScale';
+const SCALE_EVENT = 'thribus-uiscale-change';
+export const UI_SCALE_DEFAULT = 1.08;
+export const UI_SCALE_MIN = 0.9;
+export const UI_SCALE_MAX = 1.4;
+
+function readScale(): number {
+  if (typeof window === 'undefined') return UI_SCALE_DEFAULT;
+  try {
+    const v = parseFloat(localStorage.getItem(SCALE_KEY) ?? '');
+    if (!Number.isNaN(v) && v >= UI_SCALE_MIN && v <= UI_SCALE_MAX) return v;
+  } catch { /* localStorage indisponível — cai pro default */ }
+  return UI_SCALE_DEFAULT;
+}
+function applyScale(s: number): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.setProperty('--ui-scale', String(s));
+}
+/** Aplica a escala persistida ANTES do React montar (evita flash de reflow). */
+export function initUiScale(): void { applyScale(readScale()); }
+
+export function useUiScale(): { scale: number; setScale: (s: number) => void } {
+  const [scale, setS] = useState<number>(readScale);
+  useEffect(() => {
+    const onSync = (e: Event) => {
+      const d = (e as CustomEvent<{ scale: number }>).detail;
+      if (d && typeof d.scale === 'number') { setS(d.scale); applyScale(d.scale); }
+    };
+    window.addEventListener(SCALE_EVENT, onSync);
+    return () => window.removeEventListener(SCALE_EVENT, onSync);
+  }, []);
+  const setScale = (s: number) => {
+    const clamped = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, s));
+    setS(clamped); applyScale(clamped);
+    try { localStorage.setItem(SCALE_KEY, String(clamped)); } catch { /* ignora */ }
+    window.dispatchEvent(new CustomEvent(SCALE_EVENT, { detail: { scale: clamped } }));
+  };
+  return { scale, setScale };
+}
+
 export function useGlass(): { glass: boolean; toggle: () => void } {
   const [glass, setGlass] = useState<boolean>(readGlass);
   useEffect(() => {

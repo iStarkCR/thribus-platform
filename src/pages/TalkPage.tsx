@@ -1561,7 +1561,7 @@ export function TalkPage() {
         return (
           <>
             <div className="fixed inset-0 z-[58]" onClick={() => setMenuFor(null)} />
-            <div className="fixed z-[59] w-44 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px]" style={{ left: Math.max(8, menuPos.x - 176), top }}>
+            <div className="ui-no-zoom fixed z-[59] w-44 bg-surface-1 border border-default rounded-xl shadow-2xl py-1 text-[13px]" style={{ left: Math.max(8, menuPos.x - 176), top }}>
               <button onClick={() => { newSession(mf.id); setMenuFor(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim"><Plus size={14} className="text-creme-faint" /> Nova sessão</button>
               <button onClick={() => { setColorPickerFor(colorPickerFor === mf.id ? null : mf.id); setMenuFor(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim"><Palette size={14} className="text-creme-faint" /> Mudar cor</button>
               <button onClick={() => { renameFolderAction(mf); setMenuFor(null); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover text-creme-dim"><Pencil size={14} className="text-creme-faint" /> Renomear</button>

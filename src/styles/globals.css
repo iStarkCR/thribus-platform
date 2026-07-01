@@ -32,11 +32,13 @@
     --gold-bright: 226 198 132; /* #e2c684 */
     --gold-dim:    150 120 58;  /* #96783a */
 
-    /* Creme — texto e foreground */
+    /* Creme — texto e foreground.
+     * mute/faint clareados (era #8a857a / #5e5a52, baixo contraste no fundo
+     * quase-preto) — labels e descrições apagadas estavam difíceis de ler. */
     --creme:       237 232 220; /* #EDE8DC — texto primário */
-    --creme-dim:   196 191 178; /* #c4bfb2 — texto secundário */
-    --creme-mute:  138 133 122; /* #8a857a — texto muted */
-    --creme-faint:  94  90  82; /* #5e5a52 — texto faint */
+    --creme-dim:   201 196 184; /* #c9c4b8 — texto secundário */
+    --creme-mute:  166 160 148; /* #a6a094 — texto muted */
+    --creme-faint: 128 122 112; /* #807a70 — texto faint */
 
     /* Semantic */
     --semantic-green: 74 222 128;  /* #4ade80 */
@@ -115,6 +117,18 @@
   }
   body {
     background-color: rgb(var(--surface-0));
+  }
+  /* Tamanho da interface — escala global ajustável (controle em Configurações →
+   * Aparência). zoom escala fonte + ícone + espaçamento mantendo as proporções. */
+  #root {
+    zoom: var(--ui-scale, 1);
+  }
+  /* Overlays posicionados por COORDENADA (orbe arrastável, OrbChat, menus de
+   * contexto) precisam NEUTRALIZAR o zoom: clientX/getBoundingClientRect vêm em
+   * px de viewport e desalinhariam sob zoom. zoom aninhado S × (1/S) = escala
+   * real, sem tirar o elemento do #root (preserva o empilhamento z-index). */
+  .ui-no-zoom {
+    zoom: calc(1 / var(--ui-scale, 1));
   }
   ::-webkit-scrollbar {
     width: 4px;

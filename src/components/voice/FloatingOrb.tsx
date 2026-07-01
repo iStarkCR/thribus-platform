@@ -129,7 +129,7 @@ export function FloatingOrb() {
         onContextMenu={(e) => e.preventDefault()}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
-        className="fixed z-[60] rounded-full select-none touch-none group transition-transform duration-200"
+        className="ui-no-zoom fixed z-[60] rounded-full select-none touch-none group transition-transform duration-200"
         style={{
           left: pos.x,
           top: pos.y,
