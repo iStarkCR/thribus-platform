@@ -11,7 +11,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Manrope', 'sans-serif'],
+        // --font-ui é definida por useFont (default Manrope) → troca de fonte
+        // re-renderiza toda a UI em tempo real. Manrope permanece como fallback.
+        sans: ['var(--font-ui)', 'Manrope', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {

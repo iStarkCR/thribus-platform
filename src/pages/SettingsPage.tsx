@@ -11,6 +11,7 @@ import { VoiceAssistantConfig } from '@/components/settings/VoiceAssistantConfig
 import { WorkspaceEditModal } from '@/components/settings/WorkspaceEditModal';
 import { supabase } from '@/lib/supabase';
 import { useTheme, useGlass, useAccent, useFontScale, type Accent, type UiScale } from '@/hooks/useTheme';
+import { useFont, FONTS, type Font } from '@/hooks/useFont';
 
 /**
  * Configurações — visão operacional do sistema.
@@ -30,6 +31,7 @@ export function SettingsPage() {
   const { glass, toggle: toggleGlass } = useGlass();
   const { accent, setAccent } = useAccent();
   const { scale, setScale } = useFontScale();
+  const { font, setFont } = useFont();
   const appearance: 'light' | 'dark' | 'vidro' = glass ? 'vidro' : theme;
   const selectAppearance = (id: 'light' | 'dark' | 'vidro') => {
     if (id === 'vidro') { if (!glass) toggleGlass(); return; }
@@ -198,6 +200,35 @@ export function SettingsPage() {
                 style={{ fontSize: opt.px }}
               >
                 {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="h-px bg-default my-5" />
+
+        <div>
+          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-creme-mute mb-1">
+            <Type size={13} className="text-brand" /> Fonte da interface
+          </div>
+          <div className="text-[12px] text-creme-faint mb-3.5">Tipografia de toda a UI. Aplica na hora e fica salva.</div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-w-2xl">
+            {(Object.keys(FONTS) as Font[]).map((id) => (
+              <button
+                key={id}
+                onClick={() => setFont(id)}
+                title={FONTS[id].label}
+                className={`rounded-xl px-3 py-3 border-2 text-left transition-all ${font === id ? 'border-brand bg-brand/5' : 'border-default hover:border-hover'}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[15px] font-semibold text-creme truncate" style={{ fontFamily: FONTS[id].stack }}>
+                    {FONTS[id].label}
+                  </span>
+                  {font === id && <CheckCircle2 size={14} className="text-brand-bright shrink-0" />}
+                </div>
+                <div className="text-[12px] text-creme-mute mt-0.5" style={{ fontFamily: FONTS[id].stack }}>
+                  Aa Bb Cc 123
+                </div>
               </button>
             ))}
           </div>

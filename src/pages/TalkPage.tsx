@@ -2150,7 +2150,7 @@ function SessionItem({ session, active, depth = 0, onClick, onMenu, onDragStartI
         ? <Archive size={14} className="text-creme-faint shrink-0" />
         : <span title={srcLabel} className="shrink-0 inline-flex"><SrcIcon size={15} className={srcColor} style={session.color && source === 'panel' ? { color: session.color } : undefined} /></span>}
       {session.pinnedAt && !session.archivedAt && <Pin size={11} className="text-brand-bright shrink-0 -ml-1" />}
-      <span className={`flex-1 min-w-0 text-[14.5px] truncate ${active ? 'text-creme font-medium' : 'text-creme-mute'}`} title={clean}>{clean}</span>
+      <span className={`flex-1 min-w-0 text-[14.5px] truncate font-semibold ${active ? 'text-creme' : 'text-creme-mute'}`} title={clean}>{clean}</span>
       <button onClick={openMenu} className="opacity-0 group-hover:opacity-100 text-creme-faint hover:text-creme p-1 shrink-0" title="Opções da conversa">
         <MoreVertical size={14} />
       </button>
