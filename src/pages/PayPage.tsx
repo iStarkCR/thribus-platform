@@ -431,9 +431,39 @@ function PaidBanner({ charge }: { charge: AsaasPublicCharge }) {
   );
 }
 
+// Imprime SÓ o comprovante num iframe isolado (documento minúsculo) em vez de
+// window.print() na página inteira — que aplicava visibility:hidden em toda a
+// árvore e travava o Chrome. Os estilos do recibo são inline, então o clone
+// mantém o visual sem depender do CSS da página.
+function printReceipt() {
+  const el = document.getElementById('thribus-receipt');
+  if (!el) return;
+  const clone = el.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('[data-print-hide]').forEach((n) => n.remove());
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow?.document;
+  if (!doc) { iframe.remove(); return; }
+  doc.open();
+  doc.write(
+    '<!doctype html><html><head><meta charset="utf-8"><title>Comprovante — Thribus Tech</title>' +
+    '<style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;' +
+    "font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif}" +
+    'body{margin:28px;color:#1b211a}</style></head><body>' + clone.outerHTML + '</body></html>',
+  );
+  doc.close();
+  const w = iframe.contentWindow!;
+  w.onafterprint = () => setTimeout(() => iframe.remove(), 300);
+  // tick pro layout assentar antes de abrir o diálogo
+  setTimeout(() => { w.focus(); w.print(); }, 250);
+  // rede de segurança: remove o iframe mesmo se onafterprint não disparar
+  setTimeout(() => { if (document.body.contains(iframe)) iframe.remove(); }, 60_000);
+}
+
 // Comprovante de pagamento com a identidade Thribus. Renderizado a partir dos
 // dados que já temos da cobrança — o cliente nunca sai pra fatura do Asaas.
-// `window.print()` deixa salvar em PDF; @media print (index.css) isola só ele.
 function Receipt({ charge }: { charge: AsaasPublicCharge }) {
   const emitted = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   return (
@@ -468,7 +498,7 @@ function Receipt({ charge }: { charge: AsaasPublicCharge }) {
       <div className="mt-4 flex items-center justify-between gap-3 pt-2">
         <span className="text-[10.5px]" style={{ color: C.faint }}>Emitido em {emitted}</span>
         <button
-          onClick={() => window.print()}
+          onClick={printReceipt}
           data-print-hide
           className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
           style={{ background: C.sage }}

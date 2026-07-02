@@ -296,15 +296,3 @@ html.light .greet-anim {
 @keyframes chatTyping { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-4px); opacity: 1; } }
 .typing-dot { display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: rgb(var(--brand-bright)); animation: chatTyping 1.3s infinite; }
 
-/* Impressão do comprovante Thribus (PayPage): isola só o recibo na folha,
-   escondendo o resto da página. Mantém as cores (print-color-adjust). */
-@media print {
-  body * { visibility: hidden !important; }
-  #thribus-receipt, #thribus-receipt * { visibility: visible !important; }
-  #thribus-receipt {
-    position: absolute; left: 0; top: 0; width: 100%;
-    border: none !important; padding: 0 !important;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
-  }
-  #thribus-receipt [data-print-hide] { display: none !important; }
-}
