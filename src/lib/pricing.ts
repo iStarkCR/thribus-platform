@@ -17,10 +17,17 @@ interface ModelPrice {
 }
 
 const PRICING: Record<AIModel, ModelPrice> = {
-  // ─── Anthropic ─────────────────────────────────────────────────────────────
-  'claude-opus-4-7':           { input: 15.00, output: 75.00, cachedInput: 1.50 },
-  'claude-sonnet-4-5-20250929': { input: 3.00,  output: 15.00, cachedInput: 0.30 },
+  // ─── Anthropic (preços por 1M tokens — referência oficial /v1/models, jul/2026) ─
+  'claude-fable-5':            { input: 10.00, output: 50.00, cachedInput: 1.00 },
+  'claude-opus-4-8':           { input: 5.00,  output: 25.00, cachedInput: 0.50 },
+  // Sonnet 5: preço cheio $3/$15 (introdutório $2/$10 até 31/ago/2026 — usamos
+  // o cheio pra não subestimar custo depois da promo; ajustar se quiser exato).
+  'claude-sonnet-5':           { input: 3.00,  output: 15.00, cachedInput: 0.30 },
   'claude-haiku-4-5-20251001':{ input: 1.00,  output:  5.00, cachedInput: 0.10 },
+  'claude-opus-4-7':           { input: 5.00,  output: 25.00, cachedInput: 0.50 },
+  'claude-opus-4-6':           { input: 5.00,  output: 25.00, cachedInput: 0.50 },
+  'claude-sonnet-4-6':         { input: 3.00,  output: 15.00, cachedInput: 0.30 },
+  'claude-sonnet-4-5-20250929': { input: 3.00,  output: 15.00, cachedInput: 0.30 },
 
   // ─── OpenAI ────────────────────────────────────────────────────────────────
   'gpt-5':                    { input: 1.25,  output: 10.00 },

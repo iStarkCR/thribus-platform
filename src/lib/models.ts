@@ -36,16 +36,24 @@ export interface ModelOption {
  */
 export const MODEL_OPTIONS: ModelOption[] = [
   // ─── Anthropic ─────────────────────────────────────────────────────────────
+  // ── Atuais (jul/2026) ──
   {
-    id: 'claude-opus-4-7',
-    label: 'claude-opus-4-7',
+    id: 'claude-fable-5',
+    label: 'claude-fable-5',
+    badge: 'mais capaz',
+    provider: 'anthropic',
+    verified: true,
+  },
+  {
+    id: 'claude-opus-4-8',
+    label: 'claude-opus-4-8',
     badge: 'premium',
     provider: 'anthropic',
     verified: true,
   },
   {
-    id: 'claude-sonnet-4-5-20250929',
-    label: 'claude-sonnet-4-5',
+    id: 'claude-sonnet-5',
+    label: 'claude-sonnet-5',
     badge: 'recomendado',
     provider: 'anthropic',
     verified: true,
@@ -57,11 +65,43 @@ export const MODEL_OPTIONS: ModelOption[] = [
     provider: 'anthropic',
     verified: true,
   },
-  // Nota: `claude-opus-4-7` retorna sem date suffix (ID canônico atual
-  // da Anthropic). Verificado válido contra /v1/messages em 2026-05-09.
-  //
-  // Removido em 2026-05-09: o alias `claude-3-5-sonnet-latest` foi
-  // descontinuado pela Anthropic (3.5 Sonnet deprecated). Retorna 404.
+  // ── Legacy (ainda disponíveis; mantidos p/ compat de agentes já gravados) ──
+  {
+    id: 'claude-opus-4-7',
+    label: 'claude-opus-4-7',
+    badge: 'legacy',
+    provider: 'anthropic',
+    verified: true,
+  },
+  {
+    id: 'claude-opus-4-6',
+    label: 'claude-opus-4-6',
+    badge: 'legacy',
+    provider: 'anthropic',
+    verified: true,
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    label: 'claude-sonnet-4-6',
+    badge: 'legacy',
+    provider: 'anthropic',
+    verified: true,
+  },
+  {
+    id: 'claude-sonnet-4-5-20250929',
+    label: 'claude-sonnet-4-5',
+    badge: 'legacy',
+    provider: 'anthropic',
+    verified: true,
+  },
+  // Notas de ID (referência oficial Anthropic /v1/models, jul/2026):
+  //  - Fable 5 (`claude-fable-5`) é o topo atual; Sonnet 5 (`claude-sonnet-5`)
+  //    é o combo velocidade/inteligência (preço introdutório $2/$10 até 31/ago/2026).
+  //  - IDs 4.6+ usam o ALIAS puro como snapshot canônico — NÃO adicionar date
+  //    suffix (ex: `claude-sonnet-5`, nunca `claude-sonnet-5-2026xxxx`).
+  //  - Legacy mantidos: agentes gravados no DB podem apontar pra eles; remover
+  //    quebraria o select na edição (cairia no default e regravaria).
+  //  - Mythos 5 (`claude-mythos-5`) é invitation-only (Project Glasswing) — fora.
 
   // ─── OpenAI ────────────────────────────────────────────────────────────────
   { id: 'gpt-5',       label: 'gpt-5',                        provider: 'openai', verified: true },
@@ -72,7 +112,7 @@ export const MODEL_OPTIONS: ModelOption[] = [
 ];
 
 /** Default em criação de agente — primeiro recomendado da lista. */
-export const DEFAULT_MODEL: AIModel = 'claude-sonnet-4-5-20250929';
+export const DEFAULT_MODEL: AIModel = 'claude-sonnet-5';
 
 /** Set de IDs válidos pra checagem rápida em runtime / migrations. */
 export const VALID_MODEL_IDS = new Set<string>(MODEL_OPTIONS.map((m) => m.id));

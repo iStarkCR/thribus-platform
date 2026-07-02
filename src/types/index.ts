@@ -5,13 +5,18 @@
 export type AgentStatus = 'online' | 'standby' | 'offline';
 export type AgentType = 'modular' | 'operacional' | 'enterprise';
 export type AIModel =
-  // Anthropic — IDs verificados em maio/2026.
+  // Anthropic — IDs verificados em jul/2026 (referência oficial claude-api).
   // ⚠️ Mantenha sincronizado com src/lib/models.ts (fonte única de verdade
   //    pra dropdowns + pricing). Adicionar ID aqui sem testar contra
   //    /v1/models do provedor quebra o worker em runtime com 404.
-  | 'claude-opus-4-7'               // Opus 4.7 (premium — análise/retenção/auditoria)
-  | 'claude-sonnet-4-5-20250929'    // Sonnet 4.5 (recomendado — uso geral)
+  | 'claude-fable-5'                // Fable 5 (mais capaz — topo atual)
+  | 'claude-opus-4-8'               // Opus 4.8 (premium — agentic coding/enterprise)
+  | 'claude-sonnet-5'              // Sonnet 5 (recomendado — uso geral)
   | 'claude-haiku-4-5-20251001'     // Haiku 4.5 (rápido/barato — alta volumetria)
+  | 'claude-opus-4-7'               // Opus 4.7 (legacy)
+  | 'claude-opus-4-6'               // Opus 4.6 (legacy)
+  | 'claude-sonnet-4-6'             // Sonnet 4.6 (legacy)
+  | 'claude-sonnet-4-5-20250929'    // Sonnet 4.5 (legacy — compat agentes já gravados)
   // OpenAI
   | 'gpt-5'
   | 'gpt-5-mini'
