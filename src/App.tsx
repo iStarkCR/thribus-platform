@@ -67,12 +67,15 @@ declare global {
 
 // No subdomínio pagamento.thribustech.com, o id da cobrança vem do path
 // (URL limpa, sem hash): pagamento.thribustech.com/<chargeId>.
+// Só aceita IDs reais (pay_xxx / sub_xxx) — evita tratar rotas como "/billing"
+// como se fossem IDs, o que causava erro 400 na Edge Function.
 function resolvePayId(): string {
   if (typeof window === 'undefined') return '';
   if (window.__PAY_ID__) return window.__PAY_ID__;
   if (window.location.hostname.startsWith('pagamento.')) {
     const seg = window.location.pathname.split('/').filter(Boolean).pop() ?? '';
-    return decodeURIComponent(seg);
+    const id = decodeURIComponent(seg);
+    return /^(pay|sub|cha|pi)_/.test(id) ? id : '';
   }
   return '';
 }
