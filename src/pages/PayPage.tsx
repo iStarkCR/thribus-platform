@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import {
   ShieldCheck, Copy, Check, QrCode, Barcode, CreditCard,
   CalendarClock, AlertTriangle, CheckCircle2, Loader2, ExternalLink,
-  FileText, Clock,
+  FileText, Clock, Printer, Receipt as ReceiptIcon,
 } from 'lucide-react';
 import { getPublicCharge, type AsaasPublicCharge, type AsaasChargeStatus } from '@/services/asaas';
 
@@ -50,6 +50,10 @@ const C = {
 
 const brl = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v ?? 0);
+
+const PAY_METHOD: Record<string, string> = {
+  PIX: 'PIX', BOLETO: 'Boleto bancário', CREDIT_CARD: 'Cartão de crédito', UNDEFINED: '—',
+};
 
 const fmtDate = (iso?: string) => {
   if (!iso) return '—';
@@ -403,26 +407,88 @@ function NotaFiscal({ charge }: { charge: AsaasPublicCharge }) {
 }
 
 function PaidBanner({ charge }: { charge: AsaasPublicCharge }) {
+  const [showReceipt, setShowReceipt] = useState(false);
   return (
-    <section className="rounded-2xl px-5 py-6 text-center" style={{ background: C.greenBg, border: `1px solid ${C.borderSage}` }}>
-      <CheckCircle2 size={32} className="mx-auto" style={{ color: C.greenInk }} />
-      <div className="mt-2 text-[15px] font-semibold" style={{ color: C.ink }}>Pagamento confirmado</div>
-      <p className="mt-1 text-[12.5px]" style={{ color: C.ink2 }}>
-        Recebemos {brl(charge.value)}
-        {charge.paymentDate ? ` em ${fmtDate(charge.paymentDate)}` : ''}. Obrigado!
-      </p>
-      {charge.invoiceUrl && (
-        <a
-          href={charge.invoiceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+    <div className="space-y-4">
+      <section className="rounded-2xl px-5 py-6 text-center" style={{ background: C.greenBg, border: `1px solid ${C.borderSage}` }}>
+        <CheckCircle2 size={32} className="mx-auto" style={{ color: C.greenInk }} />
+        <div className="mt-2 text-[15px] font-semibold" style={{ color: C.ink }}>Pagamento confirmado</div>
+        <p className="mt-1 text-[12.5px]" style={{ color: C.ink2 }}>
+          Recebemos {brl(charge.value)}
+          {charge.paymentDate ? ` em ${fmtDate(charge.paymentDate)}` : ''}. Obrigado!
+        </p>
+        {/* Comprovante 100% Thribus — sem redirecionar o cliente pro Asaas. */}
+        <button
+          onClick={() => setShowReceipt((v) => !v)}
           className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:underline"
           style={{ color: C.sageInk }}
         >
-          Ver comprovante <ExternalLink size={13} />
-        </a>
-      )}
+          <ReceiptIcon size={13} /> {showReceipt ? 'Ocultar comprovante' : 'Ver comprovante'}
+        </button>
+      </section>
+      {showReceipt && <Receipt charge={charge} />}
+    </div>
+  );
+}
+
+// Comprovante de pagamento com a identidade Thribus. Renderizado a partir dos
+// dados que já temos da cobrança — o cliente nunca sai pra fatura do Asaas.
+// `window.print()` deixa salvar em PDF; @media print (index.css) isola só ele.
+function Receipt({ charge }: { charge: AsaasPublicCharge }) {
+  const emitted = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return (
+    <section id="thribus-receipt" className="rounded-2xl p-6" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+      <div className="flex items-start justify-between gap-3 pb-4" style={{ borderBottom: `1px solid ${C.border}` }}>
+        <div className="leading-tight">
+          <div className="text-[16px] font-extrabold tracking-tight" style={{ color: C.ink }}>
+            <span style={{ color: C.sage }}>T</span>hribus Tech
+          </div>
+          <div className="text-[11px]" style={{ color: C.ink3 }}>Comprovante de pagamento</div>
+        </div>
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-[11.5px] font-semibold" style={{ background: C.greenBg, color: C.greenInk }}>
+          <CheckCircle2 size={13} /> Pago
+        </span>
+      </div>
+
+      <div className="py-4 text-center" style={{ borderBottom: `1px solid ${C.border}` }}>
+        <div className="text-[11px] font-medium uppercase tracking-wide" style={{ color: C.ink3 }}>Valor pago</div>
+        <div className="mt-0.5 text-[28px] font-extrabold leading-none tracking-tight" style={{ color: C.sageInk }}>{brl(charge.value)}</div>
+      </div>
+
+      <dl className="divide-y" style={{ borderColor: C.border }}>
+        <ReceiptRow label="Pago em" value={fmtDate(charge.paymentDate) !== '—' ? fmtDate(charge.paymentDate) : 'Confirmado'} />
+        <ReceiptRow label="Forma de pagamento" value={PAY_METHOD[charge.billingType] ?? '—'} />
+        {charge.invoiceNumber && <ReceiptRow label="Fatura nº" value={charge.invoiceNumber} />}
+        {charge.buyerName && <ReceiptRow label="Pagador" value={charge.buyerName} sub={charge.buyerEmail} />}
+        <ReceiptRow label="Recebedor" value={BILLER.name} sub={`CNPJ ${BILLER.cnpj}`} />
+        {charge.description && <ReceiptRow label="Descrição" value={charge.description} />}
+        <ReceiptRow label="Identificador" value={charge.id} mono />
+      </dl>
+
+      <div className="mt-4 flex items-center justify-between gap-3 pt-2">
+        <span className="text-[10.5px]" style={{ color: C.faint }}>Emitido em {emitted}</span>
+        <button
+          onClick={() => window.print()}
+          data-print-hide
+          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ background: C.sage }}
+        >
+          <Printer size={14} /> Salvar em PDF
+        </button>
+      </div>
     </section>
+  );
+}
+
+function ReceiptRow({ label, value, sub, mono }: { label: string; value: string; sub?: string; mono?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-2.5">
+      <dt className="shrink-0 text-[12px] font-medium" style={{ color: C.ink3 }}>{label}</dt>
+      <dd className={`text-right text-[13px] ${mono ? 'font-mono text-[11.5px] break-all' : 'font-medium'}`} style={{ color: C.ink }}>
+        {value}
+        {sub && <span className="block text-[11.5px] font-normal" style={{ color: C.ink3 }}>{sub}</span>}
+      </dd>
+    </div>
   );
 }
 
@@ -477,7 +543,7 @@ function Footer() {
     <footer className="mt-8 space-y-1.5 text-center text-[11px] leading-relaxed" style={{ color: C.faint }}>
       <div className="flex items-center justify-center gap-1.5" style={{ color: C.ink3 }}>
         <ShieldCheck size={13} style={{ color: C.sage }} />
-        Processado com segurança via Asaas (gateway homologado pelo Banco Central)
+        Ambiente de pagamento seguro e criptografado
       </div>
       <div>{BILLER.name} · CNPJ {BILLER.cnpj}</div>
       <div>
