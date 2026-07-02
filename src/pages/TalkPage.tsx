@@ -1024,6 +1024,9 @@ export function TalkPage() {
     { id: 'anexar', label: 'Anexar arquivo', hint: 'img · PDF · vídeo', icon: <Paperclip size={15} />, keywords: ['anexar', 'arquivo', 'file', 'upload', 'attach'], run: () => fileInputRef.current?.click() },
     { id: 'agendar', label: 'Agendar rotina', hint: 'repetir no tempo', icon: <Clock size={15} />, keywords: ['agendar', 'rotina', 'schedule', 'cron'], run: () => setRoutineOpen(true) },
     { id: 'voz', label: 'Modo voz', hint: 'conversar falando', icon: <AudioLines size={15} />, keywords: ['voz', 'voice', 'falar', 'audio'], run: () => startPanelVoice() },
+    { id: 'usage', label: 'Uso do contexto', hint: 'quanto da janela já usei', icon: <BarChart3 size={15} />, keywords: ['usage', 'uso', 'contexto', 'context', 'tokens', 'janela'], run: () => send('/usage') },
+    { id: 'compress', label: 'Comprimir contexto', hint: 'resume e libera a janela', icon: <Archive size={15} />, keywords: ['compress', 'comprimir', 'resumir', 'compact', 'limpar contexto'], run: () => send('/compress') },
+    { id: 'skill', label: 'Salvar como skill', hint: 'vira procedimento reusável', icon: <Sparkles size={15} />, keywords: ['skill', 'salvar', 'procedimento', 'aprender', 'save'], run: () => send('/skill save') },
   ];
   const slashQuery = input.startsWith('/') && !input.includes(' ') && !input.includes('\n') ? input.slice(1).toLowerCase() : null;
   const slashMatches = slashQuery === null ? [] : slashCommands.filter(
