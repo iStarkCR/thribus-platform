@@ -21,6 +21,8 @@ import { executeTool as legacyExecuteTool } from '../../tools/dispatcher.js';
 import { db } from '../../db/index.js';
 import { agentRegistry } from './registry.js';
 import { buildHandoffTool, HANDOFF_TOOL_NAME } from './tools/handoff.js';
+import { getToolInputSchema } from '../../agent/tool-schemas.js';
+import { routeModel } from './model-router.js';
 import type { AgentDefinition, AgentRunInput } from './types.js';
 
 const DEFAULT_MAX_ITER = 5;
@@ -95,6 +97,17 @@ function truncateToolOutput(s: string): string {
 }
 
 /**
+ * Alias de nome → schema. Alguns nomes REAIS de tool no DB divergem das chaves
+ * mapeadas em tool-schemas.ts (que segue o loop legado). Sem isso, essas tools
+ * caem no schema vazio e o modelo tem que adivinhar o parâmetro. Só afeta o
+ * executor (v2) — NÃO altera o getToolInputSchema compartilhado com o prod.
+ */
+const SCHEMA_NAME_ALIAS: Record<string, string> = {
+  consultar_viabilidade_completa: 'consultar_viabilidade',
+  consultar_agenda_disponivel: 'consultar_agenda',
+};
+
+/**
  * Carrega tools legacy do DB pro agente (Bianca, etc).
  * Converte do schema do dispatcher pro ToolDefinition do Anthropic SDK.
  */
@@ -104,11 +117,10 @@ async function loadLegacyTools(legacyAgentId: string): Promise<ToolDefinition[]>
     return tools.map((t) => ({
       name: t.name,
       description: t.description,
-      input_schema: {
-        type: 'object',
-        properties: {},
-        required: [],
-      },
+      // BUGFIX: antes montava input_schema vazio ({}), o que impedia o LLM de
+      // saber os parâmetros de cada tool. Usa o schema hardcoded por nome,
+      // resolvendo alias quando o nome real do DB diverge da chave mapeada.
+      input_schema: getToolInputSchema(SCHEMA_NAME_ALIAS[t.name] ?? t.name),
     }));
   } catch (err) {
     console.warn('[cortex.executor] loadLegacyTools falhou:', (err as Error).message);
@@ -148,9 +160,20 @@ export async function executeAgent(
   let finalText: string | null = null;
   let handoffRequested: ExecutorOutput['handoffRequested'] | undefined;
 
+  // Roteamento de modelo por complexidade: escolhe o tier baseado na ÚLTIMA
+  // mensagem role:'user' de input.messages (a mensagem atual do cliente).
+  // Backward-compat: agentes sem modelTiers usam def.model exatamente como hoje.
+  let selectedModel = def.model;
+  if (def.modelTiers) {
+    const lastUserMsg = [...input.messages].reverse().find((m) => m.role === 'user');
+    if (lastUserMsg) {
+      selectedModel = routeModel(lastUserMsg.content, def.modelTiers);
+    }
+  }
+
   for (let iter = 0; iter < maxIter; iter++) {
     const response = await callLLM({
-      model: def.model,
+      model: selectedModel,
       systemPrompt: def.systemPrompt,
       tools,
       messages,

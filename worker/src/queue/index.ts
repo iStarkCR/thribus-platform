@@ -6,6 +6,7 @@
  */
 
 import { runAgentLoop } from '../agent/loop.js';
+import { runCortexAgent } from '../agent/cortex-runner.js';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,19 @@ async function runJob(job: AgentJob): Promise<void> {
   const waitMs = Date.now() - (job.enqueuedAt ?? Date.now());
   console.log(`[queue] processing agentId=${job.agentId} leadId=${job.leadId} waited=${waitMs}ms`);
   try {
-    await runAgentLoop(job);
+    // Ramificação do motor por canal (allowlist). Só os canais listados em
+    // CORTEX_ENGINE_CHANNELS (ex: inbox Talki Teste) rodam no motor livre
+    // (bianca-v2 via cortex-runner). TODO o resto — incluindo a Bianca prod —
+    // segue no runAgentLoop, comportamento idêntico ao de hoje.
+    const cortexChannels = (process.env.CORTEX_ENGINE_CHANNELS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (cortexChannels.includes(job.channel)) {
+      await runCortexAgent(job);
+    } else {
+      await runAgentLoop(job);
+    }
   } catch (err) {
     console.error(`[queue] job failed agentId=${job.agentId} leadId=${job.leadId}`, err);
   }

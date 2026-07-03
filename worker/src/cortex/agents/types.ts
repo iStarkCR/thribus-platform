@@ -49,6 +49,8 @@ export interface AgentDefinition {
   legacyAgentIdEnvVar?: string;
   /** Máximo de iterações no loop de tool execution. Default: 5. */
   maxToolIterations?: number;
+  /** Roteamento de modelo por complexidade (opcional). Se ausente, usa `model` fixo. */
+  modelTiers?: { trivial: string; standard: string; complex: string };
 }
 
 /** Input do runtime de um agente. */

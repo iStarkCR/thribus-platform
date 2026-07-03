@@ -11,6 +11,7 @@
 
 import type { AgentDefinition, AgentCategory } from './types.js';
 import { biancaDefinition } from './definitions/bianca.js';
+import { biancaV2Definition } from './definitions/bianca-v2.js';
 import { renataDefinition } from './definitions/renata.js';
 import { marcosDefinition } from './definitions/marcos.js';
 import { carlaDefinition } from './definitions/carla.js';
@@ -64,6 +65,7 @@ export const agentRegistry = new AgentRegistry();
  */
 export function loadBuiltInAgents(): void {
   agentRegistry.register(biancaDefinition);
+  agentRegistry.register(biancaV2Definition);
   agentRegistry.register(renataDefinition);
   agentRegistry.register(marcosDefinition);
   agentRegistry.register(carlaDefinition);
