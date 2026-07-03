@@ -1024,8 +1024,15 @@ export function TalkPage() {
     { id: 'anexar', label: 'Anexar arquivo', hint: 'img · PDF · vídeo', icon: <Paperclip size={15} />, keywords: ['anexar', 'arquivo', 'file', 'upload', 'attach'], run: () => fileInputRef.current?.click() },
     { id: 'agendar', label: 'Agendar rotina', hint: 'repetir no tempo', icon: <Clock size={15} />, keywords: ['agendar', 'rotina', 'schedule', 'cron'], run: () => setRoutineOpen(true) },
     { id: 'voz', label: 'Modo voz', hint: 'conversar falando', icon: <AudioLines size={15} />, keywords: ['voz', 'voice', 'falar', 'audio'], run: () => startPanelVoice() },
-    { id: 'usage', label: 'Uso do contexto', hint: 'quanto da janela já usei', icon: <BarChart3 size={15} />, keywords: ['usage', 'uso', 'contexto', 'context', 'tokens', 'janela'], run: () => send('/usage') },
-    { id: 'compress', label: 'Comprimir contexto', hint: 'resume e libera a janela', icon: <Archive size={15} />, keywords: ['compress', 'comprimir', 'resumir', 'compact', 'limpar contexto'], run: () => send('/compress') },
+    { id: 'usage', label: 'Uso do contexto', hint: 'quanto da janela já usei', icon: <BarChart3 size={15} />, keywords: ['usage', 'uso', 'contexto', 'context', 'tokens', 'janela'], run: () => {
+      const tokens = active?.contextTokens ?? 0;
+      getCortexConfig().then((c) => {
+        const pct = Math.min(100, Math.round((tokens / c.contextLimitTokens) * 100));
+        const fmt = (n: number) => (n >= 1_000_000 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+        useAppStore.getState().addToast(`Contexto: ${fmt(tokens)} / ${fmt(c.contextLimitTokens)} (${pct}%)`, 'green');
+      }).catch(() => useAppStore.getState().addToast('Não consegui checar o uso agora.', 'red'));
+    } },
+    { id: 'compress', label: 'Comprimir contexto', hint: 'resume e libera a janela', icon: <Archive size={15} />, keywords: ['compress', 'comprimir', 'resumir', 'compact', 'limpar contexto'], run: () => compactConversation() },
     { id: 'skill', label: 'Salvar como skill', hint: 'vira procedimento reusável', icon: <Sparkles size={15} />, keywords: ['skill', 'salvar', 'procedimento', 'aprender', 'save'], run: () => send('/skill save') },
   ];
   const slashQuery = input.startsWith('/') && !input.includes(' ') && !input.includes('\n') ? input.slice(1).toLowerCase() : null;
