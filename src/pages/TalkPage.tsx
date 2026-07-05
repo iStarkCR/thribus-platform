@@ -162,6 +162,9 @@ export function TalkPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Auto-scroll só quando o usuário está "grudado" no fundo. Se ele subiu pra
+  // ler durante o streaming, respeitamos e não o arrastamos de volta.
+  const stickToBottomRef = useRef(true);
 
   // Colaboradores pra trocar (Bukowiski no topo).
   const collaborators = useMemo(
@@ -396,7 +399,8 @@ export function TalkPage() {
   }, [userId, refetch]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    if (!stickToBottomRef.current) return; // usuário subiu pra ler — não puxa de volta
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' });
   }, [messages]);
 
   // Fala uma resposta: provider configurado (áudio) ou voz nativa do navegador.
@@ -895,6 +899,7 @@ export function TalkPage() {
       : raw;
     const atts = attachments;
     if ((!raw && atts.length === 0) || !agent || !userId || sending || uploading > 0) return;
+    stickToBottomRef.current = true; // ao enviar, volta a acompanhar o fundo
     setSending(true);
     setHistOpen(false);
     const edit = editingFrom;
@@ -1517,7 +1522,16 @@ export function TalkPage() {
               </div>
             </div>
           ) : (
-            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-3 md:px-6 py-4 md:py-6 space-y-5">
+            <div
+              ref={scrollRef}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                // "grudado" = a até 80px do fundo. Subiu mais que isso → pausa o auto-scroll.
+                stickToBottomRef.current =
+                  el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+              }}
+              className="absolute inset-0 overflow-y-auto px-3 md:px-6 py-4 md:py-6 space-y-5"
+            >
               {/* Compactar conversa — flutua no topo em conversas longas. Gera um
                   resumo (TL;DR) e recomeça o contexto a partir dele; o histórico
                   visual fica intacto. Ver requestCompaction / ponte (caminho C). */}
