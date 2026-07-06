@@ -165,6 +165,9 @@ export function TalkPage() {
   // Auto-scroll só quando o usuário está "grudado" no fundo. Se ele subiu pra
   // ler durante o streaming, respeitamos e não o arrastamos de volta.
   const stickToBottomRef = useRef(true);
+  // Qual sessão já teve o "aterrissar no fim" aplicado — pra só forçar o fundo
+  // ao ABRIR/TROCAR de conversa, não a cada token do streaming.
+  const scrolledSessionRef = useRef<string | null>(null);
 
   // Colaboradores pra trocar (Bukowiski no topo).
   const collaborators = useMemo(
@@ -399,9 +402,23 @@ export function TalkPage() {
   }, [userId, refetch]);
 
   useEffect(() => {
-    if (!stickToBottomRef.current) return; // usuário subiu pra ler — não puxa de volta
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' });
-  }, [messages]);
+    const el = scrollRef.current;
+    if (!el || messages.length === 0) return;
+    const toBottom = () => { const s = scrollRef.current; if (s) s.scrollTo({ top: s.scrollHeight, behavior: 'auto' }); };
+    // Abriu/trocou de conversa → SEMPRE aterrissa no fim, esperando o layout
+    // final (markdown/imagens mudam a altura depois do commit). rAF duplo + um
+    // timeout de segurança garantem que medimos a altura já estabilizada.
+    if (scrolledSessionRef.current !== activeId) {
+      scrolledSessionRef.current = activeId;
+      stickToBottomRef.current = true;
+      requestAnimationFrame(() => requestAnimationFrame(toBottom));
+      setTimeout(toBottom, 120);
+      return;
+    }
+    // Mesma conversa (streaming) → só acompanha se o usuário está grudado no fim
+    if (!stickToBottomRef.current) return; // subiu pra ler — não puxa de volta
+    toBottom();
+  }, [messages, activeId]);
 
   // Fala uma resposta: provider configurado (áudio) ou voz nativa do navegador.
   async function speakReply(text: string, onEnd?: () => void) {
