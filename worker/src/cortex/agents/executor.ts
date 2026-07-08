@@ -22,6 +22,7 @@ import { db } from '../../db/index.js';
 import { agentRegistry } from './registry.js';
 import { buildHandoffTool, HANDOFF_TOOL_NAME } from './tools/handoff.js';
 import { getToolInputSchema } from '../../agent/tool-schemas.js';
+import { validateToolInput } from '../guardrails/tool-input.js';
 import { routeModel } from './model-router.js';
 import type { AgentDefinition, AgentRunInput } from './types.js';
 
@@ -196,7 +197,15 @@ export async function executeAgent(
 
     // Detecta handoff — sai imediato pra caller acionar próximo agente
     const handoffCall = response.toolCalls.find((tc) => tc.name === HANDOFF_TOOL_NAME);
-    if (handoffCall) {
+    // Handoff malformado (sem target/reason) NÃO interrompe: cai no loop
+    // normal de tools abaixo, que valida e devolve erro pro agente corrigir.
+    const handoffValid =
+      handoffCall &&
+      validateToolInput(
+        tools.find((t) => t.name === HANDOFF_TOOL_NAME),
+        handoffCall.input,
+      ).ok;
+    if (handoffCall && handoffValid) {
       handoffRequested = {
         targetAgentId: String(handoffCall.input.target_agent_id ?? ''),
         reason: String(handoffCall.input.reason ?? ''),
@@ -233,6 +242,30 @@ export async function executeAgent(
     }> = [];
 
     for (const tc of response.toolCalls) {
+      // Guardrail Fase 3: valida input contra o schema declarado ANTES de
+      // executar. Falha → tool_result de erro (o agente corrige e re-chama).
+      const toolDef = tools.find((t) => t.name === tc.name);
+      const validation = validateToolInput(toolDef, tc.input);
+      if (!validation.ok) {
+        toolResultContent.push({
+          type: 'tool_result',
+          tool_use_id: tc.id,
+          content: JSON.stringify({
+            error: 'invalid_tool_input',
+            details: validation.errors,
+          }),
+          is_error: true,
+        });
+        turn.toolResults.push({
+          toolCallId: tc.id,
+          toolName: tc.name,
+          output: `invalid_tool_input: ${validation.errors.join('; ')}`,
+          error: 'invalid_tool_input',
+          durationMs: 0,
+        });
+        continue;
+      }
+
       if (!legacyAgentId) {
         // Sem bridge — não executamos. Devolve "not_executed" ao agente.
         toolResultContent.push({

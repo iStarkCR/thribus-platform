@@ -6,13 +6,18 @@
  *   2. Cost limit mensal (rejeita 402)
  *   3. PII detection + masking opcional
  *
- * Fase 2: cobertura básica. Fase 3: prompt injection detection,
- * content filtering, output validation.
+ * Fase 3 (este arquivo + módulos):
+ *   4. Prompt injection detection (rejeita 400)
+ *   5. Content filtering (rejeita 400)
+ *   E na SAÍDA: output validation (validateAgentOutput) e validação de
+ *   tool input contra schema (validateToolInput, usado no executor).
  */
 
 import type { AnalyzeRequest, TenantContext } from '../types.js';
+import { filterContent } from './content-filter.js';
 import { checkCostLimit } from './cost-limit.js';
 import { detectPii, maskPii } from './pii.js';
+import { detectPromptInjection } from './prompt-injection.js';
 import { checkRateLimit } from './rate-limit.js';
 
 export interface GuardrailResult {
@@ -25,6 +30,8 @@ export interface GuardrailResult {
 }
 
 const MASK_PII_DEFAULT = process.env.CORTEX_PII_MASK !== 'false';
+const INJECTION_BLOCK = process.env.CORTEX_INJECTION_BLOCK !== 'false';
+const CONTENT_FILTER_BLOCK = process.env.CORTEX_CONTENT_FILTER !== 'false';
 
 export async function applyGuardrails(
   tenant: TenantContext,
@@ -76,20 +83,59 @@ export async function applyGuardrails(
     console.warn('[cortex.guardrails] cost check falhou (continua):', (err as Error).message);
   }
 
-  // 3. PII detection + masking opcional
+  // 3. Prompt injection detection (sobre o input CRU, antes de mascarar)
+  const injection = detectPromptInjection(req.input);
+  if (injection.shouldBlock && INJECTION_BLOCK) {
+    return {
+      allow: false,
+      req,
+      reason: 'prompt_injection_detected',
+      statusCode: 400,
+      details: {
+        score: injection.score,
+        categories: [...new Set(injection.matches.map((m) => m.category))],
+      },
+    };
+  }
+
+  // 4. Content filtering
+  const content = filterContent(req.input);
+  if (content.flagged && CONTENT_FILTER_BLOCK) {
+    return {
+      allow: false,
+      req,
+      reason: 'content_policy_violation',
+      statusCode: 400,
+      details: { categories: content.categories },
+    };
+  }
+
+  // 5. PII detection + masking opcional
   let processedInput = req.input;
   const piiMatches = detectPii(req.input);
   if (piiMatches.length > 0 && MASK_PII_DEFAULT) {
     processedInput = maskPii(req.input, piiMatches);
   }
 
+  const details: Record<string, unknown> = {};
+  if (piiMatches.length > 0) {
+    details.pii_detected = piiMatches.length;
+    details.pii_types = [...new Set(piiMatches.map((p) => p.type))];
+  }
+  // Injection/conteúdo flagrado mas não bloqueado (modo monitor) → vai pro audit
+  if (injection.detected) {
+    details.injection_score = injection.score;
+    details.injection_categories = [...new Set(injection.matches.map((m) => m.category))];
+  }
+  if (content.flagged) details.content_flags = content.categories;
+
   return {
     allow: true,
     req: { ...req, input: processedInput },
-    details: piiMatches.length > 0
-      ? { pii_detected: piiMatches.length, pii_types: [...new Set(piiMatches.map((p) => p.type))] }
-      : undefined,
+    details: Object.keys(details).length > 0 ? details : undefined,
   };
 }
 
 export { recordUsage } from './cost-limit.js';
+export { validateAgentOutput } from './output-validation.js';
+export { validateToolInput } from './tool-input.js';
