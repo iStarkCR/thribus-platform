@@ -926,16 +926,30 @@ export function TalkPage() {
     let sessionId = activeId;
     let isFirst = false;
     if (!sessionId) {
-      const s = await createSession(agent.id, userId, { workingDir: pendingWorkingDir }).catch(() => null);
-      // Guard: sem id válido (ex.: RLS barrou o SELECT pós-insert) NÃO seguimos —
-      // senão `${undefined}` vira "undefined" no .eq('id', …) e o Postgres rejeita
-      // ("invalid input syntax for type uuid"). Aborta o envio de forma controlada.
+      // Guard: sem id válido NÃO seguimos — senão `${undefined}` vira "undefined"
+      // no .eq('id', …) e o Postgres rejeita ("invalid input syntax for type uuid").
+      // Capturamos o erro REAL (não engolimos) pra diagnosticar a causa: JWT
+      // expirado (autoRefresh falhou) vs RLS vs rede.
+      let s: Awaited<ReturnType<typeof createSession>> | null = null;
+      let createErr: unknown = null;
+      try {
+        s = await createSession(agent.id, userId, { workingDir: pendingWorkingDir });
+      } catch (err) {
+        createErr = err;
+      }
       if (!s?.id) {
-        console.warn('[talk] createSession não retornou id válido; envio abortado', s);
+        const errObj = createErr as { message?: string; code?: string; status?: number } | null;
+        const errMsg = errObj?.message ?? '';
+        const errCode = errObj?.code ?? errObj?.status ?? '';
+        console.warn('[talk] createSession falhou; envio abortado', { message: errMsg, code: errCode, error: createErr, session: s });
+        const isAuth = /jwt|expired|token|not authenticated|auth/i.test(errMsg) || errCode === 'PGRST301' || errObj?.status === 401;
         setSending(false);
         setInput(text);
         setAttachments(atts);
-        useAppStore.getState().addToast('Não consegui criar a conversa. Tenta de novo?', 'amber');
+        useAppStore.getState().addToast(
+          isAuth ? 'Sessão expirada — faça login de novo.' : 'Não consegui criar a conversa. Tenta de novo?',
+          'amber',
+        );
         return;
       }
       setSessions((prev) => [s, ...prev]);
