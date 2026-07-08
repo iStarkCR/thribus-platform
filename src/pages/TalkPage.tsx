@@ -926,7 +926,18 @@ export function TalkPage() {
     let sessionId = activeId;
     let isFirst = false;
     if (!sessionId) {
-      const s = await createSession(agent.id, userId, { workingDir: pendingWorkingDir });
+      const s = await createSession(agent.id, userId, { workingDir: pendingWorkingDir }).catch(() => null);
+      // Guard: sem id válido (ex.: RLS barrou o SELECT pós-insert) NÃO seguimos —
+      // senão `${undefined}` vira "undefined" no .eq('id', …) e o Postgres rejeita
+      // ("invalid input syntax for type uuid"). Aborta o envio de forma controlada.
+      if (!s?.id) {
+        console.warn('[talk] createSession não retornou id válido; envio abortado', s);
+        setSending(false);
+        setInput(text);
+        setAttachments(atts);
+        useAppStore.getState().addToast('Não consegui criar a conversa. Tenta de novo?', 'amber');
+        return;
+      }
       setSessions((prev) => [s, ...prev]);
       setActiveId(s.id);
       sessionId = s.id;
@@ -1458,7 +1469,11 @@ export function TalkPage() {
                   {recording ? (
                     <AudioRecorderBar agentId={agentId ?? ''} onResult={(t) => { setRecording(false); if (t) setInput((c) => (c ? `${c} ${t}` : t)); }} onCancel={() => setRecording(false)} />
                   ) : (
-                    <div className="glass-panel flex items-center gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 focus-within:border-brand transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]">
+                    <div
+                      className="glass-panel flex items-center gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 focus-within:border-brand transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.preventDefault(); addFiles(Array.from(e.dataTransfer.files)); }}
+                    >
                       <textarea
                         ref={landingComposerRef}
                         value={input}
@@ -1775,7 +1790,11 @@ export function TalkPage() {
               onCancel={() => setRecording(false)}
             />
           ) : (
-          <div className="glass-panel relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors">
+          <div
+            className="glass-panel relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); addFiles(Array.from(e.dataTransfer.files)); }}
+          >
             {slashOpen && (
               <div className="absolute bottom-full mb-2 left-0 right-0 z-[61] rounded-xl border border-default bg-surface-1 shadow-2xl p-1.5 max-h-72 overflow-y-auto">
                 <div className="px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-creme-faint">Comandos</div>

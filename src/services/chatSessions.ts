@@ -125,7 +125,7 @@ export async function createSession(
 }
 
 export async function renameSession(id: string, title: string): Promise<void> {
-  if (!supabase) return;
+  if (!supabase || !id) return; // id falsy → evita .eq('id', "undefined") → uuid error
   const { error } = await supabase.from('chat_sessions').update({ title, updated_at: new Date().toISOString() }).eq('id', id);
   if (error) throw error;
 }
@@ -269,7 +269,7 @@ export async function forkSession(source: ChatSession, userId: string): Promise<
 }
 
 export async function touchSession(id: string): Promise<void> {
-  if (!supabase) return;
+  if (!supabase || !id) return; // id falsy → evita .eq('id', "undefined") → uuid error
   await supabase.from('chat_sessions').update({ updated_at: new Date().toISOString() }).eq('id', id);
 }
 
