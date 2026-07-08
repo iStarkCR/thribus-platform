@@ -946,8 +946,10 @@ export function TalkPage() {
         setSending(false);
         setInput(text);
         setAttachments(atts);
+        // Charles só vê print da tela (sem DevTools) → o detalhe real vai no toast.
+        const detail = errMsg || String(errCode) || 'erro desconhecido';
         useAppStore.getState().addToast(
-          isAuth ? 'Sessão expirada — faça login de novo.' : 'Não consegui criar a conversa. Tenta de novo?',
+          (isAuth ? 'Sessão expirada — faça login de novo.' : `Não consegui criar a conversa: ${detail}`).slice(0, 140),
           'amber',
         );
         return;
