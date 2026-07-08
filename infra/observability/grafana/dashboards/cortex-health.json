@@ -1,0 +1,111 @@
+{
+  "uid": "cortex-health",
+  "title": "Cortex — Saúde e Custo dos Agentes",
+  "tags": ["cortex", "thribus"],
+  "timezone": "America/Sao_Paulo",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Requests (período)",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "sum(increase(cortex_requests_total[$__range]))", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Erros (período)",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "sum(increase(cortex_request_errors_total[$__range]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Custo total USD (período)",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "sum(increase(cortex_request_cost_usd_sum[$__range]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Latência p95 (5m)",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(cortex_request_latency_ms_bucket[5m])) by (le))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Uptime worker",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "cortex_uptime_seconds", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Requests/min por tenant",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "sum(rate(cortex_requests_total[5m])) by (tenant) * 60", "legendFormat": "{{tenant}}", "refId": "A" }]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Erros/min por tenant",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "sum(rate(cortex_request_errors_total[5m])) by (tenant) * 60", "legendFormat": "{{tenant}}", "refId": "A" }]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Latência p50 / p95 / p99 (ms)",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(cortex_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(cortex_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(cortex_request_latency_ms_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Custo USD/hora por tenant",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "sum(rate(cortex_request_cost_usd_sum[1h])) by (tenant) * 3600", "legendFormat": "{{tenant}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 }, "overrides": [] }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Consolidações de memória/h por tenant",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "sum(rate(cortex_consolidations_total[1h])) by (tenant) * 3600", "legendFormat": "{{tenant}}", "refId": "A" }]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Custo médio por request (USD)",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "uid": "cortex-prometheus" },
+      "targets": [{ "expr": "sum(rate(cortex_request_cost_usd_sum[15m])) / sum(rate(cortex_request_cost_usd_count[15m]))", "legendFormat": "custo médio", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 5 }, "overrides": [] }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

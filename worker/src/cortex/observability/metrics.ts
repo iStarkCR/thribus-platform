@@ -2,7 +2,8 @@
  * Observability — métricas in-memory + endpoint /cortex/metrics.
  *
  * Fase 2: contadores e histogramas simples em memória.
- * Fase 3: OpenTelemetry exporter pra Prometheus/Grafana.
+ * Fase 3: exporter Prometheus em prometheus.ts (GET /cortex/metrics/prometheus)
+ *   + stack Prometheus/Grafana em infra/observability/.
  *
  * Não substitui o audit log (que é por-request, no DB). Aqui é só agregado
  * pra dashboards e alertas rápidos.
