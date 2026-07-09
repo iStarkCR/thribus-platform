@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { Crown, Settings } from 'lucide-react';
+import { Crown, Settings, Radio } from 'lucide-react';
 import type { Agent } from '@/types';
 import { useAppStore } from '@/hooks/useAppStore';
 
@@ -92,6 +92,27 @@ export function AgentCard({ agent, showFullInfo, accent, onClick, onConfig }: Ag
             <span key={tool} className={clsx('text-[11px] font-mono font-medium px-2 py-0.5 rounded-md border', off ? 'bg-creme/[0.02] border-default text-creme-faint' : 'bg-brand/[0.07] border-brand/15 text-brand-bright/90')}>{tool}</span>
           ))}
           {agent.tools.length > 5 && <span className="text-[11px] font-mono text-creme-faint px-1 py-0.5">+{agent.tools.length - 5}</span>}
+        </div>
+      )}
+
+      {/* Canais — visibilidade da dedup (um canal só pode estar em 1 colaborador) */}
+      {(agent.channels?.length ?? 0) > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-3.5">
+          <Radio size={12} className="text-creme-faint shrink-0" />
+          {agent.channels!.slice(0, 3).map((ch) => (
+            <span
+              key={ch}
+              className={clsx(
+                'text-[11px] font-mono font-medium px-2 py-0.5 rounded-md border',
+                off ? 'bg-creme/[0.02] border-default text-creme-faint' : 'bg-surface-3 border-default text-creme-mute',
+              )}
+            >
+              {ch}
+            </span>
+          ))}
+          {agent.channels!.length > 3 && (
+            <span className="text-[11px] font-mono text-creme-faint px-1 py-0.5">+{agent.channels!.length - 3}</span>
+          )}
         </div>
       )}
 
