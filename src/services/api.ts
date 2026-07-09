@@ -70,7 +70,10 @@ function rowToAgent(r: AgentRow & { workspace_id?: string | null }): Agent {
     systemPrompt: r.system_prompt,
     tools: r.tools ?? [],
     channel: r.channel ?? undefined,
-    channels: r.channels ?? (r.channel ? [r.channel] : []),
+    // channels='{}' (array vazio, DEFAULT da coluna) NÃO deve mascarar o channel
+    // singular — senão um Save subsequente gravaria channel=channels[0]=null e
+    // apagaria o roteamento. Usa o array só quando ele tem itens.
+    channels: r.channels?.length ? r.channels : (r.channel ? [r.channel] : []),
     workspaceId: r.workspace_id ?? undefined,
     role: r.role ?? undefined,
     sectorId: r.sector_id ?? undefined,

@@ -7,15 +7,37 @@ interface Props {
 }
 
 /**
- * Canal de inbox Talki no formato `talki:<acc>:<inbox>` (ex: talki:8:121).
- * Aceita o prefixo de controle `disabled:` que a ponte usa pra silenciar um
- * canal sem removê-lo (ex: disabled:talki:5:117). Canais legados que não casam
- * (ex: router:...) continuam renderizando — a validação só barra NOVAS entradas.
+ * Canal roteável: segmentos separados por `:` (ex: talki:8:121). A validação é
+ * deliberadamente frouxa pra NÃO rejeitar canais que já existem no banco. Cobre:
+ *   - talki:8:116                              (inbox Talki)
+ *   - disabled:talki:5:117                     (canal silenciado — prefixo de controle)
+ *   - router:texnet-talki:cobranca-camila      (roteador legado)
+ *   - internal:thribus-ui:cobranca-supervisor  (canal interno)
+ * Exige ≥1 segmento após um `:`; barra string vazia/whitespace. Melhor frouxa
+ * que rejeitar canal válido — o webhook/worker é quem decide o roteamento real.
  */
-const CHANNEL_RE = /^(disabled:)?talki:[^:\s]+:[^:\s]+$/;
+const CHANNEL_RE = /^[a-z0-9_-]+(:[a-z0-9_.:-]+)+$/i;
 
 export function isValidChannel(c: string): boolean {
   return CHANNEL_RE.test(c.trim());
+}
+
+/**
+ * Traduz o erro do trigger `agents_channels_no_overlap` (um canal só pode
+ * pertencer a 1 colaborador) numa mensagem legível. Retorna null se o erro
+ * não for de conflito de canal — aí o chamador usa o fallback genérico.
+ * Dispara quando dois agentes tentam o mesmo canal (ex: consolidar a Bianca).
+ */
+export function channelConflictMessage(err: unknown): string | null {
+  const e = err as { code?: string; message?: string } | null;
+  const msg = e?.message ?? '';
+  if (e?.code === '23505' || /canal já/i.test(msg)) {
+    // A mensagem do trigger já cita o canal — repassa ela se vier legível.
+    return msg && /canal/i.test(msg)
+      ? msg
+      : 'Esse canal já pertence a outro colaborador.';
+  }
+  return null;
 }
 
 /** Campo de chips pra N canais por colaborador (add por Enter, remove por ×). */
@@ -27,7 +49,7 @@ export function ChannelsField({ channels, onChange }: Props) {
     const value = draft.trim();
     if (!value) return;
     if (!isValidChannel(value)) {
-      setError('Formato inválido. Use talki:<acc>:<inbox> (ex: talki:8:121).');
+      setError('Formato inválido. Use segmentos separados por “:” (ex: talki:8:121 ou router:texnet-talki:cobranca-camila).');
       return;
     }
     if (channels.includes(value)) {

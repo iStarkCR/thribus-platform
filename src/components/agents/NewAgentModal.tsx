@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
-import { ChannelsField } from './ChannelsField';
+import { ChannelsField, channelConflictMessage } from './ChannelsField';
 import { useAppStore } from '@/hooks/useAppStore';
 import { agentsApi, templatesApi } from '@/services/api';
 import type { AgentRole, AgentTemplate, AgentType, AIModel } from '@/types';
@@ -88,8 +88,8 @@ export function NewAgentModal({ onClose }: Props) {
       await loadAgents();
       addToast('Colaborador criado', 'green');
       onClose();
-    } catch {
-      addToast('Erro ao criar colaborador', 'red');
+    } catch (err) {
+      addToast(channelConflictMessage(err) ?? 'Erro ao criar colaborador', 'red');
     } finally {
       setLoading(false);
     }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Trash2, Save, AlertTriangle } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
-import { ChannelsField } from './ChannelsField';
+import { ChannelsField, channelConflictMessage } from './ChannelsField';
 import { AgentMemoryTab } from './AgentMemoryTab';
 import { useAppStore } from '@/hooks/useAppStore';
 import { SaveAsTemplateModal } from './SaveAsTemplateModal';
@@ -76,8 +76,8 @@ export function AgentDetailModal({ agent, onClose }: Props) {
         tools,
       });
       onClose();
-    } catch {
-      addToast('Erro ao salvar', 'red');
+    } catch (err) {
+      addToast(channelConflictMessage(err) ?? 'Erro ao salvar', 'red');
     } finally {
       setSaving(false);
     }
