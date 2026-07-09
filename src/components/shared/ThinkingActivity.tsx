@@ -22,6 +22,37 @@ const looksMarkdown = (s: string) => /(^|\n)#{1,4}\s|\n\s*\|.*\|\s*\n\s*\|?[-:| 
 export type StepAction = 'explica' | 'edai' | 'resume' | 'demand' | 'hub';
 export type OnStepAct = (action: StepAction, ev: RunEvent) => void;
 
+// ─── Visualização do raciocínio (preferência do usuário) ────────────────────
+// Como os passos/raciocínio do colaborador aparecem no chat:
+//   normal    → só a resposta (nenhum passo, nem o "Executado N passos")
+//   pensando  → passo atual no indicador + lista expansível sob demanda (default)
+//   detalhado → lista de passos aberta automaticamente, ao vivo
+// Persistida em localStorage; instâncias sincronizam via CustomEvent.
+export type ReasoningView = 'normal' | 'pensando' | 'detalhado';
+const RV_KEY = 'talk:reasoning-view';
+const RV_EVENT = 'talk:reasoning-view-changed';
+
+export function getReasoningView(): ReasoningView {
+  try {
+    const v = localStorage.getItem(RV_KEY);
+    if (v === 'normal' || v === 'detalhado') return v;
+  } catch { /* privado/SSR */ }
+  return 'pensando';
+}
+export function setReasoningView(v: ReasoningView): void {
+  try { localStorage.setItem(RV_KEY, v); } catch { /* quota/privado */ }
+  window.dispatchEvent(new CustomEvent(RV_EVENT, { detail: v }));
+}
+export function useReasoningView(): ReasoningView {
+  const [v, setV] = useState<ReasoningView>(getReasoningView);
+  useEffect(() => {
+    const on = (e: Event) => setV((e as CustomEvent).detail as ReasoningView);
+    window.addEventListener(RV_EVENT, on);
+    return () => window.removeEventListener(RV_EVENT, on);
+  }, []);
+  return v;
+}
+
 /** Linha de um passo — clicável quando tem input/resultado pra abrir o processo. */
 function StepRow({ e, onOpen }: { e: RunEvent; onOpen: () => void }) {
   const openable = Boolean(e.input || e.result);
@@ -135,9 +166,11 @@ const verbFor = (label: string | null) => (label && VERB[label]) || `usando ${la
 // tempo real (mostra "Executando… rodando X" atualizando) — pra ver o que o
 // colaborador consulta NO MEIO da resposta. Concluída, vira estática.
 export function MessageSteps({ refId, className, onAct, live }: { refId?: string | null; className?: string; onAct?: OnStepAct; live?: boolean }) {
+  const view = useReasoningView();
   const [events, setEvents] = useState<RunEvent[]>([]);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(view === 'detalhado');
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
+  useEffect(() => { if (view === 'detalhado') setOpen(true); }, [view]);
 
   useEffect(() => {
     if (!refId) { setEvents([]); return; }
@@ -151,7 +184,7 @@ export function MessageSteps({ refId, className, onAct, live }: { refId?: string
     return () => { on = false; };
   }, [refId, live]);
 
-  if (!events.length) return null;
+  if (view === 'normal' || !events.length) return null;
 
   const latest = events[events.length - 1];
   const latestLabel = `${verbFor(latest.label)}${latest.detail ? ` ${latest.detail}` : ''}`;
@@ -177,9 +210,11 @@ export function MessageSteps({ refId, className, onAct, live }: { refId?: string
 }
 
 export function ThinkingActivity({ agentName, refId, onAct }: { agentName: string; refId?: string | null; onAct?: OnStepAct }) {
+  const view = useReasoningView();
   const [events, setEvents] = useState<RunEvent[]>([]);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(view === 'detalhado');
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
+  useEffect(() => { if (view === 'detalhado') setOpen(true); }, [view]);
 
   useEffect(() => {
     if (!refId) { setEvents([]); return; }
@@ -193,7 +228,8 @@ export function ThinkingActivity({ agentName, refId, onAct }: { agentName: strin
   // Estágios do colaborador:
   //   • sem tool steps ainda → "pensando…" (com os pontinhos animados)
   //   • com tool steps       → o verbo real da ferramenta (rodando/lendo/…)
-  const hasSteps = events.length > 0;
+  // No modo 'normal' os passos ficam invisíveis: só o "está pensando…".
+  const hasSteps = view !== 'normal' && events.length > 0;
   const latest = hasSteps ? events[events.length - 1] : null;
   const status = latest ? `${verbFor(latest.label)}${latest.detail ? ` ${latest.detail}` : ''}` : 'pensando';
 

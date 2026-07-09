@@ -17,6 +17,7 @@ import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { UsageLimitsBadge } from '@/components/cortex/UsageLimitsBadge';
+import { ReasoningViewBadge } from '@/components/cortex/ReasoningViewBadge';
 import { RoutingBadge } from '@/components/cortex/RoutingBadge';
 import { WorkFolderBar } from '@/components/cortex/WorkFolderBar';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
@@ -1749,6 +1750,7 @@ export function TalkPage() {
               <CortexBrainBar />
               <CortexUsageBadge />
               <UsageLimitsBadge />
+              <ReasoningViewBadge />
               {active && (
                 <WorkFolderBar
                   workingDir={active.workingDir}
