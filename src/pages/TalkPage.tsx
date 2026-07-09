@@ -1417,14 +1417,15 @@ export function TalkPage() {
                   entra DIGITANDO + brilho, como se estivesse te cumprimentando. */}
               <div className="absolute top-[6vh] inset-x-0 z-20 text-center px-6 pointer-events-none">
                 <div>
-                  <div className="greet-anim inline-block text-[clamp(30px,4.8vw,52px)] font-extrabold tracking-tight leading-none">
+                  {/* min(vw,vmin): escala pela MENOR dimensão — notebook 1366×768 não infla o texto */}
+                  <div className="greet-anim inline-block text-[clamp(28px,min(4.8vw,5.6vmin),52px)] font-extrabold tracking-tight leading-none">
                     <Typewriter once phrases={[`${greeting}, ${firstName}`]} speed={85} />
                   </div>
                 </div>
                 {/* Linha dinâmica — EMBAIXO do nome, MESMO efeito de digitação + brilho */}
                 {dynGreet && (
                   <div className="mt-3">
-                    <div className="greet-anim inline-block text-[clamp(15px,2.4vw,23px)] font-semibold tracking-tight leading-snug max-w-[620px]">
+                    <div className="greet-anim inline-block text-[clamp(14px,min(2.4vw,2.8vmin),23px)] font-semibold tracking-tight leading-snug max-w-[620px]">
                       <Typewriter key={dynGreet} once phrases={[dynGreet]} speed={30} />
                     </div>
                   </div>
@@ -1527,7 +1528,7 @@ export function TalkPage() {
                   onClick={() => { setTtsOn(true); send(agent.isSupervisor
                     ? 'Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'
                     : 'Me dá um briefing falado e curtinho de como está a sua área agora: o que precisa de atenção, pendências e próximos passos. Fala natural, como se estivesse me contando ao vivo.'); }}
-                  className="mt-5 flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[14px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
+                  className="mt-5 short:mt-3 flex items-center gap-2 pl-3.5 pr-4 py-2.5 short:py-2 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[14px] short:text-[13px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
                 >
                   <Volume2 size={15} className="shrink-0" /> Ouvir briefing do dia
                 </button>
@@ -1539,7 +1540,7 @@ export function TalkPage() {
                   const sorted = [...visible].sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1));
                   const last = sorted[0];
                   return (
-                    <div className="mt-5 relative">
+                    <div className="mt-5 short:mt-3 relative">
                       <div className="flex items-center gap-3 text-[13px] rounded-full bg-surface-1/80 backdrop-blur-md border border-default px-4 py-2 shadow-[0_10px_28px_-14px_rgba(0,0,0,0.65)]">
                         <button onClick={() => setHistOpen((o) => !o)} className="flex items-center gap-1.5 text-creme-mute hover:text-creme transition-colors">
                           <Clock size={13} className="text-creme-faint" /> histórico <span className="text-creme font-bold">{visible.length}</span>
