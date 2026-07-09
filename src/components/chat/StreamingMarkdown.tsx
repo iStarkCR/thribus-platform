@@ -10,11 +10,16 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Markdown, splitFinalMarker } from '@/components/shared/Markdown';
+import { useReasoningView } from '@/components/shared/ThinkingActivity';
 
 // Accordion do "raciocínio": recolhe a narração de processo (passos, "deixa eu
-// ver", typecheck…) e deixa só a resposta final à mostra. Fechado por padrão.
+// ver", typecheck…) e deixa só a resposta final à mostra. Obedece o seletor
+// "raciocínio" do rodapé: normal = some; pensando = recolhido; detalhado = aberto.
 function ProcessAccordion({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
+  const view = useReasoningView();
+  const [open, setOpen] = useState(view === 'detalhado');
+  useEffect(() => { setOpen(view === 'detalhado'); }, [view]);
+  if (view === 'normal') return null;
   return (
     <div className="mb-2">
       <button
