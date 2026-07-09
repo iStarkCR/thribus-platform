@@ -45,7 +45,8 @@ export interface Agent {
   model: AIModel;
   systemPrompt: string;
   tools: string[];
-  channel?: string;       // slug do canal (ex: texnet-duall) — usado pelo worker
+  channel?: string;       // canal primário (= channels[0]) — usado pelo worker p/ rotear
+  channels?: string[];    // N canais do colaborador (ex: ['talki:8:121']) — multi-canal
   workspaceId?: string;   // multi-tenant — vincula a um workspace com creds
   role?: AgentRole;       // M2: papel do agente (sales/support/finance/...)
   sectorId?: string;      // FK pra sectors — organograma da empresa
@@ -160,6 +161,7 @@ export interface CreateAgentPayload {
   systemPrompt: string;
   tools: string[];
   channel?: string;
+  channels?: string[];
   workspaceId?: string;
   role?: AgentRole;
 }
