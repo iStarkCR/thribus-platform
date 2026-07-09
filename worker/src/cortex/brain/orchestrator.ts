@@ -41,10 +41,51 @@ import type {
   BrainInsight,
   TenantContext,
 } from '../types.js';
-import { analyze } from './analyzer.js';
+import { analyze, type AnalyzerOutput } from './analyzer.js';
+import { isTrivialMessage } from '../agents/model-router.js';
 
 /** Limite de handoffs em cadeia — evita loops infinitos entre agentes. */
 const MAX_HANDOFFS = 3;
+
+/**
+ * Fast-path do Brain: decide a rota SEM chamar o analyzer (economiza 1
+ * roundtrip Haiku por turno) em dois casos determinísticos:
+ *   1. Caller já forçou o agente via req.hints.forceAgent → roteia direto.
+ *   2. Mensagem trivial (saudação/confirmação/curtíssima) → Brain responde
+ *      direto com um ack curto (selectedAgentId=null).
+ * Retorna null quando não há fast-path (segue pro analyzer normal).
+ */
+function fastPathRoute(req: AnalyzeRequest): AnalyzerOutput | null {
+  const zeroUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
+
+  const forced = req.hints?.forceAgent;
+  if (forced && agentRegistry.get(forced)) {
+    return {
+      selectedAgentId: forced,
+      intent: 'forced_route',
+      confidence: 1,
+      reasoning: 'fast-path: hints.forceAgent (analyzer pulado)',
+      insights: [],
+      usage: zeroUsage,
+      model: 'fast-path',
+    };
+  }
+
+  if (isTrivialMessage(req.input)) {
+    return {
+      selectedAgentId: null,
+      intent: 'trivial',
+      confidence: 1,
+      reasoning: 'fast-path: mensagem trivial (analyzer pulado)',
+      insights: [],
+      directReply: 'Oi! Como posso ajudar?',
+      usage: zeroUsage,
+      model: 'fast-path',
+    };
+  }
+
+  return null;
+}
 
 /**
  * Grava decision trace no painel (tabela decision_traces) — fire-and-forget.
@@ -206,8 +247,8 @@ export async function orchestrate(
   const combinedMemory = [memoryBlock, ragBlock].filter(Boolean).join('\n\n');
 
   try {
-    // ─── 2. Analyzer ───────────────────────────────────────────────────────
-    const analyzerOut = await analyze(req, session, apiKey);
+    // ─── 2. Analyzer (com fast-path pra turnos triviais / forceAgent) ──────
+    const analyzerOut = fastPathRoute(req) ?? (await analyze(req, session, apiKey));
     selectedAgentId = analyzerOut.selectedAgentId;
     intent = analyzerOut.intent;
     confidence = analyzerOut.confidence;
