@@ -10,6 +10,10 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      screens: {
+        // Viewport baixo (notebook 1366×768, Windows com zoom 125%) — compacta o hero
+        short: { raw: '(max-height: 760px)' },
+      },
       fontFamily: {
         // --font-ui é definida por useFont (default Manrope) → troca de fonte
         // re-renderiza toda a UI em tempo real. Manrope permanece como fallback.
