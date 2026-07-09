@@ -111,10 +111,13 @@ export function effortIndex(e: CortexEffort): number {
 export type CortexMode = 'auto' | 'manual';
 
 // Teto de contexto: quanto a conversa acumula (tokens do turno) antes de o daemon
-// rotacionar / a ponte resetar a sessão. Piso 250k; teto 1M (janela do Max).
-export const CONTEXT_LIMIT_MIN = 250_000;
+// rotacionar / a ponte resetar a sessão. O gatilho REAL da ponte é 70% deste
+// valor (CONTEXT_RESET_FRACTION) — compacta antes de encostar no teto; o custo
+// por turno escala linear com a janela. Piso 100k; teto 1M (janela do Max).
+export const CONTEXT_LIMIT_MIN = 100_000;
 export const CONTEXT_LIMIT_MAX = 1_000_000;
 export const CONTEXT_LIMIT_STEP = 50_000;
+export const CONTEXT_RESET_FRACTION = 0.7;
 
 const clampContext = (n: number) =>
   Math.min(CONTEXT_LIMIT_MAX, Math.max(CONTEXT_LIMIT_MIN, Math.round(n) || CONTEXT_LIMIT_MIN));

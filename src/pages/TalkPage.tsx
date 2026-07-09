@@ -2264,7 +2264,7 @@ function ContextMeter({ tokens }: { tokens: number }) {
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 text-[12.5px] text-creme-faint hover:text-creme-mute transition-colors"
-        title="Teto de contexto — clique pra ajustar. Quando a conversa passa do teto, ela reseta resumindo o fio."
+        title="Teto de contexto — clique pra ajustar. Quando a conversa passa de 70% do teto, ela reseta resumindo o fio."
       >
         <span>contexto</span>
         <div className="w-16 h-1.5 rounded-full bg-surface-3 overflow-hidden">
@@ -2292,10 +2292,10 @@ function ContextMeter({ tokens }: { tokens: number }) {
               className="w-full accent-brand-bright cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-creme-faint font-mono mt-0.5">
-              <span>250k · enxuto</span><span>1M · memória longa</span>
+              <span>100k · enxuto</span><span>1M · memória longa</span>
             </div>
             <p className="text-[11px] text-creme-mute mt-1.5 leading-snug">
-              Quando a conversa passa de <strong className="text-creme-mute font-semibold">{fmtLimit(limit)}</strong>, o time reseta resumindo o fio. Menor = mais barato; maior = lembra mais.
+              Quando a conversa passa de <strong className="text-creme-mute font-semibold">{fmtLimit(Math.round(limit * 0.7))}</strong> (70% do teto), o time reseta resumindo o fio. Menor = mais barato; maior = lembra mais.
             </p>
           </div>
         </>

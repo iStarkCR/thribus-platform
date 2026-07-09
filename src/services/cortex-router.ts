@@ -70,6 +70,12 @@ export interface RouteResult {
    * na conversa.
    */
   stickyModel: CortexModel | null;
+  /**
+   * true = o modelo desta rodada veio do STICKY (a mensagem em si classificou
+   * mais baixo). O caller usa isso pra NÃO renovar o timestamp do sticky — uma
+   * sequência de "ok"/"sim" deixa o pin expirar e a conversa decai pro barato.
+   */
+  kept: boolean;
 }
 
 const rankOf = (m: CortexModel): number => MODEL_RANK[m] ?? DEFAULT_RANK;
@@ -91,6 +97,7 @@ export function route(input: RouteInput): RouteResult {
   let source: RouteResult['source'];
   let stickyModel: CortexModel | null;
   let reason: string;
+  let kept = false;
 
   if (ctx.forcedModel) {
     // Override manual: vence a heurística e NÃO mexe no sticky (igual daemon).
@@ -103,7 +110,6 @@ export function route(input: RouteInput): RouteResult {
     // Cortex Brain + STICKY: o modelo só sobe na conversa. Manter o atual numa
     // mensagem igual/mais simples preserva o prompt cache quente.
     model = brain.model;
-    let kept = false;
     if (currentModel && currentModel !== brain.model && rankOf(brain.model) <= rankOf(currentModel)) {
       model = currentModel;
       kept = true;
@@ -123,10 +129,10 @@ export function route(input: RouteInput): RouteResult {
     model = VISION_FLOOR_MODEL;
   }
 
-  // --effort só faz efeito em modelos de raciocínio (opus/fable). Para os demais
-  // o esforço é descartado — refletimos isso no resultado em vez de carregar um
-  // valor que não seria aplicado.
-  const effectiveEffort = brainOf(model).effortable ? effort : null;
+  // --effort faz efeito em opus/fable; no sonnet a ponte repassa via forceEffort
+  // (Fase 3: o esforço é a alavanca principal do sonnet-cavalo-de-batalha; se o
+  // CLI ignorar, é no-op inofensivo). Só o haiku descarta.
+  const effectiveEffort = brainOf(model).effortable || model === 'sonnet' ? effort : null;
 
-  return { tier: brain.tier, model, effort: effectiveEffort, reason, source, stickyModel };
+  return { tier: brain.tier, model, effort: effectiveEffort, reason, source, stickyModel, kept };
 }
