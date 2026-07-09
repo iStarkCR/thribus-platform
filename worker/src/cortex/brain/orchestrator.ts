@@ -22,7 +22,7 @@ import { executeAgent } from '../agents/executor.js';
 import { agentRegistry } from '../agents/registry.js';
 import { HANDOFF_TOOL_NAME } from '../agents/tools/handoff.js';
 import { writeAudit } from '../audit/log.js';
-import { recordUsage } from '../guardrails/index.js';
+import { recordUsage, validateAgentOutput } from '../guardrails/index.js';
 import { formatMemoryContext, longTermMemory } from '../memory/long-term.js';
 import { formatRagContext, semanticMemory } from '../memory/semantic.js';
 import { shortTermMemory } from '../memory/short-term.js';
@@ -375,6 +375,39 @@ export async function orchestrate(
         }
 
         break; // sem mais handoffs → encerra loop
+      }
+    }
+
+    // Guardrail Fase 3: output validation — sanitiza a resposta antes de
+    // sair (PII leak mascarado, prompt leak vira mensagem neutra, truncamento)
+    if (replyText && process.env.CORTEX_OUTPUT_VALIDATION !== 'false') {
+      const ov = validateAgentOutput(replyText);
+      if (ov.promptLeakDetected) {
+        logger.warn('output validation: prompt leak detectado', {
+          tenantId: tenant.tenantId,
+          traceId,
+          sessionId: req.sessionId,
+        });
+        actions.push({
+          type: 'noop',
+          payload: { output_blocked: true, reason: 'prompt_leak_detected' },
+          riskLevel: 3,
+        });
+        replyText =
+          'Desculpe, não posso compartilhar detalhes da minha configuração interna. Posso ajudar com mais alguma coisa?';
+      } else {
+        if (ov.piiMasked > 0 || ov.truncated) {
+          actions.push({
+            type: 'noop',
+            payload: {
+              output_sanitized: true,
+              pii_masked: ov.piiMasked,
+              truncated: ov.truncated,
+            },
+            riskLevel: 1,
+          });
+        }
+        replyText = ov.text;
       }
     }
 

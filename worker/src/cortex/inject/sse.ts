@@ -25,6 +25,7 @@
 
 import express, { type Request, type Response, Router } from 'express';
 import { orchestrate } from '../brain/orchestrator.js';
+import { applyGuardrails } from '../guardrails/index.js';
 import type { AnalyzeRequest, EntityRef } from '../types.js';
 import { authenticate, resolveAnthropicKey } from './auth.js';
 
@@ -92,6 +93,17 @@ export function createStreamRouter(): Router {
       return;
     }
 
+    // Guardrails (rate, cost, injection, content, PII) — paridade com /analyze
+    const guard = await applyGuardrails(tenant, v.req);
+    if (!guard.allow) {
+      res.status(guard.statusCode ?? 429).json({
+        error: guard.reason,
+        details: guard.details,
+      });
+      return;
+    }
+    const analyzeReq = guard.req;
+
     // Headers SSE
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -104,11 +116,11 @@ export function createStreamRouter(): Router {
       aborted = true;
     });
 
-    writeEvent(res, 'started', { sessionId: v.req.sessionId, ts: new Date().toISOString() });
+    writeEvent(res, 'started', { sessionId: analyzeReq.sessionId, ts: new Date().toISOString() });
 
     try {
       const apiKey = resolveAnthropicKey(tenant);
-      const result = await orchestrate(tenant, v.req, apiKey);
+      const result = await orchestrate(tenant, analyzeReq, apiKey);
 
       if (aborted) {
         res.end();
