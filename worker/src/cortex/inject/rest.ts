@@ -19,6 +19,7 @@ import { orchestrate } from '../brain/orchestrator.js';
 import { applyGuardrails } from '../guardrails/index.js';
 import { shortTermMemory } from '../memory/short-term.js';
 import { snapshot as metricsSnapshot } from '../observability/metrics.js';
+import { renderPrometheus } from '../observability/prometheus.js';
 import { createAdminRouter } from './admin.js';
 import { createSsoRouter } from '../auth/sso.js';
 import { createBillingRouter } from '../billing/stripe.js';
@@ -145,6 +146,20 @@ export function createCortexRouter(): Router {
       return;
     }
     res.json(metricsSnapshot());
+  });
+
+  // Fase 3: scrape do Prometheus (text exposition format). Auth via token
+  // dedicado de scrape (METRICS_SCRAPE_TOKEN) ou api_key de tenant.
+  router.get('/metrics/prometheus', async (req: Request, res: Response) => {
+    const auth = req.headers.authorization as string | undefined;
+    const scrapeToken = process.env.METRICS_SCRAPE_TOKEN;
+    const isScrape = scrapeToken && auth === `Bearer ${scrapeToken}`;
+    if (!isScrape && !(await authenticate(auth))) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.send(renderPrometheus());
   });
 
   router.get('/agents', async (req: Request, res: Response) => {
