@@ -1433,7 +1433,10 @@ export function TalkPage() {
                 )}
               </div>
 
-              <div className="relative z-10 w-full max-w-[600px] flex flex-col items-center text-center px-6">
+              {/* max-width segue vmin igual a esfera (82vmin/640px) — em tela baixa
+                  e larga (notebook) a esfera encolhe mas a barra ficava no cap de
+                  600px, maior que a esfera atrás dela. */}
+              <div className="relative z-10 w-full max-w-[min(600px,74vmin)] flex flex-col items-center text-center px-6">
                 {/* Começo rápido — chips do COO (caixa/infra/demandas) SÓ pro Bukowiski (supervisor).
                     Pros outros colaboradores não faz sentido — fica só a barra. */}
                 {/* Atenção agora — só aparece quando há algo real pra ver (escalações + sistemas com problema) */}
