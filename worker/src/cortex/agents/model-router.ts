@@ -55,6 +55,19 @@ const TRIVIAL_MAX_CHARS = 15;
  * Roteia o model id baseado na complexidade heurística do texto do cliente.
  * Retorna o id do tier escolhido.
  */
+/**
+ * Detecta mensagem trivial (saudação/confirmação/curtíssima) reaproveitando a
+ * mesma heurística do tier trivial do routeModel. Usado pelo Brain pra fazer
+ * fast-path e pular o roundtrip do analyzer (Haiku) em turnos triviais.
+ */
+export function isTrivialMessage(userText: string): boolean {
+  const raw = (userText ?? '').trim();
+  if (!raw) return false;
+  const normalized = raw.toLowerCase();
+  if (TRIVIAL_PHRASES.has(normalized)) return true;
+  return raw.length <= TRIVIAL_MAX_CHARS && !raw.includes('?') && !/\d/.test(raw);
+}
+
 export function routeModel(userText: string, tiers: ModelTiers): string {
   const raw = (userText ?? '').trim();
   const normalized = raw.toLowerCase();

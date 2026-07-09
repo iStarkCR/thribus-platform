@@ -1,0 +1,18 @@
+# Template — __CORTEX_WORKER_HOST__ é substituído no entrypoint do container
+# (ver docker-compose.yml). O token de scrape vai em /prometheus/scrape-token.
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: cortex-worker
+    metrics_path: /cortex/metrics/prometheus
+    scheme: https
+    authorization:
+      type: Bearer
+      credentials_file: /prometheus/scrape-token
+    static_configs:
+      - targets: ["__CORTEX_WORKER_HOST__"]
+        labels:
+          service: cortex-brain

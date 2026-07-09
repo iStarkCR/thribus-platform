@@ -58,11 +58,14 @@ async function runOnce(): Promise<void> {
   const agents = await db.agents.listWithChannel();
   if (agents.length === 0) return;
 
-  // Agrupa agents por canal (1 canal = 1 agent na tabela, mas defensivo)
+  // Agrupa agents por canal. Multi-canal: um agente pode atender N canais
+  // (channels[]), então mapeia cada um. Fallback pro singular se o array
+  // estiver vazio (agente legado). O trigger no DB garante 1 canal → 1 agente.
   const channelToAgent = new Map<string, (typeof agents)[number]>();
   for (const a of agents) {
-    if (a.channel && !channelToAgent.has(a.channel)) {
-      channelToAgent.set(a.channel, a);
+    const chans = a.channels?.length ? a.channels : a.channel ? [a.channel] : [];
+    for (const ch of chans) {
+      if (!channelToAgent.has(ch)) channelToAgent.set(ch, a);
     }
   }
 
