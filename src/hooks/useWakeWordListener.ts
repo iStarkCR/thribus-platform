@@ -105,8 +105,10 @@ export function useWakeWordListener({
     let restartTimer: ReturnType<typeof setTimeout> | null = null;
     let lastWakeAt = 0;
     let started = false;
+    let releaseLock: (() => void) | null = null;
+    let waitLogTimer: ReturnType<typeof setTimeout> | null = null;
 
-    (async () => {
+    const run = async () => {
       // Permissão de mic PRIMEIRO (padrão CORTEX): sem isso o SpeechRecognition
       // falha com 'not-allowed' sem nunca mostrar prompt. O stream é fechado na
       // hora — o reconhecedor abre o próprio stream interno.
@@ -184,13 +186,38 @@ export function useWakeWordListener({
         console.warn('[wake] start falhou:', (err as Error)?.message);
         onErrorRef.current?.((err as Error)?.message || 'start-failed');
       }
-    })();
+    };
+
+    // O Chrome só permite UMA sessão de SpeechRecognition por NAVEGADOR — duas
+    // abas do painel abortam uma à outra em loop e a wake word nunca fica viva.
+    // Web Locks elege uma aba "líder": só ela escuta; fechou/desligou, a próxima
+    // aba na fila assume sozinha.
+    const locks = (navigator as any).locks;
+    if (locks?.request) {
+      waitLogTimer = setTimeout(() => {
+        console.log('[wake] outra aba do painel já está escutando — esta fica em espera');
+      }, 1500);
+      locks
+        .request('thribus-wake-word', { mode: 'exclusive' }, () => {
+          if (waitLogTimer) { clearTimeout(waitLogTimer); waitLogTimer = null; }
+          if (cancelled) return; // desligado enquanto esperava — solta o lock
+          console.log('[wake] esta aba assumiu a escuta');
+          void run();
+          // segura o lock até o cleanup (aba fechada / wake word desligada)
+          return new Promise<void>((res) => { releaseLock = res; });
+        })
+        .catch(() => { /* lock abortado — cleanup já rodou */ });
+    } else {
+      void run();
+    }
 
     return () => {
       cancelled = true;
       if (restartTimer) clearTimeout(restartTimer);
+      if (waitLogTimer) clearTimeout(waitLogTimer);
       try { recognition?.abort(); } catch { /* noop */ }
       recognition = null;
+      releaseLock?.();
     };
   }, [enabled, lang]);
 }
