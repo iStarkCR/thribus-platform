@@ -223,16 +223,16 @@ describe('classifyPainel — Fase 3: sonnet cavalo de batalha', () => {
   });
 
   // ── tamanho puro escala DENTRO do sonnet ──
-  it('longo-leve curto (<400) → sonnet médio', () => {
-    expect(classifyPainel(filler(300)).tier).toBe('médio');
+  it('longo-leve curto (<550) → sonnet médio', () => {
+    expect(classifyPainel(filler(400)).tier).toBe('médio');
   });
-  it('longo-leve 400–900 → sonnet high', () => {
-    const r = classifyPainel(filler(500));
+  it('longo-leve 550–1100 → sonnet high', () => {
+    const r = classifyPainel(filler(700));
     expect(r.model).toBe('sonnet');
     expect(r.effort).toBe('high');
   });
-  it('longo-leve > 900 → sonnet max', () => {
-    const r = classifyPainel(filler(1000));
+  it('longo-leve > 1100 → sonnet max', () => {
+    const r = classifyPainel(filler(1200));
     expect(r.model).toBe('sonnet');
     expect(r.effort).toBe('max');
   });
