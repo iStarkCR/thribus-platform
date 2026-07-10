@@ -100,6 +100,9 @@ export function FloatingOrb() {
   useWakeWordListener({
     enabled: orbEnabled && wakeWordEnabled && !conv.voiceActive && !chatOpen && !voiceModeActive && !sttBusy,
     onWake,
+    onError: (err) => {
+      if (err === 'mic-denied') useAppStore.getState().addToast('Palavra de ativação sem microfone: libere o mic pro site nas permissões do navegador.', 'red');
+    },
   });
 
   // ─── Drag ──────────────────────────────────────────────────────────────────

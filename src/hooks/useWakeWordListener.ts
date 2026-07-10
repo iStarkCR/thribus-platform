@@ -17,6 +17,12 @@ export function isWakeWordSupported(): boolean {
   return Boolean(SR);
 }
 
+// Debug ao vivo: localStorage.setItem('wakeDebug','1') → loga no console tudo
+// que o reconhecedor entende ([wake] …), inclusive erros e o que acionou.
+const wakeDebug = (): boolean => {
+  try { return localStorage.getItem('wakeDebug') === '1'; } catch { return false; }
+};
+
 // Variações de STT pra "Bukowiski" (português erra muito nome próprio).
 // Bem permissivo: b + u/o + c/k + (vogal) + (w/v) + (i) + sk → cobre quase todo
 // jeito que o reconhecimento escreve o nome, em uma palavra ou separado.
@@ -105,10 +111,12 @@ export function useWakeWordListener({
             const res = e.results[i];
             for (let j = 0; j < (res?.length ?? 0); j++) {
               const transcript = String(res[j]?.transcript ?? '');
+              if (wakeDebug() && transcript.trim()) console.log('[wake] ouvi (alt ' + j + (res.isFinal ? ', final' : '') + '): "' + transcript.trim() + '"');
               if (!matchesWake(transcript)) continue;
               const now = Date.now();
               if (now - lastWakeAt < 3000) return; // debounce 3s
               lastWakeAt = now;
+              if (wakeDebug()) console.log('[wake] ACIONOU com: "' + transcript.trim() + '"');
               onWakeRef.current(transcript.trim());
               return;
             }
@@ -116,6 +124,7 @@ export function useWakeWordListener({
         };
 
         recog.onerror = (e: any) => {
+          if (wakeDebug() && e?.error && e.error !== 'no-speech') console.log('[wake] erro: ' + e.error);
           if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') {
             stopped = true; // permissão negada — para de tentar
             onErrorRef.current?.('mic-denied');
@@ -131,6 +140,7 @@ export function useWakeWordListener({
         };
 
         recog.start();
+        if (wakeDebug()) console.log('[wake] escutando…');
         // Recicla periodicamente pra não acumular um transcript gigante (degrada a precisão).
         freshTimer = setTimeout(() => { try { recog.stop(); } catch { /* noop */ } }, FRESH_MS);
       } catch {
