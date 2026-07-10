@@ -308,6 +308,7 @@ export function TalkPage() {
       sendAndAwait: panelSendAndAwait,
       quickAck: (t) => quickAck(aid, t),
       isNoise,
+      isStopPhrase, // barge-in: "parar"/"Bukowiski parar" corta a resposta no meio
       onState: (s) => setPanelVoiceState(mapVoiceState(s)),
       onLevel: (rms) => {
         // Esfera reativa à voz (estilo CORTEX): suaviza e atualiza throttled (~12fps).

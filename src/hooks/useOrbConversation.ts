@@ -185,6 +185,7 @@ export function useOrbConversation() {
       sendAndAwait: (t) => sendAndAwait(t, true), // voz → modelo leve na ponte
       quickAck: (t) => quickAck(BUKOWISKI_ID, t),
       isNoise,
+      isStopPhrase, // barge-in: "parar"/"Bukowiski parar" corta a resposta no meio
       onState: (s) => setState(mapVoiceState(s)),
       onTranscript: (t) => { if (isStopPhrase(t)) stopVoice(); },
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),

@@ -49,9 +49,49 @@ function normalize(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
+// ─── Fuzzy match por distância de edição ─────────────────────────────────────
+// As regex cobrem os erros PREVISÍVEIS do STT; a distância de edição pega o
+// resto ("bucovisque", "bukowinski", "pokowiski"…). Comparamos cada palavra —
+// e pares de palavras adjacentes coladas ("buco visqui") — contra "bukowiski".
+const WAKE_TARGET = 'bukowiski';
+const WAKE_MAX_DIST = 3;
+
+// Achata grafias equivalentes do STT pt-BR antes de medir distância:
+// "bucovisqui" → "bucoviski" (qu→k), "bukowsky" → "bukowski" (y→i).
+const squash = (w: string): string => w.replace(/qu/g, 'k').replace(/y/g, 'i');
+
+function editDistance(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > WAKE_MAX_DIST) return WAKE_MAX_DIST + 1;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] : 1 + Math.min(prev[j - 1], prev[j], cur[j - 1]);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+function fuzzyWake(t: string): boolean {
+  const words = t.replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean).map(squash);
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    // Palavra sozinha: precisa começar com consoante plausível e ter tamanho perto.
+    if (w.length >= 6 && /^[bmpvg]/.test(w) && editDistance(w, WAKE_TARGET) <= WAKE_MAX_DIST) return true;
+    // Par colado ("buco visqui" → "bucovisqui").
+    if (i + 1 < words.length) {
+      const pair = w + words[i + 1];
+      if (pair.length >= 7 && /^[bmpvg]/.test(pair) && editDistance(pair, WAKE_TARGET) <= WAKE_MAX_DIST) return true;
+    }
+  }
+  return false;
+}
+
 function matchesWake(text: string): boolean {
   const t = normalize(text);
-  return WAKE_PATTERNS.some((re) => re.test(t));
+  return WAKE_PATTERNS.some((re) => re.test(t)) || fuzzyWake(t);
 }
 
 /**
@@ -72,6 +112,19 @@ export function extractWakeCommand(transcript: string): string {
       .replace(/^[\s,.!?;:]+/, '')
       .replace(/^(ai|entao|por favor|faz favor|escuta|olha)[\s,]+/i, '')
       .trim();
+  }
+  // Fallback: o nome só bateu no fuzzy — corta depois da palavra (ou par) que casou.
+  const words = t.replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  for (let i = 0; i < words.length; i++) {
+    const sw = squash(words[i]);
+    const one = sw.length >= 6 && /^[bmpvg]/.test(sw) && editDistance(sw, WAKE_TARGET) <= WAKE_MAX_DIST;
+    const pairStr = i + 1 < words.length ? sw + squash(words[i + 1]) : '';
+    const two = pairStr.length >= 7 && /^[bmpvg]/.test(pairStr) && editDistance(pairStr, WAKE_TARGET) <= WAKE_MAX_DIST;
+    if (one || two) {
+      return words.slice(i + (two && !one ? 2 : 1)).join(' ')
+        .replace(/^(ai|entao|por favor|faz favor|escuta|olha)\s+/i, '')
+        .trim();
+    }
   }
   return '';
 }
