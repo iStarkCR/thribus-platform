@@ -139,6 +139,23 @@ export class VoiceController {
     this._refreshState();
   }
 
+  /**
+   * Injeta um texto como se fosse um turno já transcrito — usado pela wake word
+   * quando o comando veio junto do nome ("Bukowiski, me dá o status"): a frase
+   * capturada pelo reconhecedor entra direto na fila, sem esperar nova fala.
+   */
+  injectText(text: string): void {
+    const t = text.trim();
+    if (!t || this.cancelled) return;
+    this.o.onTranscript?.(t);
+    const id = `t${++this.turnSeq}`;
+    this.turns.push({ id, text: t, status: 'queued' });
+    this._emitTurns();
+    this._refreshState();
+    this.replyQueue.push({ id, text: t });
+    if (!this.replyRunning) void this._runReplies();
+  }
+
   async start(): Promise<void> {
     this.cancelled = false;
     try {

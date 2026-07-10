@@ -165,8 +165,13 @@ export function useOrbConversation() {
   }, [userId]);
 
   // ─── Modo voz (VoiceController) ─────────────────────────────────────────────
-  const startVoice = useCallback(() => {
-    if (ctrlRef.current) return;
+  // `initialText`: comando que veio JUNTO da wake word ("Bukowiski, me dá o
+  // status") — entra direto na fila de turnos, sem esperar você repetir.
+  const startVoice = useCallback((initialText?: string) => {
+    if (ctrlRef.current) {
+      if (initialText) ctrlRef.current.injectText(initialText);
+      return;
+    }
     const ctrl = new VoiceController({
       transcribe: async (blob) => (await transcribeBlob(BUKOWISKI_ID, blob)) ?? '',
       tts: (txt) => ttsBlob(BUKOWISKI_ID, txt),
@@ -180,6 +185,7 @@ export function useOrbConversation() {
     ctrlRef.current = ctrl;
     setVoiceActive(true);
     ctrl.start();
+    if (initialText) ctrl.injectText(initialText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendAndAwait]);
 

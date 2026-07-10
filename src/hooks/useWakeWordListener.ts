@@ -23,12 +23,13 @@ export function isWakeWordSupported(): boolean {
 // O Chrome frequentemente troca o "B" inicial por "M" (ou "P"): "mucovisk",
 // "muco", "pucovisk". Por isso aceitamos [bmp] no começo.
 const WAKE_PATTERNS = [
-  /[bmp][uo][ck][oae]?[wv]?[ií]?sk/i, // bukowisk, mucovisk, bucovisk, bukosk…
-  /[bmp][uo][ck][oae]?\s*[wv][ií]?sk/i, // "buco visk", "muco visk"
-  /[bmp][uo][ck]o?[wv][ií]s\b/i, // bucovis, mucovis (corta o "k")
-  /[bmp][uo][ck][oae]?[wv][ií]/i, // bukowi, mucovi, bucovi — casa ANTES do "sk"
+  /[bmpv][uo][ck][oae]?[wv]?[ií]?sk/i, // bukowisk, mucovisk, bucovisk, bukosk, vucovisk…
+  /[bmpv][uo][ck][oae]?\s*[wv][ií]?sk/i, // "buco visk", "muco visk"
+  /[bmpv][uo][ck]o?[wv][ií]s\b/i, // bucovis, mucovis (corta o "k")
+  /[bmpv][uo][ck][oae]?[wv][ií]/i, // bukowi, mucovi, bucovi — casa ANTES do "sk"
   /\b[bmp]uk[oae]?w?ski?\b/i, // bukowski, mukowski
   /book.{0,4}sk/i, // mishear "book of ski"
+  /[bmp][uo][ck][oae]?\s*(u[ií]s|w?[uí]?[ií]sq|wh?isk)/i, // "buco uísque", "buko whisky"
 ];
 
 function normalize(s: string): string {
@@ -38,6 +39,28 @@ function normalize(s: string): string {
 function matchesWake(text: string): boolean {
   const t = normalize(text);
   return WAKE_PATTERNS.some((re) => re.test(t));
+}
+
+/**
+ * Extrai o COMANDO dito junto com a wake word ("Bukowiski, me dá o status" →
+ * "me da o status"). Devolve '' se a pessoa só chamou o nome. Trabalha no texto
+ * normalizado (sem acento) — suficiente pro modelo entender.
+ */
+export function extractWakeCommand(transcript: string): string {
+  const t = normalize(transcript);
+  for (const re of WAKE_PATTERNS) {
+    const m = re.exec(t);
+    if (!m) continue;
+    // pula o resto do "nome" (chars colados na wake word) até o 1º separador
+    let i = m.index + m[0].length;
+    while (i < t.length && !/[\s,.!?;:]/.test(t[i])) i++;
+    return t
+      .slice(i)
+      .replace(/^[\s,.!?;:]+/, '')
+      .replace(/^(ai|entao|por favor|faz favor|escuta|olha)[\s,]+/i, '')
+      .trim();
+  }
+  return '';
 }
 
 export function useWakeWordListener({
@@ -73,17 +96,22 @@ export function useWakeWordListener({
         recog.lang = lang;
         recog.continuous = true;
         recog.interimResults = true;
-        recog.maxAlternatives = 1;
+        recog.maxAlternatives = 4;
 
         recog.onresult = (e: any) => {
           for (let i = e.resultIndex; i < e.results.length; i++) {
-            const transcript = String(e.results[i][0]?.transcript ?? '');
-            if (!matchesWake(transcript)) continue;
-            const now = Date.now();
-            if (now - lastWakeAt < 3000) return; // debounce 3s
-            lastWakeAt = now;
-            onWakeRef.current(transcript.trim());
-            return;
+            // Varre TODAS as alternativas do STT — "Bukowiski" é nome próprio e
+            // muitas vezes só aparece na 2ª/3ª hipótese do reconhecedor.
+            const res = e.results[i];
+            for (let j = 0; j < (res?.length ?? 0); j++) {
+              const transcript = String(res[j]?.transcript ?? '');
+              if (!matchesWake(transcript)) continue;
+              const now = Date.now();
+              if (now - lastWakeAt < 3000) return; // debounce 3s
+              lastWakeAt = now;
+              onWakeRef.current(transcript.trim());
+              return;
+            }
           }
         };
 
