@@ -47,6 +47,28 @@ interface ModelPrice {
  */
 const PRICING: Record<string, ModelPrice> = {
   // ─── Anthropic — input_tokens NÃO inclui cached ──────────────────────────
+  // ── Atuais (jul/2026) ──
+  'claude-fable-5': {
+    input: 10.00, output: 50.00,
+    cacheRead: 1.00, cacheCreation: 12.50,
+    cachedIncludedInInput: false,
+  },
+  'claude-opus-4-8': {
+    input: 5.00, output: 25.00,
+    cacheRead: 0.50, cacheCreation: 6.25,
+    cachedIncludedInInput: false,
+  },
+  'claude-sonnet-5': {
+    input: 3.00, output: 15.00,
+    cacheRead: 0.30, cacheCreation: 3.75,
+    cachedIncludedInInput: false,
+  },
+  'claude-haiku-4-5-20251001': {
+    input: 1.00, output: 5.00,
+    cacheRead: 0.10, cacheCreation: 1.25,
+    cachedIncludedInInput: false,
+  },
+  // ── Legacy (mantidos p/ compat de agentes já gravados) ──
   'claude-opus-4-7': {
     input: 15.00, output: 75.00,
     cacheRead: 1.50, cacheCreation: 18.75,
@@ -55,11 +77,6 @@ const PRICING: Record<string, ModelPrice> = {
   'claude-sonnet-4-5-20250929': {
     input: 3.00, output: 15.00,
     cacheRead: 0.30, cacheCreation: 3.75,
-    cachedIncludedInInput: false,
-  },
-  'claude-haiku-4-5-20251001': {
-    input: 1.00, output: 5.00,
-    cacheRead: 0.10, cacheCreation: 1.25,
     cachedIncludedInInput: false,
   },
   // ─── OpenAI — prompt_tokens INCLUI cached ────────────────────────────────
