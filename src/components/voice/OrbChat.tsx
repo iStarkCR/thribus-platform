@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Send, Mic, Loader2, AudioLines } from 'lucide-react';
+import { X, Send, Mic, Loader2, AudioLines, Plus } from 'lucide-react';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { Markdown } from '@/components/shared/Markdown';
@@ -34,7 +34,14 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
-  const submit = () => { const t = input.trim(); if (!t) return; setInput(''); conv.send(t); };
+  const submit = () => {
+    const t = input.trim();
+    if (!t) return;
+    setInput('');
+    // Comando local — NÃO vai pro modelo: zera a conversa (sessão nova, contexto limpo).
+    if (/^\/(limpar|clear|nova|novo|reset|new)\b/i.test(t)) { void conv.resetSession(); return; }
+    conv.send(t);
+  };
 
   return (
     <div className="fixed z-[61] flex flex-col rounded-2xl border border-default bg-surface-1/95 backdrop-blur-md shadow-2xl overflow-hidden" style={style}>
@@ -51,7 +58,10 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
             </div>
           </div>
         </div>
-        <button onClick={onClose} title="Fechar" className="w-7 h-7 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover flex items-center justify-center shrink-0"><X size={15} /></button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button onClick={() => void conv.resetSession()} title="Nova conversa — limpa o contexto (/limpar)" className="w-7 h-7 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover flex items-center justify-center"><Plus size={15} /></button>
+          <button onClick={onClose} title="Fechar" className="w-7 h-7 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover flex items-center justify-center"><X size={15} /></button>
+        </div>
       </div>
 
       {/* Thread */}

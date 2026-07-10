@@ -199,6 +199,21 @@ export function useOrbConversation() {
 
   useEffect(() => () => { ctrlRef.current?.stop(); ctrlRef.current = null; }, []);
 
+  // "/limpar": abre uma sessão NOVA da orbe (contexto zerado — nada é
+  // reprocessado). A antiga fica no histórico da pasta __orbe__.
+  const resetSession = useCallback(async () => {
+    if (!userId) return;
+    stopVoice();
+    pendingReplyRef.current = null;
+    const s = await createSession(BUKOWISKI_ID, userId, { title: 'Orbe — conversa rápida', folderId: orbFolderRef.current }).catch(() => null);
+    if (!s) { useAppStore.getState().addToast('Não consegui criar a conversa nova.', 'red'); return; }
+    sessionRef.current = s.id;
+    setSessionId(s.id);
+    if (typeof localStorage !== 'undefined') localStorage.setItem(ORB_SESSION_KEY, s.id);
+    setMessages([]);
+    useAppStore.getState().addToast('Conversa da orbe limpa — contexto zerado.', 'green');
+  }, [userId, stopVoice]);
+
   // Chat de texto (OrbChat) — envia sem TTS.
   const send = useCallback((textArg: string) => { void sendAndAwait(textArg).then(() => refetch()); }, [sendAndAwait, refetch]);
 
@@ -216,6 +231,7 @@ export function useOrbConversation() {
     send,
     startVoice,
     stopVoice,
+    resetSession,
     bindInputSink: (fn: ((t: string) => void) | null) => { inputSinkRef.current = fn; },
     listenForInput: () => { /* push-to-talk do input: usa o modo voz */ },
   };
