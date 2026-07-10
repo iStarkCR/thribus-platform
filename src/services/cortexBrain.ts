@@ -58,7 +58,7 @@ export const CORTEX_BRAINS: CortexBrain[] = [
   {
     model: 'sonnet',
     name: 'Cortex Brain Core',
-    real: 'Claude Sonnet 4.6',
+    real: 'Claude Sonnet 5',
     tagline: 'Equilíbrio velocidade/qualidade. Padrão para a maioria das demandas.',
     effortable: false,
     speed: 4,
