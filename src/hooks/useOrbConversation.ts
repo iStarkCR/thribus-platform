@@ -191,6 +191,8 @@ export function useOrbConversation() {
       quickAck: (t) => quickAck(BUKOWISKI_ID, t),
       isNoise,
       isStopPhrase, // barge-in: "parar"/"Bukowiski parar" corta a resposta no meio
+      // Interrompeu com um pedido novo (não "parar") → enfileira e confirma:
+      bargeAck: 'Beleza, anotei. Termino isso e já já vejo seu pedido.',
       // TTS streaming: fala frase-a-frase conforme a ponte streama a resposta.
       watchPartial: (cb) => {
         partialCbRef.current = cb;

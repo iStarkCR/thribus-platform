@@ -48,6 +48,12 @@ export interface VoiceControllerOpts {
    * assim que ela fecha, em vez de esperar a resposta inteira. Devolve unsubscribe.
    */
   watchPartial?: (cb: (text: string) => void) => () => void;
+  /**
+   * Frase curta falada quando o usuário INTERROMPE com um pedido novo (barge-in
+   * que não é parada): confirma que ouviu e vai atender depois de terminar o
+   * turno atual. Toca logo após a resposta em curso. undefined = sem confirmação.
+   */
+  bargeAck?: string;
 }
 
 const SILENCE_1S = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
@@ -373,14 +379,32 @@ export class VoiceController {
     // descarta e retoma a resposta de onde parou.
     if (barged) {
       this.bargePaused = false;
-      const isStop = Boolean(text) && !this.o.isNoise?.(text) && Boolean(this.o.isStopPhrase?.(text));
-      if (isStop) {
+      // Eco do próprio TTS ou ruído → descarta e retoma a resposta.
+      if (!text || this.o.isNoise?.(text)) {
+        VOICE_DEBUG && console.log('[voz] barge-in: ruído/eco — retomando o TTS');
+        if (this.playing && !this.cancelled) { try { void this.persistentAudio?.play(); } catch { /* noop */ } }
+        return;
+      }
+      // Comando de parada → encerra tudo (o caller para no onTranscript).
+      if (this.o.isStopPhrase?.(text)) {
         VOICE_DEBUG && console.log('[voz] barge-in: comando de parada');
         this.o.onTranscript?.(text);
         return;
       }
-      VOICE_DEBUG && console.log('[voz] barge-in: não era parada — retomando o TTS');
+      // Fala REAL por cima (novo pedido, não é parada nem eco): NÃO perde — vira o
+      // PRÓXIMO turno da fila e a resposta atual retoma. O turno novo é processado
+      // quando o TTS atual escoar (fila serial). Se houver bargeAck, ele toca logo
+      // após a resposta atual, confirmando que ouviu ("já vejo seu pedido").
+      VOICE_DEBUG && console.log(`[voz] barge-in: novo pedido enfileirado — "${text.slice(0, 40)}"`);
+      const id = `t${++this.turnSeq}`;
+      this.turns.push({ id, text, status: 'queued' });
+      this._emitTurns();
+      this.replyQueue.push({ id, text });
+      if (this.o.bargeAck) this._enqueue(this.o.bargeAck); // toca após o TTS atual, antes do novo turno
       if (this.playing && !this.cancelled) { try { void this.persistentAudio?.play(); } catch { /* noop */ } }
+      // Normalmente já há um _runReplies em curso (estávamos falando); defensivo
+      // pro caso raro do barge cair no fim exato do turno.
+      if (!this.replyRunning) void this._runReplies();
       return;
     }
     if (!text || this.o.isNoise?.(text)) return;
