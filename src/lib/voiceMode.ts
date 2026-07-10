@@ -42,6 +42,12 @@ export interface VoiceControllerOpts {
    * onTranscript é chamado (o caller encerra); senão a fala retoma de onde parou.
    */
   isStopPhrase?: (t: string) => boolean;
+  /**
+   * TTS STREAMING: assina o texto PARCIAL da resposta em andamento (a ponte
+   * streama o conteúdo da mensagem em chunks). Com isso o motor fala cada frase
+   * assim que ela fecha, em vez de esperar a resposta inteira. Devolve unsubscribe.
+   */
+  watchPartial?: (cb: (text: string) => void) => () => void;
 }
 
 const SILENCE_1S = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
@@ -405,25 +411,47 @@ export class VoiceController {
     this._refreshState();
   }
 
-  // ack curto (paralelo) + resposta pesada → frases → fila de TTS (em ordem).
+  // ack curto (paralelo) + resposta → frases → fila de TTS (em ordem). Com
+  // watchPartial, cada frase é falada ASSIM QUE FECHA no stream (TTS streaming);
+  // o texto final do sendAndAwait só complementa o que faltou.
   private async _handleReply(text: string): Promise<void> {
     const replyPromise = this.o.sendAndAwait(text);
+
+    // Frases já enviadas pro TTS (por contagem — o stream só APENDA texto, as
+    // frases anteriores nunca mudam).
+    let emitted = 0;
+    const emitFrom = (full: string, final: boolean) => {
+      if (this.cancelled || !full) return;
+      let cut = full;
+      // Cerca ``` aberta no parcial → corta antes dela (não falar código cru).
+      if (!final && (cut.match(/```/g)?.length ?? 0) % 2 === 1) cut = cut.slice(0, cut.lastIndexOf('```'));
+      const clean = cleanForSpeech(cut);
+      const { sentences, remaining } = extractSentences(final ? clean + '\n' : clean);
+      const all = [...sentences];
+      if (final && remaining.trim().length >= 3) all.push(remaining.trim());
+      for (let k = emitted; k < all.length; k++) {
+        VOICE_DEBUG && console.log(`[voz] tts frase ${k + 1}${final ? '' : ' (stream)'}: "${all[k].slice(0, 40)}…"`);
+        this._enqueue(all[k]);
+      }
+      emitted = Math.max(emitted, all.length);
+    };
+
+    const unsub = this.o.watchPartial?.((partial) => emitFrom(partial, false)) ?? null;
+
     if (this.o.quickAck) {
       try {
         const ack = await this.o.quickAck(text);
-        if (ack && !this.cancelled) { VOICE_DEBUG && console.log(`[voz] ack: "${ack}"`); this._enqueue(ack); }
+        // Se o stream já começou a falar, o ack ficou pra trás — pula.
+        if (ack && !this.cancelled && emitted === 0) { VOICE_DEBUG && console.log(`[voz] ack: "${ack}"`); this._enqueue(ack); }
       } catch { /* sem ack */ }
     }
     let reply = '';
     try { reply = await replyPromise; } catch (e) { this.o.onError?.(e as Error); }
+    unsub?.();
     if (this.cancelled) return;
     this.o.onReply?.(reply);
-    const clean = cleanForSpeech(reply);
-    const { sentences, remaining } = extractSentences(clean + '\n');
-    const all = [...sentences];
-    if (remaining.trim().length >= 3) all.push(remaining.trim());
-    VOICE_DEBUG && console.log(`[voz] resposta: ${reply.length} chars, ${all.length} frase(s) p/ TTS`);
-    for (const s of all) this._enqueue(s);
+    emitFrom(reply, true);
+    VOICE_DEBUG && console.log(`[voz] resposta: ${reply.length} chars, ${emitted} frase(s) p/ TTS`);
     // espera o TTS deste turno escoar antes de processar o próximo (fala em ordem).
     await this._waitQueue();
   }

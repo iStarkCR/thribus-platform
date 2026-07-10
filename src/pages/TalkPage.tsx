@@ -223,6 +223,8 @@ export function TalkPage() {
   const levelRef = useRef(0);
   const lastLevelAtRef = useRef(0);
   const pendingReplyRef = useRef<((s: string) => void) | null>(null);
+  // TTS streaming do modo voz: callback que recebe o conteúdo PARCIAL da resposta.
+  const panelPartialCbRef = useRef<((t: string) => void) | null>(null);
   const activeIdRef = useRef<string | null>(null);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
   // Quando a transcrição (push-to-talk) termina e não está no modo voz, libera o
@@ -309,6 +311,11 @@ export function TalkPage() {
       quickAck: (t) => quickAck(aid, t),
       isNoise,
       isStopPhrase, // barge-in: "parar"/"Bukowiski parar" corta a resposta no meio
+      // TTS streaming: fala frase-a-frase conforme a ponte streama a resposta.
+      watchPartial: (cb) => {
+        panelPartialCbRef.current = cb;
+        return () => { if (panelPartialCbRef.current === cb) panelPartialCbRef.current = null; };
+      },
       onState: (s) => setPanelVoiceState(mapVoiceState(s)),
       onLevel: (rms) => {
         // Esfera reativa à voz (estilo CORTEX): suaviza e atualiza throttled (~12fps).
@@ -339,11 +346,14 @@ export function TalkPage() {
     setVoiceMode(false); voiceModeRef.current = false; setVoiceModeActive(false);
   }
 
-  // Resolve a resposta pendente do modo voz quando a msg assistant 'done' chega.
+  // Resolve a resposta pendente do modo voz quando a msg assistant 'done' chega;
+  // enquanto 'processing', alimenta o TTS streaming com o conteúdo parcial.
   useEffect(() => {
-    if (!pendingReplyRef.current || messages.length === 0) return;
+    if (messages.length === 0) return;
     const last = messages[messages.length - 1];
-    if (last.role === 'assistant' && last.status === 'done') {
+    if (last.role !== 'assistant') return;
+    if (last.status === 'processing' && last.content) panelPartialCbRef.current?.(last.content);
+    if (last.status === 'done' && pendingReplyRef.current) {
       const r = pendingReplyRef.current; pendingReplyRef.current = null; r(last.content);
     }
   }, [messages]);

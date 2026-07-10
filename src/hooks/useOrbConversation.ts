@@ -62,6 +62,8 @@ export function useOrbConversation() {
   const inputSinkRef = useRef<((t: string) => void) | null>(null);
   // resolver da resposta atual (turn-based): a próxima msg assistant 'done' resolve.
   const pendingReplyRef = useRef<((s: string) => void) | null>(null);
+  // TTS streaming: callback que recebe o conteúdo PARCIAL da resposta em andamento.
+  const partialCbRef = useRef<((t: string) => void) | null>(null);
   useEffect(() => { sessionRef.current = sessionId; }, [sessionId]);
 
   // ─── Sessão dedicada do orbe (localStorage) + mensagens ─────────────────────
@@ -118,11 +120,14 @@ export function useOrbConversation() {
     });
   }, [userId, refetch]);
 
-  // Resolve a resposta pendente quando a msg assistant 'done' chega (realtime).
+  // Resolve a resposta pendente quando a msg assistant 'done' chega (realtime);
+  // enquanto 'processing', alimenta o TTS streaming com o conteúdo parcial.
   useEffect(() => {
-    if (messages.length === 0 || !pendingReplyRef.current) return;
+    if (messages.length === 0) return;
     const last = messages[messages.length - 1];
-    if (last.role === 'assistant' && last.status === 'done') {
+    if (last.role !== 'assistant') return;
+    if (last.status === 'processing' && last.content) partialCbRef.current?.(last.content);
+    if (last.status === 'done' && pendingReplyRef.current) {
       const resolve = pendingReplyRef.current;
       pendingReplyRef.current = null;
       resolve(last.content);
@@ -186,6 +191,11 @@ export function useOrbConversation() {
       quickAck: (t) => quickAck(BUKOWISKI_ID, t),
       isNoise,
       isStopPhrase, // barge-in: "parar"/"Bukowiski parar" corta a resposta no meio
+      // TTS streaming: fala frase-a-frase conforme a ponte streama a resposta.
+      watchPartial: (cb) => {
+        partialCbRef.current = cb;
+        return () => { if (partialCbRef.current === cb) partialCbRef.current = null; };
+      },
       onState: (s) => setState(mapVoiceState(s)),
       onTranscript: (t) => { if (isStopPhrase(t)) stopVoice(); },
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
