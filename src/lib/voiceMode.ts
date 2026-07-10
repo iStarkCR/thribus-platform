@@ -442,7 +442,19 @@ export class VoiceController {
       try {
         const ack = await this.o.quickAck(text);
         // Se o stream já começou a falar, o ack ficou pra trás — pula.
-        if (ack && !this.cancelled && emitted === 0) { VOICE_DEBUG && console.log(`[voz] ack: "${ack}"`); this._enqueue(ack); }
+        if (ack && !this.cancelled && emitted === 0) {
+          if (this.o.watchPartial) {
+            // Com TTS streaming, o ack é só FALLBACK DE SILÊNCIO: espera um
+            // instante; se a 1ª frase da resposta chegar nesse meio tempo, o
+            // ack é descartado (ack + resposta emendada soa duplicado).
+            await new Promise((r) => setTimeout(r, 1500));
+            if (!this.cancelled && emitted === 0) { VOICE_DEBUG && console.log(`[voz] ack (fallback de silêncio): "${ack}"`); this._enqueue(ack); }
+            else VOICE_DEBUG && console.log('[voz] ack descartado — stream já falou primeiro');
+          } else {
+            VOICE_DEBUG && console.log(`[voz] ack: "${ack}"`);
+            this._enqueue(ack);
+          }
+        }
       } catch { /* sem ack */ }
     }
     let reply = '';
