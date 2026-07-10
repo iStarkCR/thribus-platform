@@ -187,7 +187,9 @@ export function FloatingOrb() {
             filter: hue ? `hue-rotate(${hue}deg)` : undefined,
           }}
         >
-          <NeuralSphere className="absolute inset-0" intensity={intensity} connectScale={0.62} />
+          {/* interactionMultiplier=0: sem repulsão do cursor — em 88px os pontos
+              fugindo do mouse parecem a orbe inteira se esquivando do clique. */}
+          <NeuralSphere className="absolute inset-0" intensity={intensity} connectScale={0.62} interactionMultiplier={0} parallaxMultiplier={0.4} />
         </div>
         {/* Anel só em hover/ativo */}
         <div className={`absolute inset-0 rounded-full transition-all pointer-events-none ${active ? 'ring-2 ring-brand/50' : hovered ? 'ring-1 ring-brand/30' : ''}`} />
