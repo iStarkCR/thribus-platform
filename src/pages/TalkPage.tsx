@@ -5,6 +5,7 @@ import {
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
   PanelLeftClose, PanelLeft, GitBranch, AlertTriangle, FileText, ChevronUp, Monitor, MessageCircle, Menu,
+  Maximize2, Minimize2,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -102,6 +103,7 @@ export function TalkPage() {
     return map;
   }, [messages]);
   const [input, setInput] = useState('');
+  const [composerExpanded, setComposerExpanded] = useState(false); // barra de texto expandida (mais linhas visíveis)
   const [routingMap, setRoutingMap] = useState<Record<string, RoutingInfo>>({});
   // "Editar & reenviar": a partir desta msg (inclusive) tudo é apagado ao reenviar.
   const [editingFrom, setEditingFrom] = useState<{ id: string; sessionId: string; createdAt: string } | null>(null);
@@ -230,6 +232,20 @@ export function TalkPage() {
   }, [voice.listening, voiceMode, setSttBusy]);
   useEffect(() => { voiceCfgRef.current = voiceCfg; }, [voiceCfg]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  // Rascunho por conversa: ao trocar de sessão, guarda o que estava sendo digitado
+  // na sessão anterior (por id) e recupera o rascunho da sessão nova — sem isso o
+  // texto em edição "vaza" de um chat pro outro.
+  const draftsRef = useRef<Map<string, string>>(new Map());
+  const prevActiveIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prevId = prevActiveIdRef.current;
+    if (prevId !== activeId) {
+      if (prevId) draftsRef.current.set(prevId, input);
+      setInput(activeId ? (draftsRef.current.get(activeId) ?? '') : '');
+      prevActiveIdRef.current = activeId;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
   useEffect(() => { pendingWorkingDirRef.current = pendingWorkingDir; }, [pendingWorkingDir]);
   // Handler estável pras sugestões do markdown (botões "Detalha isso" etc.): aponta
   // sempre pro `send` mais recente via ref, então o <Markdown> memoizado não re-renderiza
@@ -480,7 +496,7 @@ export function TalkPage() {
     return () => window.clearInterval(id);
   }, [awaiting, activeId, refetch]);
 
-  // Composer auto-cresce até 3 linhas; passou disso, rola interno. (chat + orbe)
+  // Composer auto-cresce até 3 linhas (12 quando expandido); passou disso, rola interno. (chat + orbe)
   useEffect(() => {
     for (const el of [composerRef.current, landingComposerRef.current]) {
       if (!el) continue;
@@ -488,11 +504,11 @@ export function TalkPage() {
       const cs = getComputedStyle(el);
       const lh = parseFloat(cs.lineHeight) || 24;
       const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-      const max = lh * 3 + pad;
+      const max = lh * (composerExpanded ? 12 : 3) + pad;
       el.style.height = `${Math.min(el.scrollHeight, max)}px`;
       el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
     }
-  }, [input, inChat]);
+  }, [input, inChat, composerExpanded]);
 
   // ── Busca na conversa ──────────────────────────────────────────────────────
   const searchMatches = useMemo(() => {
@@ -1417,25 +1433,24 @@ export function TalkPage() {
                   entra DIGITANDO + brilho, como se estivesse te cumprimentando. */}
               <div className="absolute top-[6vh] inset-x-0 z-20 text-center px-6 pointer-events-none">
                 <div>
-                  {/* min(vw,vmin): escala pela MENOR dimensão — notebook 1366×768 não infla o texto */}
-                  <div className="greet-anim inline-block text-[clamp(28px,min(4.8vw,5.6vmin),52px)] font-extrabold tracking-tight leading-none">
+                  {/* short: só entra em tela baixa (notebook Windows) — Mac normal fica com o vw original */}
+                  <div className="greet-anim inline-block text-[clamp(30px,4.8vw,52px)] short:text-[clamp(26px,5.2vmin,38px)] font-extrabold tracking-tight leading-none">
                     <Typewriter once phrases={[`${greeting}, ${firstName}`]} speed={85} />
                   </div>
                 </div>
                 {/* Linha dinâmica — EMBAIXO do nome, MESMO efeito de digitação + brilho */}
                 {dynGreet && (
                   <div className="mt-3">
-                    <div className="greet-anim inline-block text-[clamp(14px,min(2.4vw,2.8vmin),23px)] font-semibold tracking-tight leading-snug max-w-[620px]">
+                    <div className="greet-anim inline-block text-[clamp(15px,2.4vw,23px)] short:text-[clamp(13px,2.8vmin,18px)] font-semibold tracking-tight leading-snug max-w-[620px]">
                       <Typewriter key={dynGreet} once phrases={[dynGreet]} speed={30} />
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* max-width segue vmin igual a esfera (82vmin/640px) — em tela baixa
-                  e larga (notebook) a esfera encolhe mas a barra ficava no cap de
-                  600px, maior que a esfera atrás dela. */}
-              <div className="relative z-10 w-full max-w-[min(600px,74vmin)] flex flex-col items-center text-center px-6">
+              {/* short: barra acompanha a esfera (que já escala por vmin) só em
+                  tela baixa/larga (notebook) — no Mac (altura normal) fica 600px fixo */}
+              <div className="relative z-10 w-full max-w-[600px] short:max-w-[min(600px,74vmin)] flex flex-col items-center text-center px-6">
                 {/* Começo rápido — chips do COO (caixa/infra/demandas) SÓ pro Bukowiski (supervisor).
                     Pros outros colaboradores não faz sentido — fica só a barra. */}
                 {/* Atenção agora — só aparece quando há algo real pra ver (escalações + sistemas com problema) */}
@@ -1885,6 +1900,13 @@ export function TalkPage() {
                 </>
               )}
             </div>
+            <button
+              onClick={() => setComposerExpanded((v) => !v)}
+              title={composerExpanded ? 'Recolher' : 'Expandir barra de texto'}
+              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors text-creme-faint hover:text-creme hover:bg-surface-hover"
+            >
+              {composerExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
             <textarea
               ref={composerRef}
               value={input}
