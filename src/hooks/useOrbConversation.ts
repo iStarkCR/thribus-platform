@@ -83,6 +83,13 @@ export function useOrbConversation() {
       // estado antigo apontava p/ uma sessão do painel (contaminada), cria nova.
       const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(ORB_SESSION_KEY) : null;
       let sid: string | null = stored && sessions.some((s) => s.id === stored && s.folderId === folderId) ? stored : null;
+      let msgs = sid ? await listMessages(sid).catch(() => []) : [];
+      // Sessão VELHA (última msg > 12h) → começa limpa. A thread eterna da orbe
+      // era o que a deixava lenta vs o modo voz do painel: a ponte reprocessava
+      // um contexto gordo a cada turno. Conversa rápida pede sessão enxuta.
+      const ORB_STALE_MS = 12 * 60 * 60 * 1000;
+      const lastAt = msgs.length ? new Date(msgs[msgs.length - 1].createdAt).getTime() : 0;
+      if (sid && lastAt && Date.now() - lastAt > ORB_STALE_MS) { sid = null; msgs = []; }
       if (!sid) {
         const s = await createSession(BUKOWISKI_ID, uid, { title: 'Orbe — conversa rápida', folderId }).catch(() => null);
         sid = s?.id ?? null;
@@ -90,7 +97,7 @@ export function useOrbConversation() {
       }
       if (!alive) return;
       setSessionId(sid);
-      if (sid) setMessages(await listMessages(sid).catch(() => []));
+      setMessages(msgs);
     })();
     return () => { alive = false; };
   }, [userId]);
