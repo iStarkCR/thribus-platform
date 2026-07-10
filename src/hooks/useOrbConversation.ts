@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/hooks/useSession';
 import { useAppStore } from '@/hooks/useAppStore';
-import { listMessages, sendMessage, subscribeChat, type ChatMessage } from '@/services/collaboratorChat';
+import { listMessages, sendMessage, cancelMessage, subscribeChat, type ChatMessage } from '@/services/collaboratorChat';
 import { listSessions, createSession, touchSession, listFolders, createFolder } from '@/services/chatSessions';
 import { ttsBlob, transcribeBlob, quickAck } from '@/services/voiceSkill';
 import { VoiceController, type VoiceState as RawVoiceState } from '@/lib/voiceMode';
@@ -62,6 +62,9 @@ export function useOrbConversation() {
   const inputSinkRef = useRef<((t: string) => void) | null>(null);
   // resolver da resposta atual (turn-based): a próxima msg assistant 'done' resolve.
   const pendingReplyRef = useRef<((s: string) => void) | null>(null);
+  // id da mensagem do usuário EM PROCESSAMENTO agora — pra cancelar (matar o
+  // claude na ponte) quando o usuário mandar parar. Limpo quando a resposta chega.
+  const inflightMsgIdRef = useRef<string | null>(null);
   // TTS streaming: callback que recebe o conteúdo PARCIAL da resposta em andamento.
   const partialCbRef = useRef<((t: string) => void) | null>(null);
   useEffect(() => { sessionRef.current = sessionId; }, [sessionId]);
@@ -154,15 +157,17 @@ export function useOrbConversation() {
     if (!sid) return '';
     setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid as string, agentId: BUKOWISKI_ID, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: [], createdAt: '' }]);
     try {
+      let sent;
       try {
-        await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
+        sent = await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
       } catch (e) {
         if (!/foreign key|violates|constraint/i.test((e as Error).message)) throw e;
         setSessionId(null); sessionRef.current = null;
         sid = await ensureSession(userId);
         if (!sid) throw e;
-        await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
+        sent = await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
       }
+      inflightMsgIdRef.current = sent.id; // pra cancelar na ponte se pedir parada
       await touchSession(sid);
     } catch (e) {
       setMessages((m) => m.filter((x) => !x.id.startsWith('tmp-')));
@@ -170,10 +175,12 @@ export function useOrbConversation() {
       return '';
     }
     // aguarda a resposta do daemon (realtime) — timeout de segurança em 4min
-    return await new Promise<string>((resolve) => {
+    const reply = await new Promise<string>((resolve) => {
       pendingReplyRef.current = resolve;
       setTimeout(() => { if (pendingReplyRef.current === resolve) { pendingReplyRef.current = null; resolve(''); } }, 240000);
     });
+    inflightMsgIdRef.current = null; // resposta chegou (ou timeout) → nada mais a cancelar
+    return reply;
   }, [userId]);
 
   // ─── Modo voz (VoiceController) ─────────────────────────────────────────────
@@ -210,6 +217,11 @@ export function useOrbConversation() {
   }, [sendAndAwait]);
 
   const stopVoice = useCallback(() => {
+    // "Parar" também MATA o processo na ponte (senão o claude segue rodando e
+    // queimando a janela mesmo com a voz fechada). Cancela a msg em voo.
+    const inflight = inflightMsgIdRef.current;
+    inflightMsgIdRef.current = null;
+    if (inflight) cancelMessage(inflight).catch(() => { /* best-effort */ });
     ctrlRef.current?.stop();
     ctrlRef.current = null;
     pendingReplyRef.current = null;

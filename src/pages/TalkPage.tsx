@@ -225,6 +225,9 @@ export function TalkPage() {
   const pendingReplyRef = useRef<((s: string) => void) | null>(null);
   // TTS streaming do modo voz: callback que recebe o conteúdo PARCIAL da resposta.
   const panelPartialCbRef = useRef<((t: string) => void) | null>(null);
+  // id da msg do usuário em processamento no modo voz — pra matar o claude na
+  // ponte quando pedir parada (senão a voz fecha mas o processo segue rodando).
+  const panelInflightRef = useRef<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
   // Quando a transcrição (push-to-talk) termina e não está no modo voz, libera o
@@ -282,16 +285,19 @@ export function TalkPage() {
       setSessions((prev) => [s, ...prev]);
     }
     try {
-      await sendMessage(sid, agent.id, userId, text, undefined, true);
+      const sent = await sendMessage(sid, agent.id, userId, text, undefined, true);
+      panelInflightRef.current = sent.id; // pra cancelar na ponte se pedir parada
       await touchSession(sid);
     } catch (e) {
       useAppStore.getState().addToast('Falha ao enviar: ' + (e as Error).message, 'red');
       return '';
     }
-    return await new Promise<string>((resolve) => {
+    const reply = await new Promise<string>((resolve) => {
       pendingReplyRef.current = resolve;
       setTimeout(() => { if (pendingReplyRef.current === resolve) { pendingReplyRef.current = null; resolve(''); } }, 240000);
     });
+    panelInflightRef.current = null;
+    return reply;
   }, [agent, userId]);
 
   function togglePanelMute() {
@@ -340,6 +346,10 @@ export function TalkPage() {
     ctrl.start();
   }
   function stopPanelVoice() {
+    // "Parar" também MATA o processo na ponte (senão o claude segue rodando).
+    const inflight = panelInflightRef.current;
+    panelInflightRef.current = null;
+    if (inflight) cancelMessage(inflight).catch(() => { /* best-effort */ });
     panelVoiceRef.current?.stop();
     panelVoiceRef.current = null;
     pendingReplyRef.current = null;
