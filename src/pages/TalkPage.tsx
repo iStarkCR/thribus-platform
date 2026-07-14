@@ -55,6 +55,7 @@ export function TalkPage() {
   const escalations = useAppStore((s) => s.escalations);
   const setVoiceModeActive = useAppStore((s) => s.setVoiceModeActive);
   const setSttBusy = useAppStore((s) => s.setSttBusy);
+  const openLightbox = useAppStore((s) => s.openLightbox);
   const { user } = useSession();
   const userId = user?.id ?? null;
   const navigate = useNavigate();
@@ -1498,7 +1499,9 @@ export function TalkPage() {
                       {attachments.map((a, i) => (
                         <div key={a.path} className="flex items-center gap-1.5 pl-1 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
                           {a.previewUrl ? (
-                            <img src={a.previewUrl} alt={a.name} className="w-6 h-6 rounded object-cover shrink-0" />
+                            <button type="button" onClick={() => openLightbox(a.previewUrl!, a.name)} className="shrink-0 cursor-zoom-in">
+                              <img src={a.previewUrl} alt={a.name} className="w-6 h-6 rounded object-cover" />
+                            </button>
                           ) : (
                             <span>{/^video\//.test(a.mime) ? '🎬' : '📄'}</span>
                           )}
@@ -1812,7 +1815,9 @@ export function TalkPage() {
               {attachments.map((a, i) => (
                 <div key={a.path} className="flex items-center gap-1.5 pl-1 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
                   {a.previewUrl ? (
-                    <img src={a.previewUrl} alt={a.name} className="w-6 h-6 rounded object-cover shrink-0" />
+                    <button type="button" onClick={() => openLightbox(a.previewUrl!, a.name)} className="shrink-0 cursor-zoom-in">
+                      <img src={a.previewUrl} alt={a.name} className="w-6 h-6 rounded object-cover" />
+                    </button>
                   ) : (
                     <span>{/^video\//.test(a.mime) ? '🎬' : '📄'}</span>
                   )}
