@@ -920,6 +920,12 @@ export function TalkPage() {
     });
   }
 
+  /** Abre o lightbox no anexo `a`, com navegação entre todas as imagens já anexadas no composer. */
+  function openAttachmentLightbox(a: Attachment) {
+    const images = attachments.filter((x) => x.previewUrl).map((x) => ({ url: x.previewUrl!, alt: x.name }));
+    openLightbox(a.previewUrl!, a.name, images);
+  }
+
   // Vira o texto digitado numa DEMANDA (fila async), opcionalmente delegada a outro agente.
   // Ações por mensagem (hover): copiar, ouvir, refazer, virar demanda.
   function copyMsg(text: string) { navigator.clipboard.writeText(text); useAppStore.getState().addToast('Copiado', 'green'); }
@@ -1541,7 +1547,7 @@ export function TalkPage() {
                       {attachments.map((a, i) => (
                         <div key={a.path} className="flex items-center gap-1.5 pl-1 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
                           {a.previewUrl ? (
-                            <button type="button" onClick={() => openLightbox(a.previewUrl!, a.name)} className="shrink-0 cursor-zoom-in">
+                            <button type="button" onClick={() => openAttachmentLightbox(a)} className="shrink-0 cursor-zoom-in">
                               <img src={a.previewUrl} alt={a.name} className="w-6 h-6 rounded object-cover" />
                             </button>
                           ) : (
@@ -1858,7 +1864,7 @@ export function TalkPage() {
               {attachments.map((a, i) => (
                 <div key={a.path} className="flex items-center gap-1.5 pl-1 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
                   {a.previewUrl ? (
-                    <button type="button" onClick={() => openLightbox(a.previewUrl!, a.name)} className="shrink-0 cursor-zoom-in">
+                    <button type="button" onClick={() => openAttachmentLightbox(a)} className="shrink-0 cursor-zoom-in">
                       <img src={a.previewUrl} alt={a.name} className="w-6 h-6 rounded object-cover" />
                     </button>
                   ) : (

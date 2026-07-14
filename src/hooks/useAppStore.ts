@@ -102,9 +102,10 @@ interface AppState {
   addToast: (message: string, type?: 'green' | 'amber' | 'red' | 'blue') => void;
   removeToast: (id: string) => void;
 
-  /** Visualização de imagem em modal (lightbox) — evita abrir em nova aba. */
-  lightbox: { url: string; alt?: string } | null;
-  openLightbox: (url: string, alt?: string) => void;
+  /** Visualização de imagem em modal (lightbox) — evita abrir em nova aba. Suporta galeria (várias imagens) com navegação. */
+  lightbox: { images: { url: string; alt?: string }[]; index: number } | null;
+  openLightbox: (url: string, alt?: string, images?: { url: string; alt?: string }[], index?: number) => void;
+  setLightboxIndex: (index: number) => void;
   closeLightbox: () => void;
 
   // Confirmação (modal do sistema)
@@ -476,7 +477,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
   },
 
-  openLightbox: (url, alt) => set({ lightbox: { url, alt } }),
+  openLightbox: (url, alt, images, index) => set({
+    lightbox: images && images.length > 1
+      ? { images, index: index ?? Math.max(0, images.findIndex((i) => i.url === url)) }
+      : { images: [{ url, alt }], index: 0 },
+  }),
+  setLightboxIndex: (index) => set((s) => (s.lightbox ? { lightbox: { ...s.lightbox, index } } : {})),
   closeLightbox: () => set({ lightbox: null }),
 
   askConfirm: (opts) =>
