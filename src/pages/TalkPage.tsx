@@ -71,6 +71,10 @@ export function TalkPage() {
 
   const [folders, setFolders] = useState<ChatFolder[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  // Espelho de `sessions` p/ efeitos que só precisam LER a lista sem re-disparar a
+  // cada refetch (que troca a referência do array a cada evento de streaming).
+  const sessionsRef = useRef<ChatSession[]>([]);
+  sessionsRef.current = sessions;
   const [treeLoaded, setTreeLoaded] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Tela atual: 'orb' (boas-vindas) é SEMPRE a inicial; só vai pra 'chat' por ação
@@ -435,10 +439,23 @@ export function TalkPage() {
   // precisa re-buscar a conversa que está na tela.
   useEffect(() => {
     if (!userId) return;
-    return subscribeChat(userId, (info) => {
+    // Throttle (leading + trailing, ~350ms): o daemon atualiza a row a cada chunk
+    // do streaming → sem isso cada token dispara um listMessages + setMessages que
+    // re-renderiza a conversa inteira (O(n) por token). Colapsa a rajada em no
+    // máximo ~3 refetches/s, mantendo o estado final. Principal causa do travamento
+    // progressivo em conversa longa.
+    let last = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const throttled = () => {
+      const wait = 350 - (Date.now() - last);
+      if (wait <= 0) { last = Date.now(); refetch(); }
+      else if (!timer) { timer = setTimeout(() => { timer = null; last = Date.now(); refetch(); }, wait); }
+    };
+    const unsub = subscribeChat(userId, (info) => {
       if (info && info.sessionId && info.sessionId !== activeIdRef.current) return;
-      refetch();
+      throttled();
     });
+    return () => { if (timer) clearTimeout(timer); unsub(); };
   }, [userId, refetch]);
 
   useEffect(() => {
@@ -624,7 +641,7 @@ export function TalkPage() {
     const fb = setTimeout(() => { if (!cancelled) setDynGreet((p) => p ?? FALLBACK); }, 6000);
     (async () => {
       // conversa-alvo: a primada (activeId) ou a mais recente (landing).
-      const target = activeId ? sessions.find((s) => s.id === activeId) : sessions.find((x) => !x.archivedAt);
+      const target = activeId ? sessionsRef.current.find((s) => s.id === activeId) : sessionsRef.current.find((x) => !x.archivedAt);
       let ctx = '';
       if (target) {
         try {
@@ -644,8 +661,9 @@ export function TalkPage() {
       setDynGreet(v);
     })();
     return () => { cancelled = true; clearTimeout(fb); };
+    // sessions lido via sessionsRef → não re-dispara a saudação a cada refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, activeId, inChat, treeLoaded, period, sessions]);
+  }, [agentId, activeId, inChat, treeLoaded, period]);
 
   // Botão "Parar": marca a msg como cancelada (a ponte mata o claude) + UI otimista.
   async function cancelTurn(msgId: string) {

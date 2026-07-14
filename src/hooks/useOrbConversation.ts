@@ -47,7 +47,7 @@ export const mapVoiceState = (s: RawVoiceState): VoiceState =>
  * (motor contínuo, portado do CORTEX): mic aberto o tempo todo, VAD por energia,
  * fala a resposta em frases. O OrbChat é só a view de texto da mesma conversa.
  */
-export function useOrbConversation() {
+export function useOrbConversation(enabled = false) {
   const { user } = useSession();
   const userId = user?.id ?? null;
 
@@ -114,14 +114,27 @@ export function useOrbConversation() {
   }, []);
 
   useEffect(() => {
-    if (!userId) return;
+    // Só assina o realtime quando o orbe está EM USO (chat aberto ou voz ativa).
+    // Ocioso, o orbe flutuante fica montado o app inteiro e antes mantinha um 2º
+    // canal Supabase recebendo TODO evento do usuário em paralelo ao painel —
+    // duplicava a carga de realtime na sessão longa. Sem uso, não há canal.
+    if (!userId || (!enabled && !voiceActive)) return;
+    refetch(); // ao (re)ativar, sincroniza a thread na hora
     // Só refetch se o evento for da sessão do orbe — antes qualquer mensagem de
     // qualquer conversa disparava um SELECT * da thread do orbe à toa.
-    return subscribeChat(userId, (info) => {
+    let last = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const throttled = () => {
+      const wait = 350 - (Date.now() - last);
+      if (wait <= 0) { last = Date.now(); refetch(); }
+      else if (!timer) { timer = setTimeout(() => { timer = null; last = Date.now(); refetch(); }, wait); }
+    };
+    const unsub = subscribeChat(userId, (info) => {
       if (info && info.sessionId && info.sessionId !== sessionRef.current) return;
-      refetch();
+      throttled();
     });
-  }, [userId, refetch]);
+    return () => { if (timer) clearTimeout(timer); unsub(); };
+  }, [userId, enabled, voiceActive, refetch]);
 
   // Resolve a resposta pendente quando a msg assistant 'done' chega (realtime);
   // enquanto 'processing', alimenta o TTS streaming com o conteúdo parcial.

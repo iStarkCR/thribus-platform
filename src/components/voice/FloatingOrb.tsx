@@ -67,13 +67,15 @@ export function FloatingOrb() {
   const sttBusy = useAppStore((s) => s.sttBusy);
   const { pathname } = useLocation();
 
-  const conv = useOrbConversation();
+  const [chatOpen, setChatOpen] = useState(false);
+  // Só liga o realtime do orbe quando o chat de texto está aberto (o modo voz o
+  // hook liga sozinho). Ocioso, o orbe não mantém canal Supabase.
+  const conv = useOrbConversation(chatOpen);
 
   const [pos, setPos] = useState<Pos>(loadPos);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [wakeFlash, setWakeFlash] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number; shift: boolean; right: boolean } | null>(null);
 
   // Mantém o orbe dentro da viewport ao redimensionar.
