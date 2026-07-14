@@ -16,6 +16,7 @@ export interface Attachment {
   name: string;
   mime: string;
   size: number;
+  previewUrl?: string; // object URL local (miniatura instantânea no composer, antes do upload terminar)
 }
 
 export interface ChatMessage {

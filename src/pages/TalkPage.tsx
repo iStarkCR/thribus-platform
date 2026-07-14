@@ -857,15 +857,24 @@ export function TalkPage() {
     if (!userId || !files.length) return;
     for (const file of files) {
       setUploading((n) => n + 1);
+      const previewUrl = /^image\//.test(file.type) ? URL.createObjectURL(file) : undefined;
       try {
         const att = await uploadAttachment(userId, activeId, file);
-        setAttachments((prev) => [...prev, att]);
+        setAttachments((prev) => [...prev, { ...att, previewUrl }]);
       } catch (e) {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
         useAppStore.getState().addToast('Falha no anexo: ' + (e as Error).message, 'red');
       } finally {
         setUploading((n) => n - 1);
       }
     }
+  }
+
+  function removeAttachment(i: number) {
+    setAttachments((prev) => {
+      if (prev[i]?.previewUrl) URL.revokeObjectURL(prev[i].previewUrl!);
+      return prev.filter((_, k) => k !== i);
+    });
   }
 
   // Vira o texto digitado numa DEMANDA (fila async), opcionalmente delegada a outro agente.
@@ -1487,10 +1496,14 @@ export function TalkPage() {
                   {(attachments.length > 0 || uploading > 0) && (
                     <div className="flex flex-wrap gap-2 mb-2 px-1 justify-center">
                       {attachments.map((a, i) => (
-                        <div key={a.path} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
-                          <span>{/^image\//.test(a.mime) ? '🖼️' : /^video\//.test(a.mime) ? '🎬' : '📄'}</span>
+                        <div key={a.path} className="flex items-center gap-1.5 pl-1 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
+                          {a.previewUrl ? (
+                            <img src={a.previewUrl} alt={a.name} className="w-6 h-6 rounded object-cover shrink-0" />
+                          ) : (
+                            <span>{/^video\//.test(a.mime) ? '🎬' : '📄'}</span>
+                          )}
                           <span className="truncate">{a.name}</span>
-                          <button onClick={() => setAttachments((prev) => prev.filter((_, k) => k !== i))} className="text-creme-faint hover:text-semantic-red shrink-0"><X size={13} /></button>
+                          <button onClick={() => removeAttachment(i)} className="text-creme-faint hover:text-semantic-red shrink-0"><X size={13} /></button>
                         </div>
                       ))}
                       {uploading > 0 && (
@@ -1797,10 +1810,14 @@ export function TalkPage() {
           {(attachments.length > 0 || uploading > 0) && (
             <div className="flex flex-wrap gap-2 mb-2 px-1">
               {attachments.map((a, i) => (
-                <div key={a.path} className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
-                  <span>{/^image\//.test(a.mime) ? '🖼️' : /^video\//.test(a.mime) ? '🎬' : '📄'}</span>
+                <div key={a.path} className="flex items-center gap-1.5 pl-1 pr-1 py-1 rounded-lg bg-surface-3 border border-default text-[11.5px] text-creme-dim max-w-[180px]">
+                  {a.previewUrl ? (
+                    <img src={a.previewUrl} alt={a.name} className="w-6 h-6 rounded object-cover shrink-0" />
+                  ) : (
+                    <span>{/^video\//.test(a.mime) ? '🎬' : '📄'}</span>
+                  )}
                   <span className="truncate">{a.name}</span>
-                  <button onClick={() => setAttachments((prev) => prev.filter((_, k) => k !== i))} className="text-creme-faint hover:text-semantic-red shrink-0"><X size={13} /></button>
+                  <button onClick={() => removeAttachment(i)} className="text-creme-faint hover:text-semantic-red shrink-0"><X size={13} /></button>
                 </div>
               ))}
               {uploading > 0 && (
