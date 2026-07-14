@@ -42,8 +42,14 @@ export function MessageAttachments({ items }: { items: Attachment[] }) {
         {items.map((a) => {
           const url = urls[a.path];
           if (/^image\//.test(a.mime)) {
+            const openGallery = () => {
+              const images = items
+                .filter((x) => /^image\//.test(x.mime) && urls[x.path])
+                .map((x) => ({ url: urls[x.path], alt: x.name }));
+              openLightbox(url, a.name, images);
+            };
             return url
-              ? <button key={a.path} type="button" onClick={() => openLightbox(url, a.name)} className="block cursor-zoom-in"><img src={url} alt={a.name} className="max-h-44 rounded-lg border border-default object-cover" /></button>
+              ? <button key={a.path} type="button" onClick={openGallery} className="block cursor-zoom-in"><img src={url} alt={a.name} className="max-h-44 rounded-lg border border-default object-cover" /></button>
               : <Chip key={a.path} a={a} />;
           }
           if (/^video\//.test(a.mime)) {
