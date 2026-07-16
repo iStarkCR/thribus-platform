@@ -5,14 +5,14 @@
  * Lê a cobrança via asaas-proxy (action `charges.get`, read-only). Sem login.
  *
  * Tema claro, independente do tema do painel (cores explícitas aqui).
- * Métodos: PIX (QR + copia-cola), boleto (PDF + linha digitável) e fallback
- * pro checkout hospedado do Asaas (cartão / Open Finance). Mostra a NF quando
- * emitida.
+ * Métodos: PIX (QR + copia-cola) e boleto (PDF + linha digitável), 100% UI
+ * própria — sem redirecionar pro checkout hospedado do Asaas. Mostra a NF
+ * quando emitida.
  */
 
 import { useEffect, useState } from 'react';
 import {
-  ShieldCheck, Copy, Check, QrCode, Barcode, CreditCard,
+  ShieldCheck, Copy, Check, QrCode, Barcode,
   CalendarClock, AlertTriangle, CheckCircle2, Loader2, ExternalLink,
   FileText, Clock, Printer, Receipt as ReceiptIcon,
 } from 'lucide-react';
@@ -232,24 +232,6 @@ function PaymentMethods({ charge }: { charge: AsaasPublicCharge }) {
     <div className="space-y-4">
       {charge.pixCopyPaste && <PixCard charge={charge} />}
       {charge.boletoUrl && <BoletoCard charge={charge} />}
-      {charge.invoiceUrl && (
-        <a
-          href={charge.invoiceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-between rounded-2xl px-5 py-4 transition-colors"
-          style={{ background: C.card, border: `1px solid ${C.border}` }}
-        >
-          <span className="flex items-center gap-3">
-            <CreditCard size={18} style={{ color: C.sage }} />
-            <span>
-              <span className="block text-[13.5px] font-semibold" style={{ color: C.ink }}>Cartão de crédito ou Open Finance</span>
-              <span className="block text-[12px]" style={{ color: C.ink3 }}>Pague com seu banco ou parcele no cartão</span>
-            </span>
-          </span>
-          <ExternalLink size={15} style={{ color: C.faint }} />
-        </a>
-      )}
     </div>
   );
 }
