@@ -70,6 +70,12 @@ export interface WorkspaceRecord {
    * Tools referenciam por nome simbólico via auth_credentials.*_ref.
    */
   credentials?: Record<string, string>;
+  /**
+   * Chaves de LLM por agente (subchave `agent_keys` do jsonb `credentials`).
+   * Permite que um agente use uma API key própria em vez da chave do workspace.
+   * Indexado por `agent.id` → `{ provider, apiKey }`. Ver `pickApiKey`.
+   */
+  agentKeys?: Record<string, { provider: string; apiKey: string }>;
   /** Config do roteador multi-agente (M2). */
   routerConfig?: RouterConfig;
 }
@@ -129,6 +135,11 @@ function rowToWorkspace(data: Record<string, unknown>): WorkspaceRecord {
     rawCreds && typeof rawCreds === 'object' && !Array.isArray(rawCreds)
       ? (rawCreds as Record<string, string>)
       : undefined;
+  const rawAgentKeys = credentials?.agent_keys as unknown;
+  const agentKeys =
+    rawAgentKeys && typeof rawAgentKeys === 'object' && !Array.isArray(rawAgentKeys)
+      ? (rawAgentKeys as Record<string, { provider: string; apiKey: string }>)
+      : undefined;
   const rawRouter = data.router_config;
   const routerConfig =
     rawRouter && typeof rawRouter === 'object' && !Array.isArray(rawRouter)
@@ -148,6 +159,7 @@ function rowToWorkspace(data: Record<string, unknown>): WorkspaceRecord {
     texnetBotSenderId: (data.texnet_bot_sender_id as string | null) ?? undefined,
     talkiRequiredLabel: (data.talki_required_label as string | null) ?? undefined,
     credentials,
+    agentKeys,
     routerConfig,
   };
 }

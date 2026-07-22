@@ -56,9 +56,20 @@ export function pickApiKeyByProvider(
  * Retorna `undefined` se workspace ausente OU sem chave configurada — o
  * caller é responsável por fazer fallback pra env var (callLLM faz isso).
  */
-export function pickApiKey(model: string, workspace?: WorkspaceRecord | null): string | undefined {
+export function pickApiKey(
+  model: string,
+  workspace?: WorkspaceRecord | null,
+  agentId?: string,
+): string | undefined {
   if (!workspace) return undefined;
   const provider = detectProvider(model);
+  // Chave própria do agente (agent_keys): só se o provider bater com o do model.
+  if (agentId) {
+    const own = workspace.agentKeys?.[agentId];
+    if (own && provider && own.provider === provider && own.apiKey) {
+      return own.apiKey;
+    }
+  }
   if (provider === 'anthropic') {
     return workspace.anthropicApiKey || workspace.llmApiKey || undefined;
   }
