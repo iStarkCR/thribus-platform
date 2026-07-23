@@ -671,6 +671,8 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
             conversationId: conversation.id,
             workspaceId: agent.workspaceId,
             channel: job.channel,
+            leadId: job.leadId,
+            workspace: workspace ?? undefined,
             sendMessage: async (content: string) => {
               await crm.sendMessage(job.channel, job.leadId, content, workspace ?? undefined);
             },
