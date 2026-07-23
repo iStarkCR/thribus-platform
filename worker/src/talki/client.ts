@@ -63,6 +63,10 @@ export interface TalkiContact {
   email: string | null;
 }
 
+export interface TalkiContactFull extends TalkiContact {
+  custom_attributes?: Record<string, unknown>;
+}
+
 export interface TalkiMessage {
   id: number;
   content: string;
@@ -179,6 +183,38 @@ export const messages = {
 export const inboxes = {
   async list(cfg: TalkiConfig = fromEnv()): Promise<{ payload: Array<{ id: number; name: string; channel_type: string }> }> {
     return req(cfg, 'GET', '/inboxes');
+  },
+};
+
+// ─── Contacts ─────────────────────────────────────────────────────────────────
+// Chatwoot embrulha o contato individual em { payload: {...} } tanto no GET
+// quanto no PUT. Desembrulhamos aqui pra devolver o contato direto.
+
+function unwrapContact(res: unknown): TalkiContactFull {
+  const r = res as { payload?: TalkiContactFull } & TalkiContactFull;
+  return (r?.payload ?? r) as TalkiContactFull;
+}
+
+export const contacts = {
+  async get(id: number, cfg: TalkiConfig = fromEnv()): Promise<TalkiContactFull> {
+    const res = await req<unknown>(cfg, 'GET', `/contacts/${id}`);
+    return unwrapContact(res);
+  },
+
+  /**
+   * Sobrescreve os custom_attributes do contato com o objeto fornecido.
+   * ATENÇÃO: o Chatwoot substitui o jsonb inteiro — quem chama deve fazer
+   * o merge com os atributos existentes antes (read-modify-write).
+   */
+  async updateCustomAttributes(
+    id: number,
+    customAttributes: Record<string, unknown>,
+    cfg: TalkiConfig = fromEnv(),
+  ): Promise<TalkiContactFull> {
+    const res = await req<unknown>(cfg, 'PUT', `/contacts/${id}`, {
+      custom_attributes: customAttributes,
+    });
+    return unwrapContact(res);
   },
 };
 

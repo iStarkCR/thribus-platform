@@ -124,6 +124,37 @@ const SCHEMAS: Record<string, SchemaSpec> = {
     required: ['motivo'],
   },
 
+  // ─── Cliente (custom_attributes do contato no Talki) ─────────────────────────
+  // Internal tools — handler em tools/internal.ts. Operam sobre o CONTATO dono
+  // da conversa atual (o worker resolve o contato pelo conversation_id do
+  // contexto). Por isso NÃO recebem id de contato/conversa como parâmetro.
+  consultar_cliente: {
+    // Sem parâmetros — lê os dados do contato da própria conversa.
+    properties: {},
+  },
+
+  atualizar_cliente: {
+    // Todos opcionais: passe SÓ os campos que quer gravar. Os demais são
+    // preservados. Chaves fora desta lista são ignoradas.
+    properties: {
+      cpf: { type: 'string', description: 'CPF do cliente (com ou sem pontuação).' },
+      profissao: { type: 'string', description: 'Profissão/ocupação do cliente.' },
+      nome_pagador_pix: { type: 'string', description: 'Nome de quem paga via PIX (se diferente do cliente).' },
+      cobranca_ativa: { type: 'boolean', description: 'Se a cobrança automática está ativa (true/false).' },
+      tipo_contrato: { type: 'string', description: 'Tipo de contrato (valor da lista configurada no Talki).' },
+      produto_nome: { type: 'string', description: 'Nome do produto/serviço contratado.' },
+      valor_total_contrato: { type: 'string', description: 'Valor total do contrato. Decimal com ponto, ex: "1200.00".' },
+      valor_parcela: { type: 'string', description: 'Valor de cada parcela. Decimal com ponto, ex: "100.00".' },
+      periodicidade: { type: 'string', description: 'Periodicidade da cobrança (valor da lista, ex: "mensal", "semanal").' },
+      proxima_data_vencimento: { type: 'string', description: 'Próximo vencimento no formato YYYY-MM-DD.' },
+      chave_pix_cobranca: { type: 'string', description: 'Chave PIX usada na cobrança (valor da lista configurada).' },
+      status_parcela: { type: 'string', description: 'Status da parcela atual (valor da lista, ex: "em_dia", "atrasada", "paga").' },
+      data_ultimo_pagamento: { type: 'string', description: 'Data do último pagamento no formato YYYY-MM-DD.' },
+      numero_parcelas_total: { type: 'string', description: 'Número total de parcelas do contrato. Ex: "12".' },
+      parcela_atual: { type: 'string', description: 'Número da parcela atual/corrente. Ex: "3".' },
+    },
+  },
+
   // ─── Multi-agent routing (M2) ────────────────────────────────────────────────
   // Tool especial: NÃO chama endpoint HTTP — é tratada pelo dispatcher
   // como "internal tool" que muda conversation.agent_id no DB.

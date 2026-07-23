@@ -149,7 +149,7 @@ export async function runCortexAgent(job: AgentJob): Promise<void> {
     const brainContext = await buildBrainContext(tenantId, entity);
 
     // 7. Executa
-    const apiKey = pickApiKey(def.model, workspace);
+    const apiKey = pickApiKey(def.model, workspace, def.id);
     const input: AgentRunInput = {
       tenantId,
       sessionId: job.leadId,

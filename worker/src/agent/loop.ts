@@ -608,7 +608,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
       systemPrompt: augmentedSystemPrompt,
       tools: toolDefs,
       messages,
-      apiKey: pickApiKey(agent.model, workspace),
+      apiKey: pickApiKey(agent.model, workspace, agent.id),
       forceTool,
       forceToolName,
     });
@@ -671,6 +671,8 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
             conversationId: conversation.id,
             workspaceId: agent.workspaceId,
             channel: job.channel,
+            leadId: job.leadId,
+            workspace: workspace ?? undefined,
             sendMessage: async (content: string) => {
               await crm.sendMessage(job.channel, job.leadId, content, workspace ?? undefined);
             },
@@ -772,7 +774,7 @@ export async function runAgentLoop(job: AgentJob): Promise<void> {
           systemPrompt: `${agent.systemPrompt}\n\n${buildStateReminder(currentState, stateData)}\n\nIMPORTANTE: O atendimento foi concluído com sucesso. Envie AGORA a mensagem de confirmação final ao cliente com os dados do agendamento (data, horário, OS). NÃO chame mais tools — apenas responda em texto.`,
           tools: [], // sem tools — força texto
           messages,
-          apiKey: pickApiKey(agent.model, workspace),
+          apiKey: pickApiKey(agent.model, workspace, agent.id),
         });
         totalTokensIn += finalResponse.usage.inputTokens;
         totalTokensOut += finalResponse.usage.outputTokens;
