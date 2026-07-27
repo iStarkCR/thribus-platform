@@ -616,6 +616,21 @@ export function TalkPage() {
   waitingRef.current = waiting;
   // mensagem do usuário em processamento → chave dos passos "por trás"
   const lastUserMsgId = waiting ? messages[messages.length - 1].id : null;
+  // Turno em andamento — mais amplo que `waiting`: cobre o ANTES do streaming
+  // (última msg = user pending/processing) E o DURANTE (a ponte já inseriu a msg
+  // do assistant e está streamando/executando passos). Sem isso o botão "Parar"
+  // sumia assim que a resposta começava a aparecer, deixando um turno rodando sem
+  // como cancelar. A ponte cancela pelo id da msg do USUÁRIO (pollCancel + kill),
+  // que segue 'processing' até o fim — então é esse id que devolvemos.
+  const running =
+    messages.length > 0 &&
+    (
+      (lastMsg.role === 'user' && ['pending', 'processing'].includes(lastMsg.status)) ||
+      (lastMsg.role === 'assistant' && lastMsg.status === 'processing')
+    );
+  const runningUserMsgId = running
+    ? ([...messages].reverse().find((m) => m.role === 'user' && ['pending', 'processing'].includes(m.status))?.id ?? null)
+    : null;
 
   // Aurora reativa — o fundo (tema glass) pulsa quando o Bukowiski pensa e ganha
   // vida quando ele FALA (TTS). Limpa as classes ao desmontar.
@@ -667,8 +682,14 @@ export function TalkPage() {
   }, [agentId, activeId, inChat, treeLoaded, period]);
 
   // Botão "Parar": marca a msg como cancelada (a ponte mata o claude) + UI otimista.
+  // Também congela a resposta do assistant que estiver streamando (cursor + passos
+  // ao vivo) na hora — a ponte confirma o estado final logo em seguida.
   async function cancelTurn(msgId: string) {
-    setMessages((m) => m.map((x) => (x.id === msgId ? { ...x, status: 'cancelled' } : x)));
+    setMessages((m) => m.map((x) => {
+      if (x.id === msgId) return { ...x, status: 'cancelled' };
+      if (x.role === 'assistant' && x.status === 'processing') return { ...x, status: 'done' };
+      return x;
+    }));
     try { await cancelMessage(msgId); }
     catch (e) { useAppStore.getState().addToast('Falha ao parar: ' + (e as Error).message, 'red'); }
   }
@@ -2021,9 +2042,9 @@ export function TalkPage() {
             >
               <Mic size={17} />
             </button>
-            {waiting && lastUserMsgId ? (
+            {running && runningUserMsgId ? (
               <button
-                onClick={() => cancelTurn(lastUserMsgId)}
+                onClick={() => cancelTurn(runningUserMsgId)}
                 title="Parar a resposta"
                 className="w-10 h-10 rounded-xl bg-semantic-red/15 text-semantic-red flex items-center justify-center shrink-0 hover:bg-semantic-red/25 transition-colors animate-pulse"
               >
