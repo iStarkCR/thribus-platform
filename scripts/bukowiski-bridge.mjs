@@ -674,7 +674,7 @@ async function processMessage(msg) {
   // Sessão do claude desta conversa (memória otimizada via --resume).
   const { data: sess } = await sb
     .from('chat_sessions')
-    .select('claude_session_id,context_tokens,working_dir,context_seed')
+    .select('claude_session_id,context_tokens,working_dir,context_seed,model_override,effort_override')
     .eq('id', msg.session_id)
     .maybeSingle();
   let resumeId = sess?.claude_session_id || null;
@@ -702,18 +702,27 @@ async function processMessage(msg) {
     recordRunEvent({ userId: msg.user_id, scope: 'chat', refId: msg.id, seq: evSeq++, label: e.label, detail: e.detail, input: e.input, toolUseId: e.toolUseId });
   };
   // Modo voz → modelo leve/rápido (conversa falada). A execução normal (texto/
-  // painel/demandas) segue no modelo forte do cortex_brain_config global.
+  // painel/demandas) é decidida POR sessão: override da sessão vence; sem
+  // override, o roteador automático (route()) escolhe por mensagem. O
+  // cortex_brain_config global só entra como fallback (budget/teto de contexto).
   const voice = msg.is_voice ? { model: VOICE_MODEL, effort: VOICE_EFFORT } : {};
   const cwd = await cwdForSession(msg.agent_id, sess?.working_dir);
 
-  // ─── Roteamento (modo auto) ────────────────────────────────────────────────
-  // Cortex Router decide modelo/esforço pelo texto (profile 'painel'), com sticky
-  // por sessão e imagem→sonnet. Voz tem modelo próprio (VOICE_*), então pula o
-  // roteamento. Manual: model/effort fixos do config vencem (comportamento atual).
+  // ─── Roteamento (por sessão) ───────────────────────────────────────────────
+  // Prioridade: override da sessão (pin manual em chat_sessions) > roteador
+  // automático (route(), profile 'painel', sticky por sessão, imagem→sonnet) >
+  // fallback do BRAIN global (só se route não carregar). Voz tem modelo próprio
+  // (VOICE_*), então pula o roteamento. O modo `manual` GLOBAL do
+  // cortex_brain_config NÃO força mais todas as sessões — default é sempre auto.
   let runModel = BRAIN.model;
   let runEffort = BRAIN.effort;
   let routing = null;
-  if (BRAIN.mode === 'auto' && route && !msg.is_voice) {
+  if (sess?.model_override && !msg.is_voice) {
+    runModel = sess.model_override;
+    runEffort = sess.effort_override || BRAIN.effort;
+    routing = { model: runModel, effort: effortApplies(runModel) ? runEffort : null, tier: null, reason: 'pin manual (sessão)' };
+    console.log(`[router] ${runModel}${routing.effort ? ' · ' + routing.effort : ''} (pin manual — sessão)`);
+  } else if (route && !msg.is_voice) {
     const hasImage = files.some((f) => /^image\//.test(f.mime));
     const sticky = (msg.session_id && stickyByCortexSession.get(msg.session_id)) || null;
     const rt = route({ text: msg.content, hasImage, currentModel: sticky, profile: 'painel' });

@@ -1850,7 +1850,7 @@ export function TalkPage() {
         <div className="px-3 md:px-6 py-3 md:py-4 border-t border-default shrink-0">
           <div className="flex items-center justify-between mb-2 px-1 gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <CortexBrainBar />
+              <CortexBrainBar sessionId={activeId} />
               <CortexUsageBadge />
               <UsageLimitsBadge />
               <ReasoningViewBadge />
