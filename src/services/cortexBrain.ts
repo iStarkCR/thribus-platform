@@ -1,9 +1,11 @@
 /**
  * Cortex Brain — o "cérebro" do time. Modelo + capacidade (esforço) + uso real.
  *
- * O painel escolhe; a ponte (bridge, service role) lê `cortex_brain_config`
- * scope='global' e aplica `--model`/`--effort` em toda execução, gravando o
- * custo/tokens reais em `cortex_usage`. É o espelho do controle do Claude.
+ * A escolha de modelo é POR conversa: o override vive em `chat_sessions`
+ * (model_override/effort_override) — ver getSessionOverride/saveSessionOverride.
+ * Sem override, a sessão roda em AUTO (a ponte roteia por mensagem). O
+ * `cortex_brain_config` scope='global' segue só pra budget/teto de contexto e
+ * fallback. A ponte grava custo/tokens reais em `cortex_usage`.
  */
 
 import { supabase } from '@/lib/supabase';
@@ -229,6 +231,48 @@ export async function updateContextLimit(tokens: number): Promise<void> {
     .from('cortex_brain_config')
     .update({ context_limit_tokens: clampContext(tokens), updated_at: new Date().toISOString() })
     .eq('scope', 'global');
+  if (error) throw error;
+}
+
+// ─── Override por sessão (modelo/esforço POR conversa) ──────────────────────
+// A escolha de modelo é POR conversa: fica em chat_sessions.model_override /
+// effort_override. null = sem override → a sessão segue AUTO (roteador decide).
+// O cortex_brain_config global segue existindo, mas só pra budget/teto de
+// contexto/fallback — não decide mais o modelo de toda sessão.
+
+export interface SessionOverride {
+  mode: 'auto' | 'manual';
+  model: CortexModel | null;
+  effort: CortexEffort | null;
+}
+
+export async function getSessionOverride(sessionId: string): Promise<SessionOverride> {
+  if (!supabase || !sessionId) return { mode: 'auto', model: null, effort: null };
+  const { data, error } = await supabase
+    .from('chat_sessions')
+    .select('model_override,effort_override')
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (error || !data || !data.model_override) return { mode: 'auto', model: null, effort: null };
+  return {
+    mode: 'manual',
+    model: data.model_override as CortexModel,
+    effort: (data.effort_override as CortexEffort) ?? 'high',
+  };
+}
+
+export async function saveSessionOverride(
+  sessionId: string,
+  patch: { mode: 'auto' | 'manual'; model?: CortexModel; effort?: CortexEffort },
+): Promise<void> {
+  if (!supabase || !sessionId) throw new Error('sessão inválida');
+  const { error } = await supabase
+    .from('chat_sessions')
+    .update({
+      model_override: patch.mode === 'manual' ? patch.model ?? null : null,
+      effort_override: patch.mode === 'manual' ? patch.effort ?? null : null,
+    })
+    .eq('id', sessionId);
   if (error) throw error;
 }
 
