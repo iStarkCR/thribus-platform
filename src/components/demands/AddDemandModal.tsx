@@ -21,6 +21,7 @@ export function AddDemandModal({
   const [orchestrate, setOrchestrate] = useState(false);
   const [priority, setPriority] = useState(0);
   const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('');
   const [tagsRaw, setTagsRaw] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +43,9 @@ export function AddDemandModal({
         agentId: orchestrate ? BUKOWISKI_ID : agentId,
         orchestrate,
         priority,
-        dueDate: dueDate ? new Date(`${dueDate}T23:59:59`).toISOString() : null,
+        // Sem hora escolhida = fim do dia (23:59:59). Fuso Brasil explícito (-03:00) —
+        // sem isso o horário local do navegador vaza pro cálculo do agendamento.
+        dueDate: dueDate ? `${dueDate}T${dueTime || '23:59'}:00-03:00` : null,
         tags,
       });
       onCreated(d);
@@ -107,7 +110,17 @@ export function AddDemandModal({
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Prazo (opcional)">
-              <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <div className="flex gap-1.5">
+                <input type="date" className="input flex-1" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                <input
+                  type="time"
+                  className="input w-[104px] disabled:opacity-40"
+                  value={dueTime}
+                  disabled={!dueDate}
+                  onChange={(e) => setDueTime(e.target.value)}
+                  title="Hora do agendamento (vazio = fim do dia, 23:59)"
+                />
+              </div>
             </Field>
             <Field label="Tags (vírgula)">
               <input className="input" value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="cobrança, urgente" />

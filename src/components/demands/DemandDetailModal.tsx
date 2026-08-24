@@ -11,7 +11,7 @@ import {
 } from '@/services/demands';
 import { Markdown } from '@/components/shared/Markdown';
 import { MessageSteps } from '@/components/shared/ThinkingActivity';
-import { PRIORITIES, priorityMeta, formatCost, formatDuration, formatTokens, dueMeta } from './demandUtils';
+import { PRIORITIES, priorityMeta, formatCost, formatDuration, formatTokens, dueMeta, dueTimeFromIso } from './demandUtils';
 
 const STATUS_LABEL: Record<DemandStatus, string> = {
   todo: 'A fazer', doing: 'Executando', waiting: 'Aguardando você', done: 'Feito', error: 'Erro',
@@ -45,6 +45,7 @@ export function DemandDetailModal({
   const [eAgent, setEAgent] = useState(demand.agentId);
   const [ePriority, setEPriority] = useState(demand.priority);
   const [eDue, setEDue] = useState(demand.dueDate ? demand.dueDate.slice(0, 10) : '');
+  const [eDueTime, setEDueTime] = useState(dueTimeFromIso(demand.dueDate));
   const [eTags, setETags] = useState(demand.tags.join(', '));
   const [eDeps, setEDeps] = useState<string[]>(demand.dependsOn);
 
@@ -62,6 +63,7 @@ export function DemandDetailModal({
     setEAgent(demand.agentId);
     setEPriority(demand.priority);
     setEDue(demand.dueDate ? demand.dueDate.slice(0, 10) : '');
+    setEDueTime(dueTimeFromIso(demand.dueDate));
     setETags(demand.tags.join(', '));
     setEDeps(demand.dependsOn);
   }, [demand, editing]);
@@ -101,7 +103,9 @@ export function DemandDetailModal({
         project: eProject.trim() || null,
         agentId: eAgent,
         priority: ePriority,
-        dueDate: eDue ? new Date(`${eDue}T23:59:59`).toISOString() : null,
+        // Sem hora escolhida = fim do dia. Fuso Brasil explícito (-03:00) — sem
+        // isso o cálculo do agendamento vaza pro horário local do navegador.
+        dueDate: eDue ? `${eDue}T${eDueTime || '23:59'}:00-03:00` : null,
         tags: eTags.split(',').map((t) => t.trim()).filter(Boolean),
         dependsOn: eDeps,
       });
@@ -234,7 +238,20 @@ export function DemandDetailModal({
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div><label className="text-[10px] text-creme-faint">Prazo</label><input type="date" className="input mt-0.5 text-[12px]" value={eDue} onChange={(e) => setEDue(e.target.value)} /></div>
+                    <div>
+                      <label className="text-[10px] text-creme-faint">Prazo</label>
+                      <div className="flex gap-1 mt-0.5">
+                        <input type="date" className="input flex-1 text-[12px]" value={eDue} onChange={(e) => setEDue(e.target.value)} />
+                        <input
+                          type="time"
+                          className="input w-[86px] text-[12px] disabled:opacity-40"
+                          value={eDueTime}
+                          disabled={!eDue}
+                          onChange={(e) => setEDueTime(e.target.value)}
+                          title="Hora do agendamento (vazio = fim do dia, 23:59)"
+                        />
+                      </div>
+                    </div>
                     <div><label className="text-[10px] text-creme-faint">Projeto</label><input className="input mt-0.5 text-[12px]" value={eProject} onChange={(e) => setEProject(e.target.value)} /></div>
                   </div>
                   <div><label className="text-[10px] text-creme-faint">Tags (vírgula)</label><input className="input mt-0.5 text-[12px]" value={eTags} onChange={(e) => setETags(e.target.value)} /></div>
