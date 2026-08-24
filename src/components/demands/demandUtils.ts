@@ -49,3 +49,14 @@ export function dueMeta(dueDate: string | null): { label: string; overdue: boole
   const rel = days >= 1 ? `${days}d` : `${hrs}h`;
   return { label: overdue ? `venceu há ${rel}` : `vence em ${rel}`, overdue };
 }
+
+/** HH:MM (fuso Brasil) do dueDate salvo, pra pré-popular o input de hora na edição. */
+export function dueTimeFromIso(dueDate: string | null): string {
+  if (!dueDate) return '';
+  return new Date(dueDate).toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hourCycle: 'h23',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
