@@ -16,7 +16,11 @@ import { Chart } from '@/components/shared/Chart';
 import { useAppStore } from '@/hooks/useAppStore';
 
 // URL aceita parênteses balanceados (ex.: .../Foo_(bar)) sem cortar no 1º ')'.
-const URLCORE = 'https?:\\/\\/(?:[^\\s()]+|\\([^\\s()]*\\))+';
+// IMPORTANTE: classes disjuntas ([^\s()] vs. o grupo \(…\)) — SEM quantificador
+// aninhado ambíguo tipo (?:[^\s()]+|…)+, que causava catastrophic backtracking
+// (ReDoS) e travava a thread principal quando uma linha começava com URL + token
+// longo sem espaço seguido de mais texto (ex.: relatório/artefato com link do Hub).
+const URLCORE = 'https?:\\/\\/[^\\s()]*(?:\\([^\\s()]*\\)[^\\s()]*)*';
 const INLINE = new RegExp(
   '(\\[([^\\]]+)\\]\\((' + URLCORE + ')\\))|(' + URLCORE + ')|(\\*\\*([^*]+?)\\*\\*)|(`([^`]+?)`)' +
     // itálico _…_ : fronteira não-palavra dos dois lados (m[9]=fronteira, m[10]=_…_, m[11]=conteúdo)
