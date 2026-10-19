@@ -16,6 +16,7 @@
 import { db, type AgentRole, type WorkspaceRecord } from '../db/index.js';
 import * as talki from '../talki/client.js';
 import type * as crm from '../crm/dispatcher.js';
+import { consultarImoveisGorki } from './gorki-catalogo.js';
 
 export interface InternalToolContext {
   conversationId: string;
@@ -68,6 +69,7 @@ export const INTERNAL_TOOL_NAMES = new Set<string>([
   'escalar_humano',
   'consultar_cliente',
   'atualizar_cliente',
+  'consultar_imoveis_gorki',
 ]);
 
 export function isInternalTool(name: string): boolean {
@@ -92,6 +94,8 @@ export async function executeInternal(
       return consultarCliente(input, ctx);
     case 'atualizar_cliente':
       return atualizarCliente(input, ctx);
+    case 'consultar_imoveis_gorki':
+      return { output: JSON.stringify(await consultarImoveisGorki(input)) };
     default:
       return {
         output: JSON.stringify({ error: `Internal tool "${toolName}" não implementada.` }),
