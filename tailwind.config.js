@@ -37,6 +37,8 @@ export default {
         // re-renderiza toda a UI em tempo real. Manrope permanece como fallback.
         sans: ['var(--font-ui)', 'Manrope', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
+        // Fonte da marca (wordmark "thribus." / PLATFORM) — independe da fonte da UI escolhida
+        brand: ['Space Grotesk', 'Manrope', 'sans-serif'],
       },
       colors: {
         surface: {

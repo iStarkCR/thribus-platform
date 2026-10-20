@@ -1341,14 +1341,15 @@ export function TalkPage() {
                 <PanelLeft size={17} />
               </button>
             )}
+            {/* Avatar + nome abrem o perfil do colaborador (voltar pro orbe fica no botão "Orbe" da toolbar) */}
             <button
-              onClick={() => navigate('/settings')}
-              title="Abrir configurações"
-              className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[15px] font-bold text-white shrink-0 hover:ring-2 hover:ring-brand/50 transition-all cursor-pointer"
+              onClick={() => setInfoOpen(true)}
+              title={`Ver perfil de ${agent.name}`}
+              className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[15px] font-bold text-white shrink-0 hover:ring-2 hover:ring-brand/50 active:scale-95 transition-all cursor-pointer"
             >
               {agent.name[0]}
             </button>
-            <button onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setChatMode(false); setHistOpen(false); }} title="Voltar pra tela inicial (orbe)" className="min-w-0 text-left">
+            <button onClick={() => setInfoOpen(true)} title={`Ver perfil de ${agent.name}`} className="min-w-0 text-left">
               <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2 hover:text-brand-bright transition-colors min-w-0">
                 <span className="truncate">{agent.name}</span>
                 {agent.isSupervisor && <Crown size={15} className="text-gold-bright shrink-0" />}

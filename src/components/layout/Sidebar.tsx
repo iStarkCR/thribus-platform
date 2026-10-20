@@ -61,9 +61,12 @@ export function Sidebar() {
         <img src={thribusMark} alt="Thribus" width={30} height={30} className="w-[30px] h-[30px] rounded-lg shrink-0" />
         {!collapsed && (
           <>
-            {/* Nome em linha única (a tagline fica no tooltip — não cabe sem truncar ao lado do sino e do recolher). */}
-            <div className="flex flex-col flex-1 min-w-0" title="Thribus Platform · Colaboradores Digitais">
-              <span className="text-[14.5px] font-semibold text-creme leading-tight tracking-tight truncate">Thribus Platform</span>
+            {/* Assinatura completa (mesma composição do kit em public/logo): "thribus." + PLATFORM em Space Grotesk. */}
+            <div className="flex flex-col flex-1 min-w-0 leading-none" title="Thribus Platform · Colaboradores Digitais">
+              <span className="font-brand text-[17px] font-bold tracking-[-0.03em] text-creme truncate">
+                thribus<span className="text-brand">.</span>
+              </span>
+              <span className="font-brand text-[8.5px] font-medium tracking-[0.32em] uppercase text-gold mt-[3px] truncate">Platform</span>
             </div>
             <NotifBell onClick={() => navigate('/notifications')} />
             <button onClick={() => (isMobile ? setMobileNavOpen(false) : setSidebarCollapsed(true))} title={isMobile ? 'Fechar' : 'Recolher'} className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
