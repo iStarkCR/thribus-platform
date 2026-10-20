@@ -1591,7 +1591,7 @@ export function TalkPage() {
                     <AudioRecorderBar agentId={agentId ?? ''} onResult={(t) => { setRecording(false); if (t) setInput((c) => (c ? `${c} ${t}` : t)); }} onCancel={() => setRecording(false)} />
                   ) : (
                     <div
-                      className="glass-panel flex items-center gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 focus-within:border-brand transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]"
+                      className="glass-panel flex items-center gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]"
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => { e.preventDefault(); addFiles(Array.from(e.dataTransfer.files)); }}
                     >
@@ -1919,7 +1919,7 @@ export function TalkPage() {
             />
           ) : (
           <div
-            className="glass-panel relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors"
+            className="glass-panel relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 transition-colors"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); addFiles(Array.from(e.dataTransfer.files)); }}
           >
