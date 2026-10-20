@@ -1,32 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Thribus Platform">
   <!--
-    Thribus Platform — símbolo.
-    Conceito: uma "tribo" de três colaboradores digitais (nós creme) conectados
-    pela plataforma (hub dourado). A estrutura forma um "T" de Thribus.
-    Cores: tokens do design system (brand-dim → brand, gold, creme).
+    Thribus Platform — símbolo "Delta".
+    Δ é o símbolo de mudança em engenharia e matemática: somos quem muda o
+    estado do problema. O ápice dourado é o resultado entregue.
+    Cores: tokens do design system (creme, gold, brand green).
   -->
   <defs>
-    <linearGradient id="t-bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4a7a3d"/>
-      <stop offset="1" stop-color="#6b8f5e"/>
+    <linearGradient id="t-tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#142014"/>
+      <stop offset="1" stop-color="#090e09"/>
     </linearGradient>
     <linearGradient id="t-gold" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#e2c684"/>
       <stop offset="1" stop-color="#c6a45a"/>
     </linearGradient>
+    <!-- recorte: abre um vão limpo entre o triângulo e o ápice dourado -->
+    <mask id="t-apex">
+      <rect width="64" height="64" fill="#fff"/>
+      <path d="M23 26.5 L32 11 L41 26.5" fill="none" stroke="#000" stroke-width="10.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
   </defs>
-
-  <rect width="64" height="64" rx="16" fill="url(#t-bg)"/>
-
-  <!-- conexões -->
-  <path d="M16 21H48M32 21V45" fill="none" stroke="#f0ece2" stroke-width="4.5" stroke-linecap="round"/>
-
-  <!-- colaboradores -->
-  <circle cx="16" cy="21" r="5" fill="#f0ece2"/>
-  <circle cx="48" cy="21" r="5" fill="#f0ece2"/>
-  <circle cx="32" cy="45" r="5" fill="#f0ece2"/>
-
-  <!-- hub: a plataforma -->
-  <circle cx="32" cy="21" r="8" fill="#55814a"/>
-  <circle cx="32" cy="21" r="5.75" fill="url(#t-gold)"/>
+  <rect width="64" height="64" rx="14" fill="url(#t-tile)" stroke="#6b8f5e" stroke-opacity=".4" stroke-width="1"/>
+  <path d="M8 53 H56 L32 11 Z" fill="none" stroke="#f0ece2" stroke-width="6" stroke-linejoin="round" mask="url(#t-apex)"/>
+  <path d="M23 26.5 L32 11 L41 26.5" fill="none" stroke="url(#t-gold)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
