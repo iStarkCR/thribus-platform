@@ -322,9 +322,16 @@ export function NeuralSphere({
     // Performance: mantém o movimento FLUIDO (rAF nativo — sem cap, que picotava em
     // ProMotion), mas PAUSA quando sai da tela (IntersectionObserver). A carga é
     // contida pelo pixelRatio menor (ver setPixelRatio) em vez de cortar frames.
-    let visible = true;
-    const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0.01 });
+    let onScreen = true;
+    let docVisible = !document.hidden;
+    const io = new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; }, { threshold: 0.01 });
     io.observe(container);
+    // Aba oculta (troca de aba / minimiza): o rAF já é throttled pelo browser, mas
+    // garantimos a pausa dura — sessão longa em background não fica queimando GPU.
+    // O IntersectionObserver não re-dispara ao voltar a aba, então rastreamos os
+    // dois sinais separados e retomamos quando ambos estão ok.
+    const onVis = () => { docVisible = !document.hidden; };
+    document.addEventListener('visibilitychange', onVis);
     let smoothI = 0;
     const startTime = performance.now();
 
@@ -411,7 +418,7 @@ export function NeuralSphere({
 
     const animate = () => {
       raf = requestAnimationFrame(animate);
-      if (!visible) return; // fora da tela → não gasta GPU
+      if (!onScreen || !docVisible) return; // fora da tela ou aba oculta → não gasta GPU
       const tNow = performance.now();
       const elapsed = tNow - lastFrame;
       if (elapsed < minFrameMs) return; // cap de fps (não recalcula a cada frame nativo)
@@ -520,6 +527,7 @@ export function NeuralSphere({
     return () => {
       cancelAnimationFrame(raf);
       io.disconnect();
+      document.removeEventListener('visibilitychange', onVis);
       container.removeEventListener('mousemove', onMouseMove);
       container.removeEventListener('mouseleave', onMouseLeave);
       ro.disconnect();

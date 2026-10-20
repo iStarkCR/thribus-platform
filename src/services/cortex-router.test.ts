@@ -133,13 +133,17 @@ describe('route — override manual (hook de pin)', () => {
 });
 
 describe('route — esforço efetivo', () => {
-  it('esforço é descartado em modelos não-effortable (sonnet)', () => {
+  it('sonnet CARREGA esforço (Fase 3: a ponte repassa via forceEffort)', () => {
     const r = route({ text: 'qualquer coisa', ctx: { forcedModel: 'sonnet', forcedEffort: 'high' } });
+    expect(r.effort).toBe('high');
+  });
+  it('haiku descarta esforço', () => {
+    const r = route({ text: 'qualquer coisa', ctx: { forcedModel: 'haiku', forcedEffort: 'high' } });
     expect(r.effort).toBeNull();
   });
 });
 
-describe('classifyPainel — calibrado (Fase 2): gate por SINAL', () => {
+describe('classifyPainel — Fase 3: sonnet cavalo de batalha', () => {
   // ── trivial → haiku: curto + só sinal leve, sem nada pesado ──
   it('ack curto → haiku', () => {
     expect(classifyPainel('ok')).toEqual({ tier: 'trivial', model: 'haiku', effort: null, reason: 'ack/saudação' });
@@ -149,99 +153,97 @@ describe('classifyPainel — calibrado (Fase 2): gate por SINAL', () => {
     expect(classifyPainel('valeu, fechou').tier).toBe('trivial');
   });
 
-  // ── médio → sonnet: conversa/pergunta curta SEM sinal pesado ──
-  it('pergunta leve curta (sem sinal pesado) → sonnet', () => {
+  // ── médio → sonnet · medium: conversa/pergunta curta SEM sinal pesado ──
+  it('pergunta leve curta (sem sinal pesado) → sonnet medium', () => {
     const r = classifyPainel('qual o status do cliente texnet hoje?');
-    expect(r).toEqual({ tier: 'médio', model: 'sonnet', effort: null, reason: 'default' });
+    expect(r).toEqual({ tier: 'médio', model: 'sonnet', effort: 'medium', reason: 'default' });
   });
   it('mensagem curta sem ack e sem pesado → sonnet (não vira haiku à toa)', () => {
     expect(classifyPainel('e o relatório do mês?').tier).toBe('médio');
   });
 
-  // ── CURTO-MAS-PESADO (o ponto da Fase 2): tamanho NÃO rebaixa ──
-  it('"audita o RLS do cortex" (24 chars) → opus, não sonnet', () => {
-    const r = classifyPainel('audita o RLS do cortex');
-    expect(r.model).toBe('opus');
-    expect(r.effort).not.toBeNull();
-  });
-  it('verbo de ação curto → opus complexo high', () => {
+  // ── um sinal pesado → sonnet · high (não mais opus) ──
+  it('verbo de ação curto → sonnet complexo high', () => {
     const r = classifyPainel('refatora isso');
     expect(r.tier).toBe('complexo');
-    expect(r.model).toBe('opus');
+    expect(r.model).toBe('sonnet');
     expect(r.effort).toBe('high');
   });
-  it('noun técnico curto vence a pergunta leve (pesado > leve)', () => {
+  it('noun técnico curto → sonnet high (pesado > leve, mas sem opus)', () => {
     const r = classifyPainel('como tá o deploy?');
-    expect(r.model).toBe('opus');
+    expect(r.model).toBe('sonnet');
+    expect(r.effort).toBe('high');
   });
-  it('chamada de função foo() → opus', () => {
-    expect(classifyPainel('roda o route() de novo').model).toBe('opus');
-  });
-  it('path de arquivo → opus', () => {
-    expect(classifyPainel('abre o src/services/cortex-router.ts').model).toBe('opus');
-  });
-  it('SQL → opus', () => {
-    expect(classifyPainel('select * from clientes where ativo').model).toBe('opus');
-  });
-  it('desempate: "como faço pra refatorar o módulo?" → opus (pesado vence leve)', () => {
-    expect(classifyPainel('como faço pra refatorar o módulo?').model).toBe('opus');
+  it('SQL sozinho → sonnet high', () => {
+    expect(classifyPainel('select * from clientes where ativo').model).toBe('sonnet');
   });
 
-  // ── crítico → opus xhigh: pesado + (len>600 OU 2+ sinais OU bloco de código) ──
-  it('dois sinais pesados (delegação + verbo) → crítico xhigh', () => {
-    const r = classifyPainel('manda o Atlas montar o fluxo do n8n');
+  // ── denso (2+ sinais, código, pesado+longo) → sonnet · max ──
+  it('"audita o RLS do cortex" → sonnet max (múltiplos sinais)', () => {
+    const r = classifyPainel('audita o RLS do cortex');
     expect(r.tier).toBe('crítico');
-    expect(r.effort).toBe('xhigh');
+    expect(r.model).toBe('sonnet');
+    expect(r.effort).toBe('max');
   });
-  it('bloco de código sozinho → crítico xhigh (não máximo)', () => {
+  it('bloco de código sozinho → sonnet max', () => {
     const r = classifyPainel('olha esse erro:\n```ts\nconst x = 1\n```');
     expect(r.tier).toBe('crítico');
-    expect(r.model).toBe('opus');
-    expect(r.effort).toBe('xhigh');
+    expect(r.model).toBe('sonnet');
+    expect(r.effort).toBe('max');
   });
-  it('pesado + denso (len>600) → crítico xhigh', () => {
-    const r = classifyPainel('refatora ' + filler(620));
-    expect(r.tier).toBe('crítico');
-    expect(r.effort).toBe('xhigh');
-  });
-
-  // ── máximo → opus max: estratégia/arquitetura/roadmap; len>1500; código multi-parte ──
-  it('keyword estratégica → máximo max', () => {
+  it('estratégico solto ("qual a estratégia?") → sonnet max, NÃO opus', () => {
     const r = classifyPainel('qual a estratégia de produto pra 2026?');
-    expect(r.tier).toBe('máximo');
-    expect(r.effort).toBe('max');
-  });
-  it('arquitetura vence verbo (estratégico → máximo)', () => {
-    expect(classifyPainel('revisa a arquitetura do sistema').tier).toBe('máximo');
-  });
-  it('texto muito longo (>1500) → máximo, mesmo sem sinal', () => {
-    expect(classifyPainel(filler(1600)).tier).toBe('máximo');
-  });
-  it('código + pedido multi-parte (enumeração) → máximo', () => {
-    const r = classifyPainel('faz isso:\n1. ajusta o schema\n2. roda a migration\n```sql\nselect 1\n```');
-    expect(r.tier).toBe('máximo');
+    expect(r.tier).toBe('crítico');
+    expect(r.model).toBe('sonnet');
     expect(r.effort).toBe('max');
   });
 
-  // ── tamanho puro escala (LONGO-LEVE, sem sinal pesado) ──
-  it('longo-leve curto (<400) → sonnet', () => {
-    expect(classifyPainel(filler(300)).tier).toBe('médio');
+  // ── máximo → opus: SÓ dev pesado ou estratégico denso ──
+  it('dev pesado (implementa + multi-parte) → opus', () => {
+    const r = classifyPainel('implementa a feature completa de export CSV\n1. schema\n2. migration\n3. testes');
+    expect(r.tier).toBe('máximo');
+    expect(r.model).toBe('opus');
   });
-  it('longo-leve 400–900 (sem sinal pesado) → complexo high (escalada por tamanho)', () => {
-    const r = classifyPainel(filler(500));
-    expect(r.tier).toBe('complexo');
+  it('estratégico denso (arquitetura + multi-parte) → opus', () => {
+    const r = classifyPainel('define a arquitetura do billing com trade-offs:\n1. opção A\n2. opção B');
+    expect(r.tier).toBe('máximo');
+    expect(r.model).toBe('opus');
+  });
+  it('opus só chega a max no extremo (estratégico + dev pesado)', () => {
+    const r = classifyPainel('define a arquitetura e implementa a migração do zero do módulo de billing, com roadmap:\n1. a\n2. b');
+    expect(r.model).toBe('opus');
+    expect(r.effort).toBe('max');
+  });
+
+  // ── fable → só pedido explícito ──
+  it('pedido explícito de fable → fable medium', () => {
+    const r = classifyPainel('usa o fable pra essa análise');
+    expect(r.model).toBe('fable');
+    expect(r.effort).toBe('medium');
+  });
+
+  // ── tamanho puro escala DENTRO do sonnet ──
+  it('longo-leve curto (<550) → sonnet médio', () => {
+    expect(classifyPainel(filler(400)).tier).toBe('médio');
+  });
+  it('longo-leve 550–1100 → sonnet high', () => {
+    const r = classifyPainel(filler(700));
+    expect(r.model).toBe('sonnet');
     expect(r.effort).toBe('high');
   });
-  it('longo-leve > 900 (sem sinal) → crítico xhigh', () => {
-    expect(classifyPainel(filler(1000)).tier).toBe('crítico');
+  it('longo-leve > 1100 → sonnet max', () => {
+    const r = classifyPainel(filler(1200));
+    expect(r.model).toBe('sonnet');
+    expect(r.effort).toBe('max');
   });
 
   // ── boundary: substantivos não disparam verbo por radical compartilhado ──
-  it('"validade do boleto" NÃO dispara verbo "valida" → fica sonnet', () => {
-    expect(classifyPainel('qual a validade do boleto?').model).toBe('sonnet');
+  it('"validade do boleto" NÃO dispara verbo "valida" → fica sonnet medium', () => {
+    const r = classifyPainel('qual a validade do boleto?');
+    expect(r.tier).toBe('médio');
   });
-  it('"montante de R$ 5 mil" NÃO dispara verbo "monta" → fica sonnet', () => {
-    expect(classifyPainel('qual o montante de R$ 5 mil?').model).toBe('sonnet');
+  it('"montante de R$ 5 mil" NÃO dispara verbo "monta" → fica sonnet medium', () => {
+    expect(classifyPainel('qual o montante de R$ 5 mil?').tier).toBe('médio');
   });
 });
 
@@ -251,9 +253,14 @@ describe('route — perfil painel: refinamentos universais ainda valem', () => {
     expect(r.source).toBe('override');
     expect(r.model).toBe('haiku');
   });
-  it('sticky só sobe: trivial com sticky em opus mantém opus', () => {
+  it('sticky só sobe: trivial com sticky em opus mantém opus, com kept=true', () => {
     const r = route({ text: 'ok', profile: 'painel', currentModel: 'opus' });
     expect(r.model).toBe('opus');
+    expect(r.kept).toBe(true);
+  });
+  it('classificação no próprio modelo → kept=false', () => {
+    const r = route({ text: 'refatora isso', profile: 'painel' });
+    expect(r.kept).toBe(false);
   });
   it('imagem força sonnet quando cairia em haiku, sticky permanece haiku', () => {
     const r = route({ text: 'ok', hasImage: true, profile: 'painel' });
@@ -262,7 +269,7 @@ describe('route — perfil painel: refinamentos universais ainda valem', () => {
   });
   it('route propaga tier/model do classifier do painel (curto-pesado)', () => {
     const r = route({ text: 'refatora isso', profile: 'painel' });
-    expect(r.model).toBe('opus');
+    expect(r.model).toBe('sonnet');
     expect(r.tier).toBe('complexo');
   });
 });

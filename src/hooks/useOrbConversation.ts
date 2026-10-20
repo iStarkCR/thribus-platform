@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/hooks/useSession';
 import { useAppStore } from '@/hooks/useAppStore';
-import { listMessages, sendMessage, subscribeChat, type ChatMessage } from '@/services/collaboratorChat';
+import { listMessages, sendMessage, cancelMessage, subscribeChat, type ChatMessage } from '@/services/collaboratorChat';
 import { listSessions, createSession, touchSession, listFolders, createFolder } from '@/services/chatSessions';
 import { ttsBlob, transcribeBlob, quickAck } from '@/services/voiceSkill';
 import { VoiceController, type VoiceState as RawVoiceState } from '@/lib/voiceMode';
@@ -47,7 +47,7 @@ export const mapVoiceState = (s: RawVoiceState): VoiceState =>
  * (motor contínuo, portado do CORTEX): mic aberto o tempo todo, VAD por energia,
  * fala a resposta em frases. O OrbChat é só a view de texto da mesma conversa.
  */
-export function useOrbConversation() {
+export function useOrbConversation(enabled = false) {
   const { user } = useSession();
   const userId = user?.id ?? null;
 
@@ -62,6 +62,11 @@ export function useOrbConversation() {
   const inputSinkRef = useRef<((t: string) => void) | null>(null);
   // resolver da resposta atual (turn-based): a próxima msg assistant 'done' resolve.
   const pendingReplyRef = useRef<((s: string) => void) | null>(null);
+  // id da mensagem do usuário EM PROCESSAMENTO agora — pra cancelar (matar o
+  // claude na ponte) quando o usuário mandar parar. Limpo quando a resposta chega.
+  const inflightMsgIdRef = useRef<string | null>(null);
+  // TTS streaming: callback que recebe o conteúdo PARCIAL da resposta em andamento.
+  const partialCbRef = useRef<((t: string) => void) | null>(null);
   useEffect(() => { sessionRef.current = sessionId; }, [sessionId]);
 
   // ─── Sessão dedicada do orbe (localStorage) + mensagens ─────────────────────
@@ -83,6 +88,13 @@ export function useOrbConversation() {
       // estado antigo apontava p/ uma sessão do painel (contaminada), cria nova.
       const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(ORB_SESSION_KEY) : null;
       let sid: string | null = stored && sessions.some((s) => s.id === stored && s.folderId === folderId) ? stored : null;
+      let msgs = sid ? await listMessages(sid).catch(() => []) : [];
+      // Sessão VELHA (última msg > 12h) → começa limpa. A thread eterna da orbe
+      // era o que a deixava lenta vs o modo voz do painel: a ponte reprocessava
+      // um contexto gordo a cada turno. Conversa rápida pede sessão enxuta.
+      const ORB_STALE_MS = 12 * 60 * 60 * 1000;
+      const lastAt = msgs.length ? new Date(msgs[msgs.length - 1].createdAt).getTime() : 0;
+      if (sid && lastAt && Date.now() - lastAt > ORB_STALE_MS) { sid = null; msgs = []; }
       if (!sid) {
         const s = await createSession(BUKOWISKI_ID, uid, { title: 'Orbe — conversa rápida', folderId }).catch(() => null);
         sid = s?.id ?? null;
@@ -90,7 +102,7 @@ export function useOrbConversation() {
       }
       if (!alive) return;
       setSessionId(sid);
-      if (sid) setMessages(await listMessages(sid).catch(() => []));
+      setMessages(msgs);
     })();
     return () => { alive = false; };
   }, [userId]);
@@ -102,20 +114,36 @@ export function useOrbConversation() {
   }, []);
 
   useEffect(() => {
-    if (!userId) return;
+    // Só assina o realtime quando o orbe está EM USO (chat aberto ou voz ativa).
+    // Ocioso, o orbe flutuante fica montado o app inteiro e antes mantinha um 2º
+    // canal Supabase recebendo TODO evento do usuário em paralelo ao painel —
+    // duplicava a carga de realtime na sessão longa. Sem uso, não há canal.
+    if (!userId || (!enabled && !voiceActive)) return;
+    refetch(); // ao (re)ativar, sincroniza a thread na hora
     // Só refetch se o evento for da sessão do orbe — antes qualquer mensagem de
     // qualquer conversa disparava um SELECT * da thread do orbe à toa.
-    return subscribeChat(userId, (info) => {
+    let last = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const throttled = () => {
+      const wait = 350 - (Date.now() - last);
+      if (wait <= 0) { last = Date.now(); refetch(); }
+      else if (!timer) { timer = setTimeout(() => { timer = null; last = Date.now(); refetch(); }, wait); }
+    };
+    const unsub = subscribeChat(userId, (info) => {
       if (info && info.sessionId && info.sessionId !== sessionRef.current) return;
-      refetch();
+      throttled();
     });
-  }, [userId, refetch]);
+    return () => { if (timer) clearTimeout(timer); unsub(); };
+  }, [userId, enabled, voiceActive, refetch]);
 
-  // Resolve a resposta pendente quando a msg assistant 'done' chega (realtime).
+  // Resolve a resposta pendente quando a msg assistant 'done' chega (realtime);
+  // enquanto 'processing', alimenta o TTS streaming com o conteúdo parcial.
   useEffect(() => {
-    if (messages.length === 0 || !pendingReplyRef.current) return;
+    if (messages.length === 0) return;
     const last = messages[messages.length - 1];
-    if (last.role === 'assistant' && last.status === 'done') {
+    if (last.role !== 'assistant') return;
+    if (last.status === 'processing' && last.content) partialCbRef.current?.(last.content);
+    if (last.status === 'done' && pendingReplyRef.current) {
       const resolve = pendingReplyRef.current;
       pendingReplyRef.current = null;
       resolve(last.content);
@@ -142,15 +170,17 @@ export function useOrbConversation() {
     if (!sid) return '';
     setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid as string, agentId: BUKOWISKI_ID, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: [], createdAt: '' }]);
     try {
+      let sent;
       try {
-        await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
+        sent = await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
       } catch (e) {
         if (!/foreign key|violates|constraint/i.test((e as Error).message)) throw e;
         setSessionId(null); sessionRef.current = null;
         sid = await ensureSession(userId);
         if (!sid) throw e;
-        await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
+        sent = await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
       }
+      inflightMsgIdRef.current = sent.id; // pra cancelar na ponte se pedir parada
       await touchSession(sid);
     } catch (e) {
       setMessages((m) => m.filter((x) => !x.id.startsWith('tmp-')));
@@ -158,21 +188,36 @@ export function useOrbConversation() {
       return '';
     }
     // aguarda a resposta do daemon (realtime) — timeout de segurança em 4min
-    return await new Promise<string>((resolve) => {
+    const reply = await new Promise<string>((resolve) => {
       pendingReplyRef.current = resolve;
       setTimeout(() => { if (pendingReplyRef.current === resolve) { pendingReplyRef.current = null; resolve(''); } }, 240000);
     });
+    inflightMsgIdRef.current = null; // resposta chegou (ou timeout) → nada mais a cancelar
+    return reply;
   }, [userId]);
 
   // ─── Modo voz (VoiceController) ─────────────────────────────────────────────
-  const startVoice = useCallback(() => {
-    if (ctrlRef.current) return;
+  // `initialText`: comando que veio JUNTO da wake word ("Bukowiski, me dá o
+  // status") — entra direto na fila de turnos, sem esperar você repetir.
+  const startVoice = useCallback((initialText?: string) => {
+    if (ctrlRef.current) {
+      if (initialText) ctrlRef.current.injectText(initialText);
+      return;
+    }
     const ctrl = new VoiceController({
       transcribe: async (blob) => (await transcribeBlob(BUKOWISKI_ID, blob)) ?? '',
       tts: (txt) => ttsBlob(BUKOWISKI_ID, txt),
       sendAndAwait: (t) => sendAndAwait(t, true), // voz → modelo leve na ponte
       quickAck: (t) => quickAck(BUKOWISKI_ID, t),
       isNoise,
+      isStopPhrase, // barge-in: "parar"/"Bukowiski parar" corta a resposta no meio
+      // Interrompeu com um pedido novo (não "parar") → enfileira e confirma:
+      bargeAck: 'Beleza, anotei. Termino isso e já já vejo seu pedido.',
+      // TTS streaming: fala frase-a-frase conforme a ponte streama a resposta.
+      watchPartial: (cb) => {
+        partialCbRef.current = cb;
+        return () => { if (partialCbRef.current === cb) partialCbRef.current = null; };
+      },
       onState: (s) => setState(mapVoiceState(s)),
       onTranscript: (t) => { if (isStopPhrase(t)) stopVoice(); },
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
@@ -180,10 +225,16 @@ export function useOrbConversation() {
     ctrlRef.current = ctrl;
     setVoiceActive(true);
     ctrl.start();
+    if (initialText) ctrl.injectText(initialText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendAndAwait]);
 
   const stopVoice = useCallback(() => {
+    // "Parar" também MATA o processo na ponte (senão o claude segue rodando e
+    // queimando a janela mesmo com a voz fechada). Cancela a msg em voo.
+    const inflight = inflightMsgIdRef.current;
+    inflightMsgIdRef.current = null;
+    if (inflight) cancelMessage(inflight).catch(() => { /* best-effort */ });
     ctrlRef.current?.stop();
     ctrlRef.current = null;
     pendingReplyRef.current = null;
@@ -192,6 +243,21 @@ export function useOrbConversation() {
   }, []);
 
   useEffect(() => () => { ctrlRef.current?.stop(); ctrlRef.current = null; }, []);
+
+  // "/limpar": abre uma sessão NOVA da orbe (contexto zerado — nada é
+  // reprocessado). A antiga fica no histórico da pasta __orbe__.
+  const resetSession = useCallback(async () => {
+    if (!userId) return;
+    stopVoice();
+    pendingReplyRef.current = null;
+    const s = await createSession(BUKOWISKI_ID, userId, { title: 'Orbe — conversa rápida', folderId: orbFolderRef.current }).catch(() => null);
+    if (!s) { useAppStore.getState().addToast('Não consegui criar a conversa nova.', 'red'); return; }
+    sessionRef.current = s.id;
+    setSessionId(s.id);
+    if (typeof localStorage !== 'undefined') localStorage.setItem(ORB_SESSION_KEY, s.id);
+    setMessages([]);
+    useAppStore.getState().addToast('Conversa da orbe limpa — contexto zerado.', 'green');
+  }, [userId, stopVoice]);
 
   // Chat de texto (OrbChat) — envia sem TTS.
   const send = useCallback((textArg: string) => { void sendAndAwait(textArg).then(() => refetch()); }, [sendAndAwait, refetch]);
@@ -210,6 +276,7 @@ export function useOrbConversation() {
     send,
     startVoice,
     stopVoice,
+    resetSession,
     bindInputSink: (fn: ((t: string) => void) | null) => { inputSinkRef.current = fn; },
     listenForInput: () => { /* push-to-talk do input: usa o modo voz */ },
   };

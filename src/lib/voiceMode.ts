@@ -36,6 +36,24 @@ export interface VoiceControllerOpts {
   quickAck?: (text: string) => Promise<string>;
   /** Frase é "lixo" do Whisper (alucinação de silêncio)? */
   isNoise?: (t: string) => boolean;
+  /**
+   * Frase é comando de PARADA ("parar", "Bukowiski parar")? Habilita o barge-in:
+   * falar durante o TTS pausa a resposta e transcreve; se for parada, o
+   * onTranscript é chamado (o caller encerra); senão a fala retoma de onde parou.
+   */
+  isStopPhrase?: (t: string) => boolean;
+  /**
+   * TTS STREAMING: assina o texto PARCIAL da resposta em andamento (a ponte
+   * streama o conteúdo da mensagem em chunks). Com isso o motor fala cada frase
+   * assim que ela fecha, em vez de esperar a resposta inteira. Devolve unsubscribe.
+   */
+  watchPartial?: (cb: (text: string) => void) => () => void;
+  /**
+   * Frase curta falada quando o usuário INTERROMPE com um pedido novo (barge-in
+   * que não é parada): confirma que ouviu e vai atender depois de terminar o
+   * turno atual. Toca logo após a resposta em curso. undefined = sem confirmação.
+   */
+  bargeAck?: string;
 }
 
 const SILENCE_1S = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
@@ -103,6 +121,7 @@ export class VoiceController {
 
   // VAD adaptativo (média móvel do ruído).
   private noiseFloor = 0.025;
+  private bargePaused = false; // TTS pausado porque o usuário falou por cima
   private readonly ONSET_FRAMES = 5;      // ~80ms acima do limiar pra contar fala
   private readonly SILENCE_MS = 1500;     // silêncio pra encerrar a fala (não corta no meio)
   private readonly MIN_SPEECH_MS = 350;
@@ -137,6 +156,23 @@ export class VoiceController {
     this.muted = b;
     if (b) { this.speechActive = false; this._above = 0; if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; } this._resetRecorder(); }
     this._refreshState();
+  }
+
+  /**
+   * Injeta um texto como se fosse um turno já transcrito — usado pela wake word
+   * quando o comando veio junto do nome ("Bukowiski, me dá o status"): a frase
+   * capturada pelo reconhecedor entra direto na fila, sem esperar nova fala.
+   */
+  injectText(text: string): void {
+    const t = text.trim();
+    if (!t || this.cancelled) return;
+    this.o.onTranscript?.(t);
+    const id = `t${++this.turnSeq}`;
+    this.turns.push({ id, text: t, status: 'queued' });
+    this._emitTurns();
+    this._refreshState();
+    this.replyQueue.push({ id, text: t });
+    if (!this.replyRunning) void this._runReplies();
   }
 
   async start(): Promise<void> {
@@ -191,6 +227,7 @@ export class VoiceController {
     this.audioQueue = [];
     this.queueRunning = false;
     this.playing = false;
+    this.bargePaused = false;
     this.playResolve?.(); this.playResolve = null;
     if (this.persistentAudio) { try { this.persistentAudio.pause(); } catch { /* noop */ } }
     this.stream?.getTracks().forEach((t) => t.stop());
@@ -247,31 +284,47 @@ export class VoiceController {
     const buf = new Uint8Array(this.analyser.fftSize);
     const tick = () => {
       if (this.cancelled) return;
-      // Half-duplex: enquanto ELE fala (ou mic pausado), ignora a entrada → sem
-      // eco virando turno e sem cortar a resposta.
-      if (this.muted || this.playing) { this.o.onLevel?.(0); this._above = 0; this.rafId = requestAnimationFrame(tick); return; }
+      // Mic pausado manualmente → ignora a entrada.
+      if (this.muted) { this.o.onLevel?.(0); this._above = 0; this.rafId = requestAnimationFrame(tick); return; }
       this.analyser!.getByteTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
       const rms = Math.sqrt(sum / buf.length);
       this.o.onLevel?.(rms);
       const now = performance.now();
+      // Enquanto ELE fala (playing): barge-in de PARADA — escuta com limiar bem
+      // mais alto (o AEC do getUserMedia já suprime o eco do próprio TTS; o
+      // limiar alto segura o resíduo). Voz sustentada → pausa a resposta e
+      // captura; o _ingest decide entre parar (stop phrase) ou retomar.
+      const playing = this.playing && !this.bargePaused;
       // Pensando (ocupado) → limiar um pouco maior; ouvindo → base.
       const busy = this.replyRunning || this.replyQueue.length > 0;
       const base = Math.max(0.045, this.noiseFloor * 3);
-      const threshold = busy ? Math.max(0.06, this.noiseFloor * 3.5) : base;
-      const onset = busy ? 7 : this.ONSET_FRAMES;
+      const threshold = playing ? Math.max(0.09, this.noiseFloor * 5) : busy ? Math.max(0.06, this.noiseFloor * 3.5) : base;
+      const onset = playing ? 10 : busy ? 7 : this.ONSET_FRAMES;
+      // Durante o playback, recicla o recorder a cada ~3s enquanto ninguém fala:
+      // o blob do barge-in fica curto (só a fala do usuário + pouco pre-roll).
+      if (playing && !this.speechActive && now - this.recordStart > 3000) this._resetRecorder();
       if (now - this._vadLogAt > 700) {
         this._vadLogAt = now;
-        VOICE_DEBUG && console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} busy=${busy}`);
+        VOICE_DEBUG && console.log(`[voz] rms=${rms.toFixed(4)} piso=${this.noiseFloor.toFixed(4)} limiar=${threshold.toFixed(4)} fala=${this.speechActive} busy=${busy} playing=${this.playing}`);
       }
       if (rms > threshold) {
         this._above++;
-        if (!this.speechActive && this._above >= onset) { this.speechActive = true; this._refreshState(); }
+        if (!this.speechActive && this._above >= onset) {
+          this.speechActive = true;
+          if (this.playing && !this.bargePaused) {
+            this.bargePaused = true;
+            try { this.persistentAudio?.pause(); } catch { /* noop */ }
+            VOICE_DEBUG && console.log('[voz] barge-in: pausei o TTS pra ouvir');
+          }
+          this._refreshState();
+        }
         if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
       } else {
         this._above = 0;
-        if (!this.speechActive) this.noiseFloor = this.noiseFloor * 0.9 + rms * 0.1;
+        // Não aprende piso durante o playback — o resíduo de eco inflaria o limiar.
+        if (!this.speechActive && !this.playing) this.noiseFloor = this.noiseFloor * 0.9 + rms * 0.1;
         if (this.speechActive && !this.silenceTimer) {
           this.silenceTimer = setTimeout(() => {
             this.silenceTimer = null;
@@ -300,7 +353,15 @@ export class VoiceController {
       this._armRecorder();
       this._refreshState();
       VOICE_DEBUG && console.log(`[voz] finaliza: hadSpeech=${hadSpeech} dur=${Math.round(dur)}ms blob=${blob?.size ?? 0}`);
-      if (this.cancelled || !blob || !hadSpeech) return;
+      if (this.cancelled || !blob || !hadSpeech) {
+        // Captura descartada com o TTS pausado por barge-in → retoma a fala
+        // (senão a resposta ficaria muda pra sempre).
+        if (this.bargePaused && !this.cancelled) {
+          this.bargePaused = false;
+          if (this.playing) { try { void this.persistentAudio?.play(); } catch { /* noop */ } }
+        }
+        return;
+      }
       void this._ingest(blob, dur);
     };
     try { rec.onstop = finish; rec.stop(); } catch { finish(); }
@@ -308,10 +369,45 @@ export class VoiceController {
 
   // Transcreve (paralelo) e empilha o turno na fila visível + worker serial.
   private async _ingest(blob: Blob, dur: number): Promise<void> {
+    const barged = this.bargePaused;
     let text = '';
     try { text = (await this.o.transcribe(blob, dur)).trim(); } catch (e) { this.o.onError?.(e as Error); }
-    VOICE_DEBUG && console.log(`[voz] transcrito: "${text}"`);
-    if (this.cancelled || !text || this.o.isNoise?.(text)) return;
+    VOICE_DEBUG && console.log(`[voz] transcrito${barged ? ' (barge-in)' : ''}: "${text}"`);
+    if (this.cancelled) return;
+    // Barge-in: a fala aconteceu POR CIMA do TTS pausado. Comando de parada →
+    // repassa (o caller encerra tudo); qualquer outra coisa (eco/comentário) →
+    // descarta e retoma a resposta de onde parou.
+    if (barged) {
+      this.bargePaused = false;
+      // Eco do próprio TTS ou ruído → descarta e retoma a resposta.
+      if (!text || this.o.isNoise?.(text)) {
+        VOICE_DEBUG && console.log('[voz] barge-in: ruído/eco — retomando o TTS');
+        if (this.playing && !this.cancelled) { try { void this.persistentAudio?.play(); } catch { /* noop */ } }
+        return;
+      }
+      // Comando de parada → encerra tudo (o caller para no onTranscript).
+      if (this.o.isStopPhrase?.(text)) {
+        VOICE_DEBUG && console.log('[voz] barge-in: comando de parada');
+        this.o.onTranscript?.(text);
+        return;
+      }
+      // Fala REAL por cima (novo pedido, não é parada nem eco): NÃO perde — vira o
+      // PRÓXIMO turno da fila e a resposta atual retoma. O turno novo é processado
+      // quando o TTS atual escoar (fila serial). Se houver bargeAck, ele toca logo
+      // após a resposta atual, confirmando que ouviu ("já vejo seu pedido").
+      VOICE_DEBUG && console.log(`[voz] barge-in: novo pedido enfileirado — "${text.slice(0, 40)}"`);
+      const id = `t${++this.turnSeq}`;
+      this.turns.push({ id, text, status: 'queued' });
+      this._emitTurns();
+      this.replyQueue.push({ id, text });
+      if (this.o.bargeAck) this._enqueue(this.o.bargeAck); // toca após o TTS atual, antes do novo turno
+      if (this.playing && !this.cancelled) { try { void this.persistentAudio?.play(); } catch { /* noop */ } }
+      // Normalmente já há um _runReplies em curso (estávamos falando); defensivo
+      // pro caso raro do barge cair no fim exato do turno.
+      if (!this.replyRunning) void this._runReplies();
+      return;
+    }
+    if (!text || this.o.isNoise?.(text)) return;
     this.o.onTranscript?.(text);
     const id = `t${++this.turnSeq}`;
     this.turns.push({ id, text, status: 'queued' });
@@ -339,25 +435,59 @@ export class VoiceController {
     this._refreshState();
   }
 
-  // ack curto (paralelo) + resposta pesada → frases → fila de TTS (em ordem).
+  // ack curto (paralelo) + resposta → frases → fila de TTS (em ordem). Com
+  // watchPartial, cada frase é falada ASSIM QUE FECHA no stream (TTS streaming);
+  // o texto final do sendAndAwait só complementa o que faltou.
   private async _handleReply(text: string): Promise<void> {
     const replyPromise = this.o.sendAndAwait(text);
+
+    // Frases já enviadas pro TTS (por contagem — o stream só APENDA texto, as
+    // frases anteriores nunca mudam).
+    let emitted = 0;
+    const emitFrom = (full: string, final: boolean) => {
+      if (this.cancelled || !full) return;
+      let cut = full;
+      // Cerca ``` aberta no parcial → corta antes dela (não falar código cru).
+      if (!final && (cut.match(/```/g)?.length ?? 0) % 2 === 1) cut = cut.slice(0, cut.lastIndexOf('```'));
+      const clean = cleanForSpeech(cut);
+      const { sentences, remaining } = extractSentences(final ? clean + '\n' : clean);
+      const all = [...sentences];
+      if (final && remaining.trim().length >= 3) all.push(remaining.trim());
+      for (let k = emitted; k < all.length; k++) {
+        VOICE_DEBUG && console.log(`[voz] tts frase ${k + 1}${final ? '' : ' (stream)'}: "${all[k].slice(0, 40)}…"`);
+        this._enqueue(all[k]);
+      }
+      emitted = Math.max(emitted, all.length);
+    };
+
+    const unsub = this.o.watchPartial?.((partial) => emitFrom(partial, false)) ?? null;
+
     if (this.o.quickAck) {
       try {
         const ack = await this.o.quickAck(text);
-        if (ack && !this.cancelled) { VOICE_DEBUG && console.log(`[voz] ack: "${ack}"`); this._enqueue(ack); }
+        // Se o stream já começou a falar, o ack ficou pra trás — pula.
+        if (ack && !this.cancelled && emitted === 0) {
+          if (this.o.watchPartial) {
+            // Com TTS streaming, o ack é só FALLBACK DE SILÊNCIO: espera um
+            // instante; se a 1ª frase da resposta chegar nesse meio tempo, o
+            // ack é descartado (ack + resposta emendada soa duplicado).
+            await new Promise((r) => setTimeout(r, 1500));
+            if (!this.cancelled && emitted === 0) { VOICE_DEBUG && console.log(`[voz] ack (fallback de silêncio): "${ack}"`); this._enqueue(ack); }
+            else VOICE_DEBUG && console.log('[voz] ack descartado — stream já falou primeiro');
+          } else {
+            VOICE_DEBUG && console.log(`[voz] ack: "${ack}"`);
+            this._enqueue(ack);
+          }
+        }
       } catch { /* sem ack */ }
     }
     let reply = '';
     try { reply = await replyPromise; } catch (e) { this.o.onError?.(e as Error); }
+    unsub?.();
     if (this.cancelled) return;
     this.o.onReply?.(reply);
-    const clean = cleanForSpeech(reply);
-    const { sentences, remaining } = extractSentences(clean + '\n');
-    const all = [...sentences];
-    if (remaining.trim().length >= 3) all.push(remaining.trim());
-    VOICE_DEBUG && console.log(`[voz] resposta: ${reply.length} chars, ${all.length} frase(s) p/ TTS`);
-    for (const s of all) this._enqueue(s);
+    emitFrom(reply, true);
+    VOICE_DEBUG && console.log(`[voz] resposta: ${reply.length} chars, ${emitted} frase(s) p/ TTS`);
     // espera o TTS deste turno escoar antes de processar o próximo (fala em ordem).
     await this._waitQueue();
   }

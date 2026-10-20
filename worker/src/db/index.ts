@@ -25,11 +25,28 @@ interface AgentRecord {
   systemPrompt: string;
   tools: string[];
   channel?: string;
+  /** N canais do colaborador (multi-canal). channel = channels[0] por retrocompat. */
+  channels?: string[];
   workspaceId?: string;
   /** Se true, agente pode responder em áudio (TTS) quando o usuário envia áudio. */
   audioOutEnabled?: boolean;
   /** Papel do agente (vendas/suporte/financeiro/etc) — M2. */
   role?: AgentRole;
+}
+
+/** Linha crua da tabela `agents` (snake_case) como vem do Supabase. */
+interface AgentRow {
+  id: string;
+  name: string;
+  client: string;
+  model: string;
+  system_prompt: string;
+  tools: string[] | null;
+  channel: string | null;
+  channels: string[] | null;
+  workspace_id: string | null;
+  audio_out_enabled: boolean | null;
+  role: string | null;
 }
 
 /**
@@ -226,14 +243,9 @@ export const db = {
         console.warn(`[db.agents.findByChannel] stub channel=${channel}`);
         return null;
       }
-      const { data, error } = await supabase
-        .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled, role')
-        .eq('channel', channel)
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) return null;
-      return {
+      const cols =
+        'id, name, client, model, system_prompt, tools, channel, channels, workspace_id, audio_out_enabled, role';
+      const map = (data: AgentRow): AgentRecord => ({
         id: data.id,
         name: data.name,
         client: data.client,
@@ -241,18 +253,36 @@ export const db = {
         systemPrompt: data.system_prompt,
         tools: data.tools ?? [],
         channel: data.channel ?? undefined,
+        // Array vazio ('{}', DEFAULT) não mascara o singular — usa só se tiver itens.
+        channels: data.channels?.length ? data.channels : (data.channel ? [data.channel] : []),
         workspaceId: data.workspace_id ?? undefined,
         audioOutEnabled: data.audio_out_enabled ?? false,
         role: (data.role as AgentRole | null) ?? undefined,
-      };
+      });
+      // Multi-canal: casa primeiro pelo array `channels @> [channel]`; se nada
+      // (agente legado só com singular preenchido), cai no `channel` singular.
+      // O trigger `agents_channels_no_overlap` garante ≤1 agente por canal; o
+      // limit(1) degrada graciosamente (em vez de lançar PGRST116) se por algum
+      // motivo 2 linhas casarem, com vencedor determinístico por id.
+      const byArray = await supabase
+        .from('agents').select(cols).contains('channels', [channel]).order('id').limit(1).maybeSingle();
+      if (byArray.error) throw byArray.error;
+      if (byArray.data) return map(byArray.data as AgentRow);
+
+      const bySingular = await supabase
+        .from('agents').select(cols).eq('channel', channel).order('id').limit(1).maybeSingle();
+      if (bySingular.error) throw bySingular.error;
+      if (!bySingular.data) return null;
+      return map(bySingular.data as AgentRow);
     },
 
     async listWithChannel(): Promise<AgentRecord[]> {
       if (!supabase) return [];
       const { data, error } = await supabase
         .from('agents')
-        .select('id, name, client, model, system_prompt, tools, channel, workspace_id, audio_out_enabled, role')
-        .not('channel', 'is', null);
+        .select('id, name, client, model, system_prompt, tools, channel, channels, workspace_id, audio_out_enabled, role')
+        .not('channel', 'is', null)
+        .order('id'); // vencedor determinístico do Map canal→agente no poll
       if (error) throw error;
       return (data ?? []).map((a) => ({
         id: a.id,
@@ -262,6 +292,7 @@ export const db = {
         systemPrompt: a.system_prompt,
         tools: a.tools ?? [],
         channel: a.channel ?? undefined,
+        channels: a.channels?.length ? a.channels : (a.channel ? [a.channel] : []),
         workspaceId: a.workspace_id ?? undefined,
         role: (a.role as AgentRole | null) ?? undefined,
       }));

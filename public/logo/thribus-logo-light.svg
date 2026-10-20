@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 228 72" width="228" height="72" role="img" aria-label="Thribus Platform">
+  <!-- Thribus Platform — assinatura horizontal para fundos CLAROS. -->
+  <defs>
+    <linearGradient id="t-tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#142014"/>
+      <stop offset="1" stop-color="#090e09"/>
+    </linearGradient>
+    <linearGradient id="t-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e2c684"/>
+      <stop offset="1" stop-color="#c6a45a"/>
+    </linearGradient>
+    <!-- recorte: abre um vão limpo entre o triângulo e o ápice dourado -->
+    <mask id="t-apex">
+      <rect width="64" height="64" fill="#fff"/>
+      <path d="M23 26.5 L32 11 L41 26.5" fill="none" stroke="#000" stroke-width="10.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g transform="translate(0 8) scale(0.875)">
+    <rect width="64" height="64" rx="14" fill="url(#t-tile)" stroke="#6b8f5e" stroke-opacity=".4" stroke-width="1"/>
+  <path d="M8 53 H56 L32 11 Z" fill="none" stroke="#f0ece2" stroke-width="6" stroke-linejoin="round" mask="url(#t-apex)"/>
+  <path d="M23 26.5 L32 11 L41 26.5" fill="none" stroke="url(#t-gold)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="70" y="44" font-family="'Space Grotesk', Manrope, system-ui, sans-serif" font-weight="700" font-size="36" letter-spacing="-1.2" fill="#1a1f1a">thribus<tspan fill="#6b8f5e">.</tspan></text>
+  <text x="72" y="62" font-family="'Space Grotesk', Manrope, system-ui, sans-serif" font-weight="500" font-size="11" letter-spacing="3.4" fill="#b08a38">PLATFORM</text>
+</svg>

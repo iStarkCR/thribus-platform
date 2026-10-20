@@ -1,0 +1,49 @@
+# Observabilidade Cortex — Fase 3 (Prometheus + Grafana)
+# Deploy no Coolify como "Docker Compose" resource.
+# Env vars necessárias (definir no Coolify):
+#   METRICS_SCRAPE_TOKEN  — mesmo token configurado no worker
+#   CORTEX_WORKER_HOST    — host:porta do worker (ex: worker.thribustech.com ou nome do container)
+#   GRAFANA_ADMIN_PASSWORD
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    # entrypoint custom: grava o token de scrape num arquivo (prometheus.yml
+    # usa credentials_file — o config não expande env vars)
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo -n "$$METRICS_SCRAPE_TOKEN" > /prometheus/scrape-token
+        sed "s/__CORTEX_WORKER_HOST__/$$CORTEX_WORKER_HOST/" /etc/prometheus/prometheus.yml > /prometheus/prometheus.yml
+        exec /bin/prometheus \
+          --config.file=/prometheus/prometheus.yml \
+          --storage.tsdb.retention.time=30d \
+          --storage.tsdb.path=/prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    environment:
+      - METRICS_SCRAPE_TOKEN=${METRICS_SCRAPE_TOKEN}
+      - CORTEX_WORKER_HOST=${CORTEX_WORKER_HOST}
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:

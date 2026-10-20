@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { useAppStore } from '@/hooks/useAppStore';
-import { useWakeWordListener } from '@/hooks/useWakeWordListener';
+import { useWakeWordListener, extractWakeCommand } from '@/hooks/useWakeWordListener';
 import { useOrbConversation } from '@/hooks/useOrbConversation';
 import { OrbChat } from '@/components/voice/OrbChat';
 
@@ -39,6 +39,27 @@ function clamp(p: Pos): Pos {
   };
 }
 
+// Toque curto de confirmação da wake word (sobe de tom = "acordei"). Best-effort:
+// se o navegador bloquear áudio sem gesto, falha em silêncio.
+function wakeChime(): void {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    const gain = ctx.createGain();
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.07, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(740, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1180, ctx.currentTime + 0.14);
+    osc.connect(gain);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+    osc.onended = () => { void ctx.close(); };
+  } catch { /* sem chime — o flash visual continua */ }
+}
+
 export function FloatingOrb() {
   const orbEnabled = useAppStore((s) => s.orbEnabled);
   const wakeWordEnabled = useAppStore((s) => s.wakeWordEnabled);
@@ -46,13 +67,15 @@ export function FloatingOrb() {
   const sttBusy = useAppStore((s) => s.sttBusy);
   const { pathname } = useLocation();
 
-  const conv = useOrbConversation();
+  const [chatOpen, setChatOpen] = useState(false);
+  // Só liga o realtime do orbe quando o chat de texto está aberto (o modo voz o
+  // hook liga sozinho). Ocioso, o orbe não mantém canal Supabase.
+  const conv = useOrbConversation(chatOpen);
 
   const [pos, setPos] = useState<Pos>(loadPos);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [wakeFlash, setWakeFlash] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const dragState = useRef<{ moved: boolean; offX: number; offY: number; startX: number; startY: number; shift: boolean; right: boolean } | null>(null);
 
   // Mantém o orbe dentro da viewport ao redimensionar.
@@ -63,18 +86,25 @@ export function FloatingOrb() {
   }, []);
 
   // Wake word "Bukowiski" → conversa SÓ por voz (não abre o chat). A esfera muda
-  // de cor; "Bukowiski off" encerra.
+  // de cor; "Bukowiski off" encerra. Se o comando veio junto ("Bukowiski, faz X"),
+  // ele entra direto na fila — sem precisar repetir. Um toque sonoro curto
+  // confirma que ele acordou (feedback de "estou ouvindo").
   const startVoiceRef = useRef(conv.startVoice);
   startVoiceRef.current = conv.startVoice;
-  const onWake = useCallback(() => {
+  const onWake = useCallback((transcript: string) => {
     setWakeFlash(true);
     setTimeout(() => setWakeFlash(false), 2200);
-    startVoiceRef.current();
+    wakeChime();
+    const command = extractWakeCommand(transcript);
+    startVoiceRef.current(command.length >= 4 ? command : undefined);
   }, []);
 
   useWakeWordListener({
     enabled: orbEnabled && wakeWordEnabled && !conv.voiceActive && !chatOpen && !voiceModeActive && !sttBusy,
     onWake,
+    onError: (err) => {
+      if (err === 'mic-denied') useAppStore.getState().addToast('Palavra de ativação sem microfone: libere o mic pro site nas permissões do navegador.', 'red');
+    },
   });
 
   // ─── Drag ──────────────────────────────────────────────────────────────────
@@ -162,7 +192,9 @@ export function FloatingOrb() {
             filter: hue ? `hue-rotate(${hue}deg)` : undefined,
           }}
         >
-          <NeuralSphere className="absolute inset-0" intensity={intensity} connectScale={0.62} />
+          {/* interactionMultiplier=0: sem repulsão do cursor — em 88px os pontos
+              fugindo do mouse parecem a orbe inteira se esquivando do clique. */}
+          <NeuralSphere className="absolute inset-0" intensity={intensity} connectScale={0.62} interactionMultiplier={0} parallaxMultiplier={0.4} />
         </div>
         {/* Anel só em hover/ativo */}
         <div className={`absolute inset-0 rounded-full transition-all pointer-events-none ${active ? 'ring-2 ring-brand/50' : hovered ? 'ring-1 ring-brand/30' : ''}`} />

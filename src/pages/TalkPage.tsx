@@ -18,6 +18,7 @@ import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { UsageLimitsBadge } from '@/components/cortex/UsageLimitsBadge';
+import { ReasoningViewBadge } from '@/components/cortex/ReasoningViewBadge';
 import { RoutingBadge } from '@/components/cortex/RoutingBadge';
 import { WorkFolderBar } from '@/components/cortex/WorkFolderBar';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
@@ -71,6 +72,10 @@ export function TalkPage() {
 
   const [folders, setFolders] = useState<ChatFolder[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  // Espelho de `sessions` p/ efeitos que só precisam LER a lista sem re-disparar a
+  // cada refetch (que troca a referência do array a cada evento de streaming).
+  const sessionsRef = useRef<ChatSession[]>([]);
+  sessionsRef.current = sessions;
   const [treeLoaded, setTreeLoaded] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Tela atual: 'orb' (boas-vindas) é SEMPRE a inicial; só vai pra 'chat' por ação
@@ -223,6 +228,11 @@ export function TalkPage() {
   const levelRef = useRef(0);
   const lastLevelAtRef = useRef(0);
   const pendingReplyRef = useRef<((s: string) => void) | null>(null);
+  // TTS streaming do modo voz: callback que recebe o conteúdo PARCIAL da resposta.
+  const panelPartialCbRef = useRef<((t: string) => void) | null>(null);
+  // id da msg do usuário em processamento no modo voz — pra matar o claude na
+  // ponte quando pedir parada (senão a voz fecha mas o processo segue rodando).
+  const panelInflightRef = useRef<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
   // Quando a transcrição (push-to-talk) termina e não está no modo voz, libera o
@@ -289,16 +299,19 @@ export function TalkPage() {
       setSessions((prev) => [s, ...prev]);
     }
     try {
-      await sendMessage(sid, agent.id, userId, text, undefined, true);
+      const sent = await sendMessage(sid, agent.id, userId, text, undefined, true);
+      panelInflightRef.current = sent.id; // pra cancelar na ponte se pedir parada
       await touchSession(sid);
     } catch (e) {
       useAppStore.getState().addToast('Falha ao enviar: ' + (e as Error).message, 'red');
       return '';
     }
-    return await new Promise<string>((resolve) => {
+    const reply = await new Promise<string>((resolve) => {
       pendingReplyRef.current = resolve;
       setTimeout(() => { if (pendingReplyRef.current === resolve) { pendingReplyRef.current = null; resolve(''); } }, 240000);
     });
+    panelInflightRef.current = null;
+    return reply;
   }, [agent, userId]);
 
   function togglePanelMute() {
@@ -317,6 +330,14 @@ export function TalkPage() {
       sendAndAwait: panelSendAndAwait,
       quickAck: (t) => quickAck(aid, t),
       isNoise,
+      isStopPhrase, // barge-in: "parar"/"Bukowiski parar" corta a resposta no meio
+      // Interrompeu com um pedido novo (não "parar") → enfileira e confirma:
+      bargeAck: 'Beleza, anotei. Termino isso e já já vejo seu pedido.',
+      // TTS streaming: fala frase-a-frase conforme a ponte streama a resposta.
+      watchPartial: (cb) => {
+        panelPartialCbRef.current = cb;
+        return () => { if (panelPartialCbRef.current === cb) panelPartialCbRef.current = null; };
+      },
       onState: (s) => setPanelVoiceState(mapVoiceState(s)),
       onLevel: (rms) => {
         // Esfera reativa à voz (estilo CORTEX): suaviza e atualiza throttled (~12fps).
@@ -339,6 +360,10 @@ export function TalkPage() {
     ctrl.start();
   }
   function stopPanelVoice() {
+    // "Parar" também MATA o processo na ponte (senão o claude segue rodando).
+    const inflight = panelInflightRef.current;
+    panelInflightRef.current = null;
+    if (inflight) cancelMessage(inflight).catch(() => { /* best-effort */ });
     panelVoiceRef.current?.stop();
     panelVoiceRef.current = null;
     pendingReplyRef.current = null;
@@ -347,11 +372,14 @@ export function TalkPage() {
     setVoiceMode(false); voiceModeRef.current = false; setVoiceModeActive(false);
   }
 
-  // Resolve a resposta pendente do modo voz quando a msg assistant 'done' chega.
+  // Resolve a resposta pendente do modo voz quando a msg assistant 'done' chega;
+  // enquanto 'processing', alimenta o TTS streaming com o conteúdo parcial.
   useEffect(() => {
-    if (!pendingReplyRef.current || messages.length === 0) return;
+    if (messages.length === 0) return;
     const last = messages[messages.length - 1];
-    if (last.role === 'assistant' && last.status === 'done') {
+    if (last.role !== 'assistant') return;
+    if (last.status === 'processing' && last.content) panelPartialCbRef.current?.(last.content);
+    if (last.status === 'done' && pendingReplyRef.current) {
       const r = pendingReplyRef.current; pendingReplyRef.current = null; r(last.content);
     }
   }, [messages]);
@@ -421,10 +449,23 @@ export function TalkPage() {
   // precisa re-buscar a conversa que está na tela.
   useEffect(() => {
     if (!userId) return;
-    return subscribeChat(userId, (info) => {
+    // Throttle (leading + trailing, ~350ms): o daemon atualiza a row a cada chunk
+    // do streaming → sem isso cada token dispara um listMessages + setMessages que
+    // re-renderiza a conversa inteira (O(n) por token). Colapsa a rajada em no
+    // máximo ~3 refetches/s, mantendo o estado final. Principal causa do travamento
+    // progressivo em conversa longa.
+    let last = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const throttled = () => {
+      const wait = 350 - (Date.now() - last);
+      if (wait <= 0) { last = Date.now(); refetch(); }
+      else if (!timer) { timer = setTimeout(() => { timer = null; last = Date.now(); refetch(); }, wait); }
+    };
+    const unsub = subscribeChat(userId, (info) => {
       if (info && info.sessionId && info.sessionId !== activeIdRef.current) return;
-      refetch();
+      throttled();
     });
+    return () => { if (timer) clearTimeout(timer); unsub(); };
   }, [userId, refetch]);
 
   useEffect(() => {
@@ -625,7 +666,7 @@ export function TalkPage() {
     const fb = setTimeout(() => { if (!cancelled) setDynGreet((p) => p ?? FALLBACK); }, 6000);
     (async () => {
       // conversa-alvo: a primada (activeId) ou a mais recente (landing).
-      const target = activeId ? sessions.find((s) => s.id === activeId) : sessions.find((x) => !x.archivedAt);
+      const target = activeId ? sessionsRef.current.find((s) => s.id === activeId) : sessionsRef.current.find((x) => !x.archivedAt);
       let ctx = '';
       if (target) {
         try {
@@ -645,8 +686,9 @@ export function TalkPage() {
       setDynGreet(v);
     })();
     return () => { cancelled = true; clearTimeout(fb); };
+    // sessions lido via sessionsRef → não re-dispara a saudação a cada refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, activeId, inChat, treeLoaded, period, sessions]);
+  }, [agentId, activeId, inChat, treeLoaded, period]);
 
   // Botão "Parar": marca a msg como cancelada (a ponte mata o claude) + UI otimista.
   // Também congela a resposta do assistant que estiver streamando (cursor + passos
@@ -1308,14 +1350,15 @@ export function TalkPage() {
                 <PanelLeft size={17} />
               </button>
             )}
+            {/* Avatar + nome abrem o perfil do colaborador (voltar pro orbe fica no botão "Orbe" da toolbar) */}
             <button
-              onClick={() => navigate('/settings')}
-              title="Abrir configurações"
-              className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[15px] font-bold text-white shrink-0 hover:ring-2 hover:ring-brand/50 transition-all cursor-pointer"
+              onClick={() => setInfoOpen(true)}
+              title={`Ver perfil de ${agent.name}`}
+              className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[15px] font-bold text-white shrink-0 hover:ring-2 hover:ring-brand/50 active:scale-95 transition-all cursor-pointer"
             >
               {agent.name[0]}
             </button>
-            <button onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setChatMode(false); setHistOpen(false); }} title="Voltar pra tela inicial (orbe)" className="min-w-0 text-left">
+            <button onClick={() => setInfoOpen(true)} title={`Ver perfil de ${agent.name}`} className="min-w-0 text-left">
               <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2 hover:text-brand-bright transition-colors min-w-0">
                 <span className="truncate">{agent.name}</span>
                 {agent.isSupervisor && <Crown size={15} className="text-gold-bright shrink-0" />}
@@ -1820,6 +1863,7 @@ export function TalkPage() {
               <CortexBrainBar sessionId={activeId} />
               <CortexUsageBadge />
               <UsageLimitsBadge />
+              <ReasoningViewBadge />
               {active && (
                 <WorkFolderBar
                   workingDir={active.workingDir}
@@ -2348,7 +2392,7 @@ function ContextMeter({ tokens }: { tokens: number }) {
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 text-[12.5px] text-creme-faint hover:text-creme-mute transition-colors"
-        title="Teto de contexto — clique pra ajustar. Quando a conversa passa do teto, ela reseta resumindo o fio."
+        title="Teto de contexto — clique pra ajustar. Quando a conversa passa de 70% do teto, ela reseta resumindo o fio."
       >
         <span>contexto</span>
         <div className="w-16 h-1.5 rounded-full bg-surface-3 overflow-hidden">
@@ -2376,10 +2420,10 @@ function ContextMeter({ tokens }: { tokens: number }) {
               className="w-full accent-brand-bright cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-creme-faint font-mono mt-0.5">
-              <span>250k · enxuto</span><span>1M · memória longa</span>
+              <span>100k · enxuto</span><span>1M · memória longa</span>
             </div>
             <p className="text-[11px] text-creme-mute mt-1.5 leading-snug">
-              Quando a conversa passa de <strong className="text-creme-mute font-semibold">{fmtLimit(limit)}</strong>, o time reseta resumindo o fio. Menor = mais barato; maior = lembra mais.
+              Quando a conversa passa de <strong className="text-creme-mute font-semibold">{fmtLimit(Math.round(limit * 0.7))}</strong> (70% do teto), o time reseta resumindo o fio. Menor = mais barato; maior = lembra mais.
             </p>
           </div>
         </>

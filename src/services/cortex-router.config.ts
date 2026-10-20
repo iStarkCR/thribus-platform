@@ -38,7 +38,7 @@ export interface Classification {
  * ficam fora do automático → caem no `DEFAULT_RANK` (sonnet), idêntico ao
  * `MODEL_RANK[x] ?? 1` do daemon.
  */
-export const MODEL_RANK: Record<string, number> = { haiku: 0, sonnet: 1, opus: 2 };
+export const MODEL_RANK: Record<string, number> = { haiku: 0, sonnet: 1, opus: 2, fable: 3 };
 export const DEFAULT_RANK = 1;
 
 /** Imagem precisa de visão decente — nunca roda em haiku; piso é sonnet. */
@@ -120,20 +120,21 @@ export function classifyWhatsapp(text: string): Classification {
   return { tier: 'médio', model: 'sonnet', effort: null, reason: 'default' };
 }
 
-// ─── Perfil Painel — calibrado pela análise de uso real (Fase 2, Codd) ──────
+// ─── Perfil Painel — Fase 3: sonnet como cavalo de batalha ──────────────────
 //
-// A Fase 0 INVERTEU a premissa: o tráfego do painel é majoritariamente CURTO
-// (mediana 68 chars, ~80% abaixo de 150), não longo. Logo a régua do WhatsApp
-// (tamanho como gate primário) subdimensiona os ~12% de pedidos CURTOS-MAS-
-// PESADOS — ex.: "audita o RLS do cortex" (24 chars) é trabalho de Opus.
-//
-// Por isso, no painel o gate PRIMÁRIO é o SINAL DE CONTEÚDO; o tamanho vira só
-// ESCALADOR DE ESFORÇO (sobe o tier de um pesado, nunca rebaixa):
-//   trivial  → haiku        len<=40 + só sinal leve, SEM sinal pesado
-//   médio    → sonnet       default (conversa/pergunta sem sinal pesado, <400)
-//   complexo → opus · high  QUALQUER sinal pesado (independe do tamanho); ou 400–900
-//   crítico  → opus · xhigh sinal pesado E (len>600 OU 2+ sinais OU bloco de código)
-//   máximo   → opus · max   estratégia/arquitetura/roadmap; len>1500; ou código multi-parte
+// A Fase 2 (qualquer sinal pesado → Opus) queimava a janela de 5h: mensagens
+// cotidianas de trabalho ("analisa", "query", "debug") caíam TODAS em opus, e
+// opus virou 59% do consumo. A Fase 3 mantém o gate por SINAL (não por tamanho),
+// mas re-mapeia os tiers pra escalar o ESFORÇO do sonnet antes de trocar de modelo:
+//   trivial  → haiku          len<=40 + só sinal leve, SEM sinal pesado
+//   médio    → sonnet · medium default (conversa/pergunta do dia a dia)
+//   complexo → sonnet · high   um sinal pesado, ou texto longo estruturado
+//   crítico  → sonnet · max    denso: 2+ sinais, bloco de código, ou pesado+longo
+//   máximo   → opus            SÓ dev pesado ou estratégico de verdade; esforço
+//                              escala medium→max com a densidade. Esforço xhigh/max
+//                              exige AUTORIZAÇÃO do Charles (a ponte pergunta antes).
+//   fable    → pedido EXPLÍCITO ("usa o fable", "modo ultra"); >medium também
+//              exige autorização.
 // DESEMPATE: pesado vence leve. Tamanho não rebaixa pesado, só escala o esforço.
 
 /** Thresholds de comprimento do painel (chars do texto trimado). */
@@ -142,11 +143,11 @@ export const PAINEL_LENGTH = {
   trivialMax: 60,
   /** len >= complex (sem sinal pesado) → complexo (escalada por tamanho puro). */
   complex: 550,
-  /** Pesado + len > dense → sobe complexo→crítico (escalador ~600 = +1 nível). */
+  /** Pesado + len > dense → denso (escala o esforço, não o modelo). */
   dense: 750,
   /** Sem pesado, len > heavy → crítico (texto muito longo sem sinal). */
   heavy: 1100,
-  /** len > maximo → máximo (opus max), com ou sem sinal. */
+  /** len > maximo → contribui pro tier máximo (com substância junto). */
   maximo: 1800,
 } as const;
 
@@ -184,8 +185,18 @@ export const PAINEL_SIGNALS = {
 const PAINEL_MULTIPART =
   /(^|\n)\s*(\d+[.)]|[-*•])\s|\b(e tamb[ée]m|al[ée]m disso|tamb[ée]m precis|depois (faz|disso)|por fim)\b/i;
 
-/** Keywords estratégicas — sempre vão pro topo (opus max). */
+/** Keywords estratégicas — candidatas a opus (com densidade; senão sonnet·max). */
 const PAINEL_STRATEGIC = /\b(estrat[ée]gi|arquitet|roadmap|vis[ãa]o de (produto|neg[óo]cio)|posicionament|trade.?off)/i;
+
+/**
+ * Dev pesado — o que justifica opus: construir/refatorar/migrar código de
+ * verdade, não só mencionar um arquivo. Exige verbo de engenharia forte.
+ */
+const PAINEL_DEV_HEAVY =
+  /\b(implementa|refatora[çc]?|migra[çc]|feature (completa|nova)|end.?to.?end|do zero|reescreve|reestrutura|corrige (o|a|esse|essa)? ?(bug|erro|falha) (complex|cabelud|dif[íi]cil)|debug (profundo|complex))/i;
+
+/** Pedido explícito de fable/ultra — único caminho automático pro fable. */
+const PAINEL_FABLE = /\b(fable|modo ultra|an[áa]lise ultra|ultracode)\b/i;
 
 /**
  * Classificador do painel — gate primário por SINAL, tamanho como escalador.
@@ -214,38 +225,53 @@ export function classifyPainel(text: string): Classification {
   const hasCode = S.code.test(raw);
   const heavyCount = countHeavySignals(raw, t);
   const hasHeavy = heavyCount > 0;
+  const multipart = PAINEL_MULTIPART.test(raw);
   const strategic = PAINEL_STRATEGIC.test(t);
+  const devHeavy = PAINEL_DEV_HEAVY.test(t) && (hasCode || heavyCount >= 2 || multipart || len > L.dense);
+  // Densidade geral — escala o esforço dentro do modelo escolhido.
+  const dense = len > L.dense || heavyCount >= 2 || hasCode;
 
-  // máximo → opus · max: estratégia/arquitetura/roadmap; ou muito longo; ou código multi-parte.
-  // (bloco de código SOZINHO é crítico, não máximo — máximo exige a parte multi.)
-  if (strategic || len > L.maximo || (hasCode && PAINEL_MULTIPART.test(raw))) {
+  // fable → só sob pedido explícito. Esforço acompanha a densidade; acima de
+  // medium a ponte pede autorização antes de rodar.
+  if (PAINEL_FABLE.test(t)) {
+    return {
+      tier: 'máximo',
+      model: 'fable',
+      effort: dense || strategic ? 'high' : 'medium',
+      reason: 'fable explícito',
+    };
+  }
+
+  // máximo → opus: SÓ dev pesado ou estratégico denso. Estratégico solto
+  // ("qual a estratégia?") fica no sonnet·max — opus exige substância junto.
+  if (devHeavy || (strategic && (multipart || dense || len > L.maximo))) {
+    const extreme = (strategic && devHeavy) || heavyCount >= 4 || (multipart && hasCode && len > L.maximo);
     return {
       tier: 'máximo',
       model: 'opus',
+      // medium é o piso do opus; xhigh/max só no extremo (e a ponte pede autorização).
+      effort: extreme ? 'max' : dense || strategic ? 'high' : 'medium',
+      reason: devHeavy ? 'dev pesado' : 'estratégico denso',
+    };
+  }
+
+  // crítico → sonnet · max: denso (2+ sinais, código, pesado+longo) ou estratégico.
+  if ((hasHeavy && dense) || strategic || len > L.heavy) {
+    return {
+      tier: 'crítico',
+      model: 'sonnet',
       effort: 'max',
-      reason: strategic ? 'estratégico/arquitetura' : len > L.maximo ? 'muito longa' : 'código multi-parte',
+      reason: strategic ? 'estratégico' : hasCode ? 'código' : heavyCount >= 2 ? 'múltiplos sinais' : 'pesado longo',
     };
   }
 
-  // QUALQUER sinal pesado → Opus (pesado vence leve; tamanho só escala o esforço).
-  if (hasHeavy) {
-    const dense = len > L.dense || heavyCount >= 2 || hasCode;
+  // complexo → sonnet · high: um sinal pesado, ou texto longo estruturado.
+  if (hasHeavy || len >= L.complex) {
     return {
-      tier: dense ? 'crítico' : 'complexo',
-      model: 'opus',
-      effort: dense ? 'xhigh' : 'high',
-      reason: hasCode ? 'código' : heavyCount >= 2 ? 'múltiplos sinais' : len > L.dense ? 'pesado longo' : 'sinal pesado',
-    };
-  }
-
-  // Sem sinal pesado: tamanho puro escala (texto longo estruturado).
-  if (len >= L.complex) {
-    const dense = len > L.heavy;
-    return {
-      tier: dense ? 'crítico' : 'complexo',
-      model: 'opus',
-      effort: dense ? 'xhigh' : 'high',
-      reason: dense ? 'longa densa' : 'longa',
+      tier: 'complexo',
+      model: 'sonnet',
+      effort: 'high',
+      reason: hasHeavy ? 'sinal pesado' : 'longa',
     };
   }
 
@@ -254,8 +280,8 @@ export function classifyPainel(text: string): Classification {
     return { tier: 'trivial', model: 'haiku', effort: null, reason: 'ack/saudação' };
   }
 
-  // médio → sonnet: o dia a dia (pergunta/conversa curta sem sinal pesado).
-  return { tier: 'médio', model: 'sonnet', effort: null, reason: 'default' };
+  // médio → sonnet · medium: o dia a dia (pergunta/conversa curta sem sinal pesado).
+  return { tier: 'médio', model: 'sonnet', effort: 'medium', reason: 'default' };
 }
 
 // ─── Tabela de perfis ───────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Modal } from '@/components/shared/Modal';
 import { ToolSelector } from '@/components/tools/ToolSelector';
+import { ChannelsField, channelConflictMessage } from './ChannelsField';
 import { useAppStore } from '@/hooks/useAppStore';
 import { agentsApi, templatesApi } from '@/services/api';
 import type { AgentRole, AgentTemplate, AgentType, AIModel } from '@/types';
@@ -29,7 +30,7 @@ export function NewAgentModal({ onClose }: Props) {
   const [type, setType] = useState<AgentType>('modular');
   const [role, setRole] = useState<AgentRole | ''>('');
   const [model, setModel] = useState<AIModel>(DEFAULT_MODEL);
-  const [channel, setChannel] = useState('');
+  const [channels, setChannels] = useState<string[]>([]);
   const [prompt, setPrompt] = useState('');
   const [tools, setTools] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -66,6 +67,11 @@ export function NewAgentModal({ onClose }: Props) {
       addToast('Preencha nome e cliente', 'amber');
       return;
     }
+    if (channels.length === 0) {
+      // Salvar sem canal é válido (rascunho), mas o colaborador fica fora do
+      // roteamento até receber um canal — sinaliza sem bloquear.
+      addToast('⚠ Sem canais — este colaborador não receberá mensagens', 'amber');
+    }
     setLoading(true);
     try {
       await agentsApi.create({
@@ -76,14 +82,14 @@ export function NewAgentModal({ onClose }: Props) {
         model,
         systemPrompt: prompt,
         tools,
-        channel: channel.trim() || undefined,
+        channels,
         role: role || undefined,
       });
       await loadAgents();
       addToast('Colaborador criado', 'green');
       onClose();
-    } catch {
-      addToast('Erro ao criar colaborador', 'red');
+    } catch (err) {
+      addToast(channelConflictMessage(err) ?? 'Erro ao criar colaborador', 'red');
     } finally {
       setLoading(false);
     }
@@ -221,33 +227,27 @@ export function NewAgentModal({ onClose }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Modelo de IA</label>
-              <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
-                <optgroup label="Anthropic Claude">
-                  {groupedModelOptions().anthropic.map((opt) => (
-                    <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="OpenAI GPT">
-                  {groupedModelOptions().openai.map((opt) => (
-                    <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
-                  ))}
-                </optgroup>
-              </select>
-            </div>
-            <div>
-              <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
-                Canal (slug)
-              </label>
-              <input
-                className="input font-mono"
-                value={channel}
-                onChange={(e) => setChannel(e.target.value)}
-                placeholder="texnet-duall"
-              />
-            </div>
+          <div>
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">Modelo de IA</label>
+            <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
+              <optgroup label="Anthropic Claude">
+                {groupedModelOptions().anthropic.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
+                ))}
+              </optgroup>
+              <optgroup label="OpenAI GPT">
+                {groupedModelOptions().openai.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[12.5px] font-bold uppercase tracking-wider text-creme-mute mb-1 block">
+              Canais
+            </label>
+            <ChannelsField channels={channels} onChange={setChannels} />
           </div>
 
           <div>

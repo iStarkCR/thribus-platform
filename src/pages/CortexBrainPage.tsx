@@ -403,12 +403,12 @@ function ContextLimitControl({ value, onSave }: { value: number; onSave: (v: num
         className="mt-3 w-full accent-brand-bright cursor-pointer"
       />
       <div className="mt-1 flex justify-between text-[10.5px] text-creme-faint font-mono">
-        <span>250k · enxuto, barato</span>
+        <span>100k · enxuto, barato</span>
         <span>1M · memória longa</span>
       </div>
       <p className="mt-2 text-[11.5px] text-creme-mute">
-        Quando a conversa passa de <strong className="text-creme-mute font-semibold">{fmtTokens(v)}</strong>, o time
-        reseta a sessão resumindo o fio. Menor responde melhor e custa menos; maior lembra mais e fica mais caro.
+        Quando a conversa passa de <strong className="text-creme-mute font-semibold">{fmtTokens(Math.round(v * 0.7))}</strong>{' '}
+        (70% do teto), o time reseta a sessão resumindo o fio. Menor responde melhor e custa menos; maior lembra mais e fica mais caro.
       </p>
     </div>
   );

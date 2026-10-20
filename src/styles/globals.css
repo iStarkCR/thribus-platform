@@ -7,111 +7,131 @@
  * CSS Custom Properties como triplets RGB (sem "rgb(...)" ao redor) pra que o
  * Tailwind possa aplicar `<alpha-value>` na sintaxe `bg-brand/10`, `text-creme/50`, etc.
  *
- * Default = dark (estado original do painel).
- * `<html class="light">` ativa o tema claro.
- * Toggle controlado pelo hook useTheme + ThemeToggle.
+ * Linguagem visual (v2 — "Thribus Glass"): princípios do Apple HIG / Liquid Glass
+ * traduzidos pra web:
+ *   · superfícies neutras (grafite) — a cor fica no accent, não no fundo
+ *   · separadores hairline em branco/preto translúcido (não tingidos)
+ *   · raios grandes e contínuos, profundidade por material (vidro) e sombra suave
+ *   · movimento curto e com propósito (entrada de página, hover, pressão)
+ *
+ * Default = dark. `<html class="light">` ativa o tema claro.
+ * `<html class="glass">` (ligado por padrão) ativa o material translúcido + aurora.
  */
 @layer base {
   :root {
-    /* Surfaces — fundo dos cards/sections (mais escuro → mais claro) */
-    --surface-0: 9 14 9;        /* #090e09 — body bg */
-    --surface-1: 13 20 13;      /* #0d140d — card base */
-    --surface-2: 18 28 18;      /* #121c12 — card raised */
-    --surface-3: 23 33 23;      /* #172117 — card hover/inset */
-    --surface-4: 30 43 30;      /* #1e2b1e — card highest */
-    --surface-hover: 26 38 26;  /* #1a261a — hover state */
+    /* Surfaces — grafite neutro, do mais escuro ao mais claro */
+    --surface-0: 11 12 14;      /* #0b0c0e — body bg */
+    --surface-1: 20 21 25;      /* #141519 — card base */
+    --surface-2: 27 29 34;      /* #1b1d22 — card raised */
+    --surface-3: 36 39 45;      /* #24272d — card hover/inset */
+    --surface-4: 46 50 57;      /* #2e3239 — card highest */
+    --surface-hover: 33 36 42;  /* #21242a — hover state */
 
-    /* Brand — verde militar usado pra accents/CTAs */
-    --brand-dim:    74 122 61;   /* #4a7a3d */
-    --brand:        107 143 94;  /* #6B8F5E */
-    --brand-bright: 140 196 122; /* #8cc47a */
-    --brand-glow:   168 212 150; /* #a8d496 */
+    /* Brand — verde esmeralda Thribus: vivo, moderno, usado só como accent/CTA */
+    --brand-dim:    30 145 98;   /* #1e9162 */
+    --brand:        46 190 130;  /* #2ebe82 */
+    --brand-bright: 88 220 160;  /* #58dca0 */
+    --brand-glow:   140 238 196; /* #8ceec4 */
 
     /* Gold — accent premium (detalhes dourados) */
     --gold:        198 164 90;  /* #c6a45a */
     --gold-bright: 226 198 132; /* #e2c684 */
     --gold-dim:    150 120 58;  /* #96783a */
 
-    /* Creme — texto e foreground (clareados pra contraste no fundo escuro) */
-    --creme:       240 236 226; /* #f0ece2 — texto primário */
-    --creme-dim:   205 200 188; /* #cdc8bc — texto secundário */
-    --creme-mute:  166 160 148; /* #a6a094 — texto muted */
-    --creme-faint: 130 125 115; /* #827d73 — texto faint */
+    /* Creme — texto e foreground (quase branco, levemente quente) */
+    --creme:       242 241 237; /* #f2f1ed — texto primário */
+    --creme-dim:   196 197 194; /* #c4c5c2 — texto secundário */
+    --creme-mute:  150 152 150; /* #969896 — texto muted */
+    --creme-faint: 112 115 114; /* #707372 — texto faint */
 
-    /* Semantic */
-    --semantic-green: 74 222 128;  /* #4ade80 */
-    --semantic-amber: 251 191 36;  /* #fbbf24 */
-    --semantic-red:   248 113 113; /* #f87171 */
-    --semantic-blue:  96 165 250;  /* #60a5fa */
+    /* Semantic — paleta de sistema (dark) */
+    --semantic-green: 48 209 88;   /* #30d158 */
+    --semantic-amber: 255 159 10;  /* #ff9f0a */
+    --semantic-red:   255 69 58;   /* #ff453a */
+    --semantic-blue:  10 132 255;  /* #0a84ff */
 
     /* Syntax highlight (CodeViewer) — claros, pra fundo escuro */
     --code-str: 110 231 183; /* emerald-300 */
     --code-num: 125 211 252; /* sky-300 */
     --code-kw:  196 181 253; /* violet-300 */
 
-    /* Borders — derivam do brand com opacidades diferentes */
-    --border-default: 107 143 94;  /* base do brand → usado com alpha 0.12 */
-    --border-default-alpha: 0.12;
-    --border-hover-alpha:   0.28;
-    --border-active-alpha:  0.45;
+    /* Borders — hairline branco translúcido (separador, não contorno) */
+    --border-default: 255 255 255;
+    --border-default-alpha: 0.08;
+    --border-hover-alpha:   0.16;
+    --border-active-alpha:  0.28;
+
+    /* Material (vidro) */
+    --glass-bg: 20 21 25;          /* base dos painéis translúcidos */
+    --glass-highlight: 255 255 255; /* brilho especular (borda superior) */
+    --shadow-ink: 0 0 0;            /* cor das sombras */
 
     /* Scrollbar */
-    --scrollbar-thumb: 58 79 58; /* #3a4f3a — visível no fundo escuro */
+    --scrollbar-thumb: 58 62 70; /* #3a3e46 */
+
+    /* Movimento */
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
   }
 
-  /* ─── Light theme — invertendo superfícies e texto, mantendo brand ────── */
+  /* ─── Light theme — branco/cinza-prata, texto grafite, mesmo accent ──── */
   :root.light {
-    /* Surfaces — backgrounds claros, hierarquia em cinza-creme */
-    --surface-0: 248 249 247;   /* #f8f9f7 — body bg */
-    --surface-1: 241 243 239;   /* #f1f3ef — card base */
-    --surface-2: 232 235 229;   /* #e8ebe5 — card raised */
-    --surface-3: 222 225 218;   /* #dee1da — card hover/inset */
-    --surface-4: 212 216 207;   /* #d4d8cf — card highest */
-    --surface-hover: 227 230 221; /* #e3e6dd — hover state */
+    --surface-0: 245 245 247;   /* #f5f5f7 — body bg */
+    --surface-1: 255 255 255;   /* #ffffff — card base */
+    --surface-2: 250 250 251;   /* #fafafb — card raised */
+    --surface-3: 240 240 243;   /* #f0f0f3 — card hover/inset */
+    --surface-4: 229 229 234;   /* #e5e5ea — card highest */
+    --surface-hover: 236 236 240; /* #ececf0 — hover state */
 
-    /* Brand — verde mais CLARO/fresco no modo claro (era escuro demais) */
-    --brand-dim:    74 107 63;   /* #4a6b3f */
-    --brand:        103 150 78;  /* #67964e — sage fresco */
-    --brand-bright: 130 178 104; /* #82b268 */
-    --brand-glow:   162 208 138; /* #a2d08a */
+    /* Brand — um tom mais fundo pra contraste em fundo claro */
+    --brand-dim:    24 125 84;   /* #187d54 */
+    --brand:        32 160 108;  /* #20a06c */
+    --brand-bright: 60 190 135;  /* #3cbe87 */
+    --brand-glow:   120 220 180; /* #78dcb4 */
 
-    /* Gold — accent premium (um pouco mais saturado pra contraste no claro) */
+    /* Gold */
     --gold:        176 138 56;  /* #b08a38 */
     --gold-bright: 198 160 78;  /* #c6a04e */
     --gold-dim:    140 106 40;  /* #8c6a28 */
 
-    /* Creme — texto escuro pra fundo claro (semântica preservada) */
-    --creme:       26 31 26;    /* #1a1f1a — texto primário */
-    --creme-dim:   64 70 64;    /* #404640 — texto secundário */
-    --creme-mute:  107 111 106; /* #6b6f6a — texto muted */
-    --creme-faint: 140 143 136; /* #8c8f88 — texto faint */
+    /* Creme — texto grafite (semântica preservada) */
+    --creme:       29 29 31;    /* #1d1d1f — texto primário */
+    --creme-dim:   72 72 74;    /* #48484a — texto secundário */
+    --creme-mute:  110 110 115; /* #6e6e73 — texto muted */
+    --creme-faint: 142 142 147; /* #8e8e93 — texto faint */
 
-    /* Semantic — mais saturados pra contraste em fundo claro */
-    --semantic-green: 34 160 78;  /* #22a04e */
-    --semantic-amber: 217 119 6;  /* #d97706 */
-    --semantic-red:   220 38 38;  /* #dc2626 */
-    --semantic-blue:  37 99 235;  /* #2563eb */
+    /* Semantic — paleta de sistema (light) */
+    --semantic-green: 52 199 89;   /* #34c759 */
+    --semantic-amber: 255 149 0;   /* #ff9500 */
+    --semantic-red:   255 59 48;   /* #ff3b30 */
+    --semantic-blue:  0 122 255;   /* #007aff */
 
-    /* Syntax highlight — escuros/saturados, pra fundo CLARO (legível) */
+    /* Syntax highlight — escuros/saturados, pra fundo CLARO */
     --code-str: 4 120 87;    /* emerald-700 */
     --code-num: 2 132 199;   /* sky-600 */
     --code-kw:  109 40 217;  /* violet-700 */
 
-    /* Borders */
-    --border-default: 74 107 63;
-    --border-default-alpha: 0.20;
-    --border-hover-alpha:   0.40;
-    --border-active-alpha:  0.60;
+    /* Borders — hairline preto translúcido */
+    --border-default: 0 0 0;
+    --border-default-alpha: 0.08;
+    --border-hover-alpha:   0.16;
+    --border-active-alpha:  0.28;
 
-    /* Scrollbar — barra mais clara no light */
-    --scrollbar-thumb: 200 205 195;
+    --glass-bg: 255 255 255;
+    --glass-highlight: 255 255 255;
+    --shadow-ink: 40 44 50;
+
+    --scrollbar-thumb: 200 200 206;
   }
 
   html {
     font-size: 17px;
     background-color: rgb(var(--surface-0));
     color: rgb(var(--creme));
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.25s ease, color 0.25s ease;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv11', 'ss01', 'calt';
     /* Firefox */
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--scrollbar-thumb)) transparent;
@@ -119,6 +139,16 @@
   body {
     background-color: rgb(var(--surface-0));
   }
+  /* Títulos mais fechados (HIG: tracking negativo em tamanhos grandes) */
+  h1, h2, h3 { letter-spacing: -0.02em; }
+  ::selection { background: rgb(var(--brand) / 0.28); color: rgb(var(--creme)); }
+
+  /* Foco visível, estilo sistema: anel suave fora do elemento */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(var(--brand) / 0.35);
+  }
+
   /* WebKit — gutter de 11px com thumb arredondado e inset (background-clip),
      mais visível no hover. Some quando não há overflow. */
   ::-webkit-scrollbar {
@@ -141,22 +171,40 @@
   ::-webkit-scrollbar-corner {
     background: transparent;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {
+  /* ─── Botões ───────────────────────────────────────────────────────────── */
   .btn {
-    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer border;
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-xs font-semibold cursor-pointer border select-none;
+    transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .22s ease, transform .18s var(--ease-out);
   }
+  .btn:active { transform: scale(0.97); }
   .btn-ghost {
-    @apply bg-surface-3 border-default text-creme-dim hover:border-hover hover:text-creme;
+    @apply bg-surface-3 border-default text-creme-dim hover:border-hover hover:text-creme hover:bg-surface-4;
   }
   .btn-accent {
-    @apply bg-brand-dim border-brand text-creme hover:bg-brand hover:shadow-[0_0_16px_rgba(107,143,94,0.25)];
+    @apply text-white border-transparent;
+    background: linear-gradient(180deg, rgb(var(--brand-bright) / 0.95), rgb(var(--brand)));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 6px 18px -6px rgb(var(--brand) / 0.55);
+  }
+  .btn-accent:hover {
+    background: linear-gradient(180deg, rgb(var(--brand-bright)), rgb(var(--brand)));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28), 0 10px 26px -8px rgb(var(--brand) / 0.7);
   }
   .btn-danger {
     @apply bg-semantic-red/10 border-semantic-red/30 text-semantic-red hover:bg-semantic-red/20;
   }
 
+  /* ─── Chips / tags ─────────────────────────────────────────────────────── */
   .chip {
     @apply text-[12px] font-semibold font-mono px-2 py-0.5 rounded-full;
   }
@@ -177,28 +225,60 @@
   }
 
   .tag {
-    @apply text-[12px] font-mono font-medium px-1.5 py-0.5 rounded bg-brand/[0.06] border border-brand/[0.12] text-brand;
+    @apply text-[12px] font-mono font-medium px-1.5 py-0.5 rounded-md bg-brand/[0.08] border border-brand/[0.16] text-brand;
   }
   .tag-off {
     @apply bg-creme/[0.02] border-default text-creme-faint;
   }
 
+  /* ─── Campos ───────────────────────────────────────────────────────────── */
   .input {
-    @apply w-full bg-surface-2 border border-default rounded-lg px-3 py-2.5 text-creme text-sm outline-none transition-colors focus:border-brand;
+    @apply w-full bg-surface-2 border border-default rounded-[10px] px-3 py-2.5 text-creme text-sm outline-none;
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+  }
+  .input:hover { border-color: rgb(var(--border-default) / var(--border-hover-alpha)); }
+  .input:focus {
+    border-color: rgb(var(--brand) / 0.7);
+    box-shadow: 0 0 0 3px rgb(var(--brand) / 0.18);
   }
   .textarea {
     @apply input min-h-[80px] resize-y leading-relaxed;
   }
 
-  /* ─── Liquid Glass (tema opcional via <html class="glass">) ──────────────────
-   * Material translúcido nos painéis do shell + aurora sutil ao fundo (estilo
-   * Apple "Liquid Glass"). NÃO afeta o orbe nem as esferas (componentes à parte).
-   * `.glass-panel` é inerte sem a classe `glass` no html — liga/desliga limpo. */
+  /* ─── Card — superfície padrão com material, hairline e brilho especular ─ */
+  .card {
+    @apply relative rounded-2xl border border-default;
+    background:
+      linear-gradient(180deg, rgb(var(--glass-highlight) / 0.035), transparent 38%),
+      rgb(var(--surface-1));
+    box-shadow:
+      inset 0 1px 0 rgb(var(--glass-highlight) / 0.06),
+      0 1px 2px rgb(var(--shadow-ink) / 0.18),
+      0 12px 32px -18px rgb(var(--shadow-ink) / 0.55);
+    transition: transform .25s var(--ease-out), box-shadow .25s var(--ease-out), border-color .2s ease;
+  }
+  .card-interactive { @apply cursor-pointer; }
+  .card-interactive:hover {
+    transform: translateY(-2px);
+    border-color: rgb(var(--border-default) / var(--border-hover-alpha));
+    box-shadow:
+      inset 0 1px 0 rgb(var(--glass-highlight) / 0.09),
+      0 2px 4px rgb(var(--shadow-ink) / 0.2),
+      0 22px 48px -20px rgb(var(--shadow-ink) / 0.65);
+  }
+
+  /* Entrada de página — fade + leve subida (curto, não atrapalha) */
+  .page-enter {
+    animation: pageEnter .34s var(--ease-out) both;
+  }
+
+  /* ─── Liquid Glass (ligado por padrão via <html class="glass">) ─────────────
+   * Material translúcido nos painéis do shell + aurora sutil ao fundo.
+   * `.glass-panel` / `.glass-strong` são inertes sem a classe `glass` no html. */
   html.glass #root { position: relative; z-index: 1; }
-  /* Aurora ESTÁTICA: o gradiente de vidro fica (ver regras de background abaixo),
-   * mas SEM movimento de fundo — animar a camada fullscreen forçava todos os
-   * backdrop-blur a recalcular a cada frame, fritando o compositor. Os estados
-   * reativos (pensar/falar) viram só um realce de cor estático (filter). */
+  /* Aurora ESTÁTICA: animar a camada fullscreen força todos os backdrop-blur a
+   * recalcular a cada frame. Estados reativos (pensar/falar) viram só um realce
+   * de cor estático (filter). */
   html.glass body::before {
     content: '';
     position: fixed; inset: 0; z-index: 0; pointer-events: none;
@@ -211,65 +291,58 @@
     filter: saturate(1.5) brightness(1.22);
   }
 
-  /* DARK + glass — paleta RENOVADA: charcoal neutro (não mais verde-escuro
-   * carregado); o Sage entra só como brilho/accent. Sobrescreve os tokens de
-   * superfície → renova o app inteiro, não só os painéis de vidro. */
-  html.glass:not(.light) {
-    --surface-0: 10 12 11;     /* #0a0c0b — base neutra quase-preta */
-    --surface-1: 18 21 20;     /* #121514 */
-    --surface-2: 25 30 28;     /* #191e1c */
-    --surface-3: 34 40 37;     /* #222825 */
-    --surface-4: 44 51 47;     /* #2c332f */
-    --surface-hover: 31 37 34; /* #1f2522 */
-    --border-default-alpha: 0.10;
-    --border-hover-alpha: 0.22;
-  }
-  html.glass:not(.light) body { background-color: #08090a; }
+  /* DARK + glass */
   html.glass:not(.light) body::before {
     background:
-      radial-gradient(48% 42% at 10% 4%,  rgba(140,196,122,0.13), transparent 60%),
-      radial-gradient(46% 40% at 94% 8%,  rgba(120,178,236,0.10), transparent 60%),
-      radial-gradient(58% 54% at 88% 99%, rgba(107,143,94,0.14),  transparent 62%);
+      radial-gradient(52% 44% at 8% 0%,   rgb(var(--brand) / 0.16), transparent 62%),
+      radial-gradient(44% 38% at 96% 6%,  rgba(90, 140, 255, 0.09), transparent 60%),
+      radial-gradient(60% 56% at 90% 100%, rgb(var(--brand-dim) / 0.14), transparent 64%),
+      radial-gradient(34% 30% at 50% 60%, rgb(var(--gold) / 0.05), transparent 60%);
   }
   html.glass:not(.light) .glass-panel {
-    background: rgba(22, 26, 25, 0.55) !important;
-    backdrop-filter: blur(28px) saturate(135%);
-    -webkit-backdrop-filter: blur(28px) saturate(135%);
-    border-color: rgba(255, 255, 255, 0.09) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 18px 50px rgba(0, 0, 0, 0.42);
+    background: rgb(var(--glass-bg) / 0.55) !important;
+    backdrop-filter: blur(28px) saturate(140%);
+    -webkit-backdrop-filter: blur(28px) saturate(140%);
+    border-color: rgb(255 255 255 / 0.09) !important;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.10), 0 18px 50px rgb(0 0 0 / 0.42);
   }
-  /* glass-strong — variante quase opaca p/ navegação e overlays (não "atrapalha" o conteúdo atrás) */
+  /* glass-strong — variante quase opaca p/ navegação e overlays */
   html.glass:not(.light) .glass-strong {
-    background: rgba(18, 21, 20, 0.93) !important;
-    backdrop-filter: blur(22px) saturate(130%);
-    -webkit-backdrop-filter: blur(22px) saturate(130%);
-    border-color: rgba(255, 255, 255, 0.10) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 20px 54px rgba(0, 0, 0, 0.5);
+    background: rgb(var(--glass-bg) / 0.86) !important;
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border-color: rgb(255 255 255 / 0.10) !important;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 20px 54px rgb(0 0 0 / 0.5);
   }
 
-  /* LIGHT + glass — vidro fosco claro (Liquid Glass "dia") */
-  html.glass.light body { background-color: #eef4ea; }
+  /* LIGHT + glass — vidro fosco claro */
+  html.glass.light body { background-color: #f2f3f5; }
   html.glass.light body::before {
     background:
-      radial-gradient(48% 40% at 12% 6%,  rgba(150,200,130,0.30), transparent 62%),
-      radial-gradient(44% 38% at 92% 12%, rgba(120,180,235,0.13), transparent 60%),
-      radial-gradient(60% 52% at 84% 98%, rgba(168,212,150,0.34), transparent 64%),
-      radial-gradient(40% 34% at 48% 46%, rgba(226,198,132,0.12), transparent 58%);
+      radial-gradient(50% 42% at 10% 4%,  rgb(var(--brand) / 0.16), transparent 62%),
+      radial-gradient(44% 38% at 92% 12%, rgba(90, 140, 255, 0.10), transparent 60%),
+      radial-gradient(60% 52% at 86% 98%, rgb(var(--brand-bright) / 0.18), transparent 64%),
+      radial-gradient(40% 34% at 48% 46%, rgb(var(--gold) / 0.08), transparent 58%);
   }
   html.glass.light .glass-panel {
-    background: rgba(255, 255, 255, 0.52) !important;
-    backdrop-filter: blur(26px) saturate(155%);
-    -webkit-backdrop-filter: blur(26px) saturate(155%);
-    border-color: rgba(255, 255, 255, 0.65) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 16px 44px rgba(70, 100, 60, 0.14);
+    background: rgb(255 255 255 / 0.62) !important;
+    backdrop-filter: blur(26px) saturate(160%);
+    -webkit-backdrop-filter: blur(26px) saturate(160%);
+    border-color: rgb(255 255 255 / 0.7) !important;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.85), 0 16px 44px rgb(40 44 50 / 0.10);
   }
   html.glass.light .glass-strong {
-    background: rgba(252, 253, 251, 0.94) !important;
-    backdrop-filter: blur(22px) saturate(150%);
-    -webkit-backdrop-filter: blur(22px) saturate(150%);
-    border-color: rgba(120, 140, 110, 0.22) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 18px 48px rgba(70, 100, 60, 0.16);
+    background: rgb(255 255 255 / 0.9) !important;
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border-color: rgb(0 0 0 / 0.08) !important;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9), 0 18px 48px rgb(40 44 50 / 0.12);
   }
+}
+
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* ─── Greeting animado (BOM DIA) — entrada subindo + brilho passando ────────── */
@@ -283,7 +356,7 @@
   animation: greetReveal 0.7s ease both, greetShine 4s linear 0.7s infinite;
 }
 html.light .greet-anim {
-  background: linear-gradient(100deg, #3a5530 30%, #6b8f5e 46%, #b08a38 52%, #3a5530 68%);
+  background: linear-gradient(100deg, #1d1d1f 30%, #2ebe82 46%, #b08a38 52%, #1d1d1f 68%);
   background-size: 240% 100%;
   -webkit-background-clip: text; background-clip: text;
 }
@@ -295,4 +368,3 @@ html.light .greet-anim {
 /* Indicador "digitando…" do chat (3 bolinhas pulando) */
 @keyframes chatTyping { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-4px); opacity: 1; } }
 .typing-dot { display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: rgb(var(--brand-bright)); animation: chatTyping 1.3s infinite; }
-
