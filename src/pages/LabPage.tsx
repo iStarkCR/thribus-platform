@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   FlaskConical, Send, Play, GitCompare, CheckCircle2, XCircle,
   CircleDot, Sparkles, Bot, Clock, Hash, Zap,
-  ChevronRight,
+  ChevronRight, Loader2, AlertTriangle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   SEED_PROMPT_VERSIONS, SEED_GOLDEN, SEED_EVAL_RUNS,
   type EvalRun, type PromptVersion, type EvalScore,
 } from '@/lib/seed-lab';
+import { listLabAgents, runLabTurn, type LabAgent } from '@/services/agentLab';
 
 type Tab = 'playground' | 'compare' | 'golden' | 'runs';
 
@@ -62,23 +63,79 @@ function TabBtn({ active, onClick, icon, label, count }: { active: boolean; onCl
   );
 }
 
+interface ChatLine {
+  role: 'user' | 'assistant';
+  content: string;
+  meta?: string;
+  error?: boolean;
+}
+
 function Playground() {
-  const [versionId, setVersionId] = useState(SEED_PROMPT_VERSIONS[0].id);
+  const [agents, setAgents] = useState<LabAgent[]>([]);
+  const [agentsErr, setAgentsErr] = useState<string | null>(null);
+  const [loadingAgents, setLoadingAgents] = useState(true);
+  const [agentId, setAgentId] = useState<string>('');
   const [input, setInput] = useState('');
-  const [conversation, setConversation] = useState<{ role: 'user' | 'assistant'; content: string; meta?: string }[]>([
-    { role: 'assistant', content: 'Oi! Sou a Bianca da TexNet. Em que posso te ajudar hoje?', meta: 'mock · 312ms · 24 tok' },
-  ]);
+  const [sending, setSending] = useState(false);
+  const [conversation, setConversation] = useState<ChatLine[]>([]);
 
-  const version = SEED_PROMPT_VERSIONS.find((v) => v.id === versionId)!;
+  useEffect(() => {
+    let alive = true;
+    listLabAgents()
+      .then((list) => {
+        if (!alive) return;
+        setAgents(list);
+        if (list.length > 0) setAgentId((cur) => cur || list[0].id);
+      })
+      .catch((e) => alive && setAgentsErr((e as Error).message))
+      .finally(() => alive && setLoadingAgents(false));
+    return () => { alive = false; };
+  }, []);
 
-  const send = () => {
-    if (!input.trim()) return;
-    setConversation((c) => [
-      ...c,
-      { role: 'user', content: input },
-      { role: 'assistant', content: '[mock] Sim, atendemos sua rua com fibra. Tenho plano de 600 mega por R$ 99,90/mês, primeiros 3 meses por R$ 79,90. Posso reservar instalação?', meta: 'mock · 2.1s · 248 tok · 2 tool calls' },
-    ]);
+  const agent = agents.find((a) => a.id === agentId) ?? null;
+
+  const switchAgent = (id: string) => {
+    setAgentId(id);
+    setConversation([]);
+  };
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || !agent || sending) return;
+    const history: ChatLine[] = [...conversation, { role: 'user', content: text }];
+    setConversation(history);
     setInput('');
+    setSending(true);
+    try {
+      const res = await runLabTurn(
+        agent.id,
+        history.map((m) => ({ role: m.role, content: m.content })),
+      );
+      const toolSuffix =
+        res.toolCalls.length > 0
+          ? ` · ${res.toolCalls.length} tool call${res.toolCalls.length > 1 ? 's' : ''}: ${res.toolCalls.map((t) => t.name).join(', ')}`
+          : '';
+      const body =
+        res.content ||
+        (res.toolCalls.length > 0
+          ? `(sem texto — turno de tool_use: ${res.toolCalls.map((t) => `${t.name}(${JSON.stringify(t.input)})`).join(' ')})`
+          : '(resposta vazia)');
+      setConversation((c) => [
+        ...c,
+        {
+          role: 'assistant',
+          content: body,
+          meta: `${res.model} · ${res.latencyMs}ms · ${res.tokensUsed} tok · US$ ${res.costUsd.toFixed(4)}${toolSuffix}`,
+        },
+      ]);
+    } catch (e) {
+      setConversation((c) => [
+        ...c,
+        { role: 'assistant', content: `Falha ao executar: ${(e as Error).message}`, error: true },
+      ]);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -86,22 +143,34 @@ function Playground() {
       <div className="bg-surface-2 border border-default rounded-[10px] flex flex-col overflow-hidden">
         <div className="p-3 border-b border-default flex items-center gap-3">
           <Bot size={14} className="text-brand-bright" />
-          <span className="text-[13px] font-bold text-creme">{version.agentName}</span>
-          <code className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-brand/10 text-brand-bright">{version.label}</code>
-          {version.isLive && (
-            <span className="inline-flex items-center gap-1 text-[10.5px] font-mono px-1.5 py-px rounded-full bg-semantic-green/10 text-semantic-green">
-              <CircleDot size={9} /> live
-            </span>
+          <span className="text-[13px] font-bold text-creme">{agent?.name ?? 'Nenhum agente'}</span>
+          {agent && (
+            <>
+              <code className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-brand/10 text-brand-bright">{agent.model}</code>
+              <span className="text-[11px] text-creme-faint font-mono">{agent.client}</span>
+            </>
           )}
-          <span className="ml-auto text-[11px] text-creme-faint font-mono">testing — sem efeito em produção</span>
+          <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-creme-faint font-mono">
+            <CircleDot size={9} className="text-semantic-green" /> testing — sem efeito em produção
+          </span>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {conversation.length === 0 && (
+            <div className="text-[12px] text-creme-faint text-center mt-8">
+              Selecione um agente e mande uma mensagem pra simular a conversa.
+              <br />Execução real do agente — nada é persistido e nenhuma tool é executada de verdade.
+            </div>
+          )}
           {conversation.map((m, i) => (
             <div key={i} className={clsx('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
               <div className={clsx(
-                'max-w-[80%] p-3 rounded-2xl text-[13px] leading-relaxed',
-                m.role === 'user' ? 'bg-brand/20 text-creme' : 'bg-surface-1 border border-default text-creme-mute',
+                'max-w-[80%] p-3 rounded-2xl text-[13px] leading-relaxed whitespace-pre-wrap',
+                m.role === 'user'
+                  ? 'bg-brand/20 text-creme'
+                  : m.error
+                    ? 'bg-semantic-red/10 border border-semantic-red/40 text-semantic-red'
+                    : 'bg-surface-1 border border-default text-creme-mute',
               )}>
                 {m.content}
                 {m.meta && (
@@ -112,6 +181,13 @@ function Playground() {
               </div>
             </div>
           ))}
+          {sending && (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] p-3 rounded-2xl text-[13px] bg-surface-1 border border-default text-creme-faint inline-flex items-center gap-2">
+                <Loader2 size={13} className="animate-spin" /> executando turno real...
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-3 border-t border-default">
@@ -120,11 +196,16 @@ function Playground() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && send()}
-              placeholder="Digite uma mensagem de teste..."
-              className="flex-1 px-3 py-2 rounded-lg bg-surface-1 border border-default text-[13px] text-creme placeholder-creme-faint focus:outline-none focus:border-brand"
+              disabled={!agent || sending}
+              placeholder={agent ? 'Digite uma mensagem de teste...' : 'Nenhum agente disponível'}
+              className="flex-1 px-3 py-2 rounded-lg bg-surface-1 border border-default text-[13px] text-creme placeholder-creme-faint focus:outline-none focus:border-brand disabled:opacity-50"
             />
-            <button onClick={send} className="p-2 rounded-lg bg-brand-dim border border-brand text-creme hover:bg-brand transition-all">
-              <Send size={14} />
+            <button
+              onClick={send}
+              disabled={!agent || sending}
+              className="p-2 rounded-lg bg-brand-dim border border-brand text-creme hover:bg-brand transition-all disabled:opacity-50"
+            >
+              {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             </button>
           </div>
         </div>
@@ -132,32 +213,52 @@ function Playground() {
 
       <div className="bg-surface-2 border border-default rounded-[10px] flex flex-col overflow-hidden">
         <div className="p-3 border-b border-default">
-          <h3 className="text-[13px] font-bold text-creme mb-2">Versão do prompt</h3>
-          <select
-            value={versionId}
-            onChange={(e) => { setVersionId(e.target.value); setConversation([{ role: 'assistant', content: 'Oi! Sou a Bianca da TexNet. Em que posso te ajudar hoje?', meta: 'mock · 312ms · 24 tok' }]); }}
-            className="w-full px-3 py-1.5 rounded-md bg-surface-1 border border-default text-[12.5px] text-creme focus:outline-none focus:border-brand"
-          >
-            {SEED_PROMPT_VERSIONS.map((v) => (
-              <option key={v.id} value={v.id}>{v.agentName} · {v.label}</option>
-            ))}
-          </select>
+          <h3 className="text-[13px] font-bold text-creme mb-2">Agente</h3>
+          {loadingAgents ? (
+            <div className="text-[12px] text-creme-faint inline-flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin" /> carregando agentes...
+            </div>
+          ) : agentsErr ? (
+            <div className="text-[12px] text-semantic-red inline-flex items-start gap-2">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" /> {agentsErr}
+            </div>
+          ) : agents.length === 0 ? (
+            <div className="text-[12px] text-creme-faint">
+              Nenhum agente no Supabase. Configure VITE_SUPABASE_URL / ANON_KEY.
+            </div>
+          ) : (
+            <select
+              value={agentId}
+              onChange={(e) => switchAgent(e.target.value)}
+              className="w-full px-3 py-1.5 rounded-md bg-surface-1 border border-default text-[12.5px] text-creme focus:outline-none focus:border-brand"
+            >
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.name} · {a.client} · {a.model}</option>
+              ))}
+            </select>
+          )}
         </div>
 
-        <div className="p-3 border-b border-default">
-          <h4 className="text-[10.5px] uppercase tracking-wider font-bold text-creme-faint mb-2">System prompt</h4>
-          <pre className="text-[11px] font-mono text-creme-dim whitespace-pre-wrap leading-relaxed bg-surface-1 p-2.5 rounded-md border border-default max-h-[200px] overflow-y-auto">{version.systemPrompt}</pre>
-          <div className="text-[10.5px] text-creme-faint font-mono mt-2 flex items-center gap-2">
-            <Hash size={10} /> {version.charsCount} chars · {version.author}
+        {agent && (
+          <div className="p-3 border-b border-default">
+            <h4 className="text-[10.5px] uppercase tracking-wider font-bold text-creme-faint mb-2">System prompt</h4>
+            <pre className="text-[11px] font-mono text-creme-dim whitespace-pre-wrap leading-relaxed bg-surface-1 p-2.5 rounded-md border border-default max-h-[280px] overflow-y-auto">{agent.systemPrompt || '(vazio)'}</pre>
+            <div className="text-[10.5px] text-creme-faint font-mono mt-2 flex items-center gap-2">
+              <Hash size={10} /> {agent.systemPrompt.length} chars
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex-1 p-3 overflow-y-auto">
-          <button className="w-full py-2 rounded-md bg-brand-dim border border-brand text-creme text-[12.5px] font-semibold hover:bg-brand transition-all flex items-center justify-center gap-1.5">
-            <Play size={12} /> Rodar eval suite
+          <button
+            disabled
+            title="Eval suite ainda mockada — ver nota de trabalho futuro"
+            className="w-full py-2 rounded-md bg-surface-3 border border-default text-creme-faint text-[12.5px] font-semibold flex items-center justify-center gap-1.5 cursor-not-allowed"
+          >
+            <Play size={12} /> Rodar eval suite (em breve)
           </button>
           <p className="text-[11px] text-creme-faint mt-2 leading-relaxed">
-            Executa {SEED_GOLDEN.length} golden answers contra esta versão e mostra pass rate.
+            Golden answers + eval runs ainda são mockados. O Playground já roda turnos reais contra o agente selecionado.
           </p>
         </div>
       </div>
