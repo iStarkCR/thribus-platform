@@ -344,52 +344,80 @@ async function computeStatsFromMessages(
 ): Promise<Record<string, Agent['stats']>> {
   const result: Record<string, Agent['stats']> = {};
   if (!supabase || agentIds.length === 0) return result;
+  const db = supabase;
 
-  const startOfToday = new Date();
-  startOfToday.setUTCHours(0, 0, 0, 0);
-  const startMs = startOfToday.getTime();
+  // Início do dia no fuso de Brasília (America/Sao_Paulo, -03:00 fixo desde o fim
+  // do horário de verão em 2019). O corte antigo usava setUTCHours, que cortava o
+  // dia em UTC e deslocava a contagem de "hoje" ~3h — demandas da madrugada BR
+  // caíam no dia errado.
+  const spDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const startOfTodayISO = new Date(`${spDate}T00:00:00-03:00`).toISOString();
 
-  const { data, error } = await supabase
-    .from('collaborator_messages')
-    .select('agent_id, role, status, created_at')
-    .in('agent_id', agentIds)
-    .order('created_at', { ascending: true });
-  if (error) {
-    console.warn('[stats] erro buscando collaborator_messages:', error.message);
-    return result;
-  }
+  type Row = { role: 'user' | 'assistant'; created_at: string };
 
-  type Row = { agent_id: string; role: 'user' | 'assistant'; status: string; created_at: string };
-  const g: Record<string, { total: number; today: number; resolved: number; escalated: number; sumMs: number; pairs: number; pendingUserAt: number | null }> = {};
-  const init = (id: string) => (g[id] ??= { total: 0, today: 0, resolved: 0, escalated: 0, sumMs: 0, pairs: 0, pendingUserAt: null });
+  // Contagem exata no servidor (count: 'exact' + head: true): só o total volta,
+  // nenhuma linha é baixada. A versão anterior baixava as linhas de TODOS os
+  // agentes pro client só pra contar — o PostgREST corta em 1000 e, por ordenar
+  // ASC, pegava sempre as 1000 MAIS ANTIGAS, travando o contador num valor
+  // defasado (ex: 492 em vez de 2.786 demandas reais).
+  const countUser = (id: string) =>
+    db
+      .from('collaborator_messages')
+      .select('agent_id', { count: 'exact', head: true })
+      .eq('agent_id', id)
+      .eq('role', 'user');
 
-  for (const r of (data as Row[]) ?? []) {
-    const a = init(r.agent_id);
-    const at = new Date(r.created_at).getTime();
-    if (r.role === 'user') {
-      a.total++;
-      if (at >= startMs) a.today++;
-      if (r.status === 'done') a.resolved++;
-      if (r.status === 'error') a.escalated++;
-      a.pendingUserAt = at; // aguardando a resposta
-    } else if (r.role === 'assistant' && a.pendingUserAt != null) {
-      const dt = at - a.pendingUserAt;
-      if (dt > 0 && dt < 30 * 60_000) { a.sumMs += dt; a.pairs++; } // ignora gaps > 30min
-      a.pendingUserAt = null;
-    }
-  }
+  await Promise.all(
+    agentIds.map(async (id) => {
+      const [total, today, resolved, escalated, recent] = await Promise.all([
+        countUser(id),
+        countUser(id).gte('created_at', startOfTodayISO),
+        countUser(id).eq('status', 'done'),
+        countUser(id).eq('status', 'error'),
+        // Tempo médio de resposta precisa das linhas pra parear user→assistant;
+        // limitamos às mais recentes (DESC) pra não baixar o histórico inteiro.
+        db
+          .from('collaborator_messages')
+          .select('role, created_at')
+          .eq('agent_id', id)
+          .order('created_at', { ascending: false })
+          .limit(500),
+      ]);
 
-  for (const id of agentIds) {
-    const a = g[id];
-    if (!a || a.total === 0) continue; // sem demandas → deixa o fallback (executions)
-    result[id] = {
-      total: a.total,
-      today: a.today,
-      resolution: a.total > 0 ? Math.round((a.resolved / a.total) * 100) : 0,
-      avgResponseTime: a.pairs > 0 ? Math.round(a.sumMs / a.pairs / 1000) : 0,
-      escalated: a.escalated,
-    };
-  }
+      const totalCount = total.count ?? 0;
+      if (total.error || totalCount === 0) return; // sem demandas → fallback (executions)
+
+      let sumMs = 0;
+      let pairs = 0;
+      let pendingUserAt: number | null = null;
+      // reverte pra ordem cronológica (ASC) pra parear cada user com a resposta seguinte
+      const rows = ((recent.data as Row[]) ?? []).reverse();
+      for (const r of rows) {
+        const at = new Date(r.created_at).getTime();
+        if (r.role === 'user') {
+          pendingUserAt = at;
+        } else if (r.role === 'assistant' && pendingUserAt != null) {
+          const dt = at - pendingUserAt;
+          if (dt > 0 && dt < 30 * 60_000) { sumMs += dt; pairs++; } // ignora gaps > 30min
+          pendingUserAt = null;
+        }
+      }
+
+      result[id] = {
+        total: totalCount,
+        today: today.count ?? 0,
+        resolution: Math.round(((resolved.count ?? 0) / totalCount) * 100),
+        avgResponseTime: pairs > 0 ? Math.round(sumMs / pairs / 1000) : 0,
+        escalated: escalated.count ?? 0,
+      };
+    }),
+  );
+
   return result;
 }
 
