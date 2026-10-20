@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
-  ChevronRight, Zap, Settings, Building2, Bell, Lock,
+  ChevronRight, Settings, Building2, Bell, Lock,
   LogOut, User, Moon, Sun, HelpCircle, PanelLeftClose, PanelLeft, Sparkles, X,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
@@ -12,6 +12,7 @@ import { useSession } from '@/hooks/useSession';
 import { useAccess } from '@/hooks/useRole';
 import { NAV_ITEMS } from '@/lib/nav';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import thribusMark from '@/assets/thribus-mark.svg';
 
 export function Sidebar() {
   const location = useLocation();
@@ -56,9 +57,7 @@ export function Sidebar() {
     )}>
       {/* Brand + sino + recolher */}
       <div className={clsx('h-14 flex items-center border-b border-default shrink-0', collapsed ? 'justify-center px-2' : 'px-3 gap-2.5')}>
-        <div className="w-[30px] h-[30px] rounded-lg bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center shrink-0">
-          <Zap size={14} className="text-white" />
-        </div>
+        <img src={thribusMark} alt="Thribus" width={30} height={30} className="w-[30px] h-[30px] rounded-lg shrink-0" />
         {!collapsed && (
           <>
             <div className="flex flex-col flex-1 min-w-0">

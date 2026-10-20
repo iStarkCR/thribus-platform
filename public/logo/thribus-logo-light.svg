@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 212 72" width="212" height="72" role="img" aria-label="Thribus Platform">
+  <!-- Thribus Platform — assinatura horizontal para fundos CLAROS. -->
+  <defs>
+    <linearGradient id="t-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4a6b3f"/>
+      <stop offset="1" stop-color="#67964e"/>
+    </linearGradient>
+    <linearGradient id="t-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e2c684"/>
+      <stop offset="1" stop-color="#c6a45a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- símbolo (56px) -->
+  <g transform="translate(0 8) scale(0.875)">
+    <rect width="64" height="64" rx="16" fill="url(#t-bg)"/>
+    <path d="M16 21H48M32 21V45" fill="none" stroke="#f0ece2" stroke-width="4.5" stroke-linecap="round"/>
+    <circle cx="16" cy="21" r="5" fill="#f0ece2"/>
+    <circle cx="48" cy="21" r="5" fill="#f0ece2"/>
+    <circle cx="32" cy="45" r="5" fill="#f0ece2"/>
+    <circle cx="32" cy="21" r="8" fill="#558047"/>
+    <circle cx="32" cy="21" r="5.75" fill="url(#t-gold)"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="70" y="41" font-family="Manrope, 'Plus Jakarta Sans', Inter, system-ui, sans-serif" font-weight="800" font-size="34" letter-spacing="-1" fill="#1a1f1a">Thribus</text>
+  <text x="72" y="61" font-family="Manrope, 'Plus Jakarta Sans', Inter, system-ui, sans-serif" font-weight="700" font-size="12" letter-spacing="4.2" fill="#b08a38">PLATFORM</text>
+</svg>
