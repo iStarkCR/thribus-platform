@@ -61,7 +61,7 @@ export function Sidebar() {
         {!collapsed && (
           <>
             <div className="flex flex-col flex-1 min-w-0">
-              <span className="text-[15px] font-bold text-creme leading-tight tracking-tight truncate">Thribus Tech</span>
+              <span className="text-[15px] font-bold text-creme leading-tight tracking-tight truncate">Thribus Platform</span>
               <span className="text-[11.5px] font-semibold text-brand uppercase tracking-wider leading-tight truncate">Colaboradores Digitais</span>
             </div>
             <NotifBell onClick={() => navigate('/notifications')} />
