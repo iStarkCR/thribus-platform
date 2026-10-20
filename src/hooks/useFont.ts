@@ -11,14 +11,17 @@ import { useEffect, useState } from 'react';
  * - Sincroniza cross-component via custom event.
  */
 
-export type Font = 'manrope' | 'inter' | 'plus-jakarta' | 'ibm-plex' | 'space-grotesk';
+export type Font = 'system' | 'manrope' | 'inter' | 'plus-jakarta' | 'ibm-plex' | 'space-grotesk';
 
 const STORAGE_KEY = 'thribus.font';
 const SYNC_EVENT = 'thribus-font-change';
+const DEFAULT_FONT: Font = 'system';
 
 const FALLBACK = 'system-ui, sans-serif';
 
 export const FONTS: Record<Font, { label: string; stack: string }> = {
+  // SF Pro em Apple (via -apple-system), Inter nos demais — look de sistema.
+  system:         { label: 'Sistema (SF Pro)',  stack: `-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', ${FALLBACK}` },
   manrope:        { label: 'Manrope',           stack: `'Manrope', ${FALLBACK}` },
   inter:          { label: 'Inter',             stack: `'Inter', ${FALLBACK}` },
   'plus-jakarta': { label: 'Plus Jakarta Sans', stack: `'Plus Jakarta Sans', ${FALLBACK}` },
@@ -27,14 +30,14 @@ export const FONTS: Record<Font, { label: string; stack: string }> = {
 };
 
 function readStoredFont(): Font {
-  if (typeof window === 'undefined') return 'manrope';
+  if (typeof window === 'undefined') return DEFAULT_FONT;
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored && stored in FONTS) return stored as Font;
   } catch {
     // localStorage indisponível (modo privado, etc) — cai pro default
   }
-  return 'manrope';
+  return DEFAULT_FONT;
 }
 
 function applyFont(font: Font): void {

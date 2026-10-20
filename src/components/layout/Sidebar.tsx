@@ -49,7 +49,8 @@ export function Sidebar() {
 
   return (
     <aside className={clsx(
-      'glass-strong fixed left-0 top-0 bottom-0 bg-surface-1 border-r border-default flex flex-col z-[60] transition-[width,transform] duration-200',
+      // Painel flutuante (estilo macOS): destacado das bordas no desktop, drawer cheio no mobile.
+      'glass-strong fixed left-0 top-0 bottom-0 md:left-2.5 md:top-2.5 md:bottom-2.5 md:rounded-2xl bg-surface-1 border-r md:border border-default flex flex-col z-[60] overflow-hidden transition-[width,transform] duration-200',
       collapsed ? 'w-[64px]' : 'w-[244px]',
       // Drawer em mobile: desliza pra dentro quando aberto; no desktop fica sempre visível.
       mobileNavOpen ? 'translate-x-0 shadow-2xl md:shadow-none' : '-translate-x-full',
@@ -60,9 +61,9 @@ export function Sidebar() {
         <img src={thribusMark} alt="Thribus" width={30} height={30} className="w-[30px] h-[30px] rounded-lg shrink-0" />
         {!collapsed && (
           <>
-            <div className="flex flex-col flex-1 min-w-0">
-              <span className="text-[15px] font-bold text-creme leading-tight tracking-tight truncate">Thribus Platform</span>
-              <span className="text-[11.5px] font-semibold text-brand uppercase tracking-wider leading-tight truncate">Colaboradores Digitais</span>
+            {/* Nome em linha única (a tagline fica no tooltip — não cabe sem truncar ao lado do sino e do recolher). */}
+            <div className="flex flex-col flex-1 min-w-0" title="Thribus Platform · Colaboradores Digitais">
+              <span className="text-[14.5px] font-semibold text-creme leading-tight tracking-tight truncate">Thribus Platform</span>
             </div>
             <NotifBell onClick={() => navigate('/notifications')} />
             <button onClick={() => (isMobile ? setMobileNavOpen(false) : setSidebarCollapsed(true))} title={isMobile ? 'Fechar' : 'Recolher'} className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
@@ -110,8 +111,8 @@ export function Sidebar() {
                     'w-full flex items-center py-2 rounded-[10px] text-[14px] font-medium transition-all duration-150 relative min-w-0',
                     collapsed ? 'justify-center px-0' : 'gap-2.5 px-2.5',
                     isActive
-                      ? 'bg-brand/[0.18] text-creme font-semibold'
-                      : 'text-creme-dim hover:bg-surface-hover hover:text-creme',
+                      ? 'bg-brand/[0.14] text-creme font-semibold shadow-[inset_0_1px_0_rgb(255_255_255_/_0.06)]'
+                      : 'text-creme-dim hover:bg-surface-hover hover:text-creme active:scale-[0.98]',
                   )}
                 >
                   {isActive && (

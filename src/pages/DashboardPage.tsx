@@ -116,11 +116,10 @@ export function DashboardPage() {
           return (
             <div
               key={m.label}
-              className="group relative overflow-hidden rounded-2xl border bg-surface-2 pl-6 pr-5 py-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-22px_rgba(0,0,0,0.65)]"
-              style={{ borderColor: `rgb(var(${m.accent}) / 0.28)` }}
+              className="card card-interactive group overflow-hidden pl-6 pr-5 py-5"
             >
-              {/* Barra de accent à esquerda (estilo D · Bold Accent) */}
-              <span className="pointer-events-none absolute left-0 top-0 bottom-0 w-[3px] rounded-r-full" style={{ background: `linear-gradient(180deg, rgb(var(${m.accent})), rgb(var(${m.accent}) / 0.25))` }} />
+              {/* Brilho de accent no canto (material, não contorno) */}
+              <span className="pointer-events-none absolute -left-12 -top-12 w-44 h-44 rounded-full blur-3xl opacity-[0.16] transition-opacity duration-300 group-hover:opacity-[0.26]" style={{ background: `rgb(var(${m.accent}))` }} />
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10.5px] text-creme-mute font-semibold uppercase tracking-[0.1em]">{m.label}</span>
                 <div className={clsx('w-7 h-7 rounded-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-105', m.style)}>
@@ -179,7 +178,7 @@ export function DashboardPage() {
       </div>
 
       {/* ─── Sparkline 7d (sempre 7d pra histórico curto) ──────────────── */}
-      <div className="bg-surface-2 border border-default rounded-[10px] p-5 mb-6">
+      <div className="card p-5 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <TrendingUp size={14} className="text-brand-bright" />
@@ -288,7 +287,7 @@ function MicroCard({
   mono?: boolean;
 }) {
   return (
-    <div className="bg-surface-2 border border-default rounded-[10px] p-3 hover:border-hover transition-all">
+    <div className="card card-interactive p-3">
       <div className="flex items-center gap-1.5 mb-2">
         <span className={`w-5 h-5 rounded-md flex items-center justify-center ${MICRO_BG[color]}`}>
           {icon}

@@ -49,7 +49,8 @@ export function AppLayout({ children }: AppLayoutProps) {
         <div onClick={() => setMobileNavOpen(false)} className="fixed inset-0 bg-black/55 z-[55] md:hidden" />
       )}
       {/* Em mobile o conteúdo ocupa a tela toda (ml-0); margem só vale no desktop. */}
-      <main className={`flex-1 flex flex-col transition-[margin] duration-200 ml-0 ${collapsed ? 'md:ml-[64px]' : 'md:ml-[244px]'} ${isFull ? 'h-full min-h-0 overflow-hidden' : 'min-h-screen'}`}>
+      {/* Sidebar flutua com 10px de margem no desktop → o conteúdo começa 10px depois da largura dela. */}
+      <main className={`flex-1 flex flex-col transition-[margin] duration-200 ml-0 ${collapsed ? 'md:ml-[74px]' : 'md:ml-[254px]'} ${isFull ? 'h-full min-h-0 overflow-hidden' : 'min-h-screen'}`}>
         {/* Páginas não-chat: hamburger flutuante pra abrir a nav (o chat tem o seu no header). */}
         {!isChat && (
           <button onClick={() => setMobileNavOpen(true)} className="md:hidden fixed top-3 left-3 z-[45] w-9 h-9 rounded-lg bg-surface-2/90 border border-default text-creme-mute hover:text-creme backdrop-blur flex items-center justify-center shadow-lg" title="Menu">
@@ -59,10 +60,11 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Páginas do sistema (não-chat) ganham um zoom leve pra ficar legíveis como o
             chat — o chat já usa tipografia grande, então fica de fora.
             max-md:pt-16 abre espaço pro hamburger flutuante não cobrir o título em mobile. */}
-        <div className={
+        {/* `key={pathname}` remonta o wrapper a cada rota → a entrada (.page-enter) toca de novo. */}
+        <div key={isChat ? 'chat' : pathname} className={
           isChat ? 'flex-1 min-h-0 flex flex-col'
-          : isBoard ? 'flex-1 min-h-0 flex flex-col overflow-hidden [zoom:1.1]'
-          : 'flex-1 p-6 max-md:pt-16 [zoom:1.1]'
+          : isBoard ? 'flex-1 min-h-0 flex flex-col overflow-hidden [zoom:1.1] page-enter'
+          : 'flex-1 p-6 max-md:pt-16 [zoom:1.1] page-enter'
         }>{children}</div>
       </main>
     </div>

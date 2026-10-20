@@ -21,11 +21,11 @@ export function Modal({ title, subtitle, children, footer, onClose, maxWidth = '
 
   return (
     <div
-      className="fixed inset-0 bg-black/65 backdrop-blur-[10px] z-[200] flex items-center justify-center p-5"
+      className="fixed inset-0 bg-black/50 backdrop-blur-xl z-[200] flex items-center justify-center p-5"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="glass-panel bg-surface-1 border border-hover rounded-2xl w-full overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.6)] animate-modal-in"
+        className="glass-strong bg-surface-1 border border-default rounded-3xl w-full overflow-hidden shadow-pop animate-modal-in"
         style={{ maxWidth, maxHeight: '85vh' }}
       >
         {/* Header */}
