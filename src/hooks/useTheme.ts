@@ -78,7 +78,8 @@ const GLASS_EVENT = 'thribus-glass-change';
 
 function readGlass(): boolean {
   if (typeof window === 'undefined') return false;
-  try { return localStorage.getItem(GLASS_KEY) === '1'; } catch { return false; }
+  // Liquid Glass é o padrão; só desliga se o usuário escolheu desligar.
+  try { return localStorage.getItem(GLASS_KEY) !== '0'; } catch { return true; }
 }
 function applyGlass(on: boolean): void {
   if (typeof document === 'undefined') return;

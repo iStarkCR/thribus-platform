@@ -14,6 +14,24 @@ export default {
         // Viewport baixo (notebook 1366×768, Windows com zoom 125%) — compacta o hero
         short: { raw: '(max-height: 760px)' },
       },
+      // Raios maiores e contínuos (HIG): tudo que já usa rounded-md/lg/xl/2xl
+      // herda a nova escala sem tocar nos componentes.
+      borderRadius: {
+        md: '10px',
+        lg: '12px',
+        xl: '16px',
+        '2xl': '20px',
+        '3xl': '28px',
+      },
+      boxShadow: {
+        card: 'inset 0 1px 0 rgb(255 255 255 / 0.06), 0 1px 2px rgb(0 0 0 / 0.18), 0 12px 32px -18px rgb(0 0 0 / 0.55)',
+        pop: 'inset 0 1px 0 rgb(255 255 255 / 0.08), 0 24px 64px -20px rgb(0 0 0 / 0.6)',
+        glow: '0 0 0 1px rgb(var(--brand) / 0.35), 0 10px 30px -10px rgb(var(--brand) / 0.6)',
+      },
+      transitionTimingFunction: {
+        out: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        spring: 'cubic-bezier(0.34, 1.3, 0.64, 1)',
+      },
       fontFamily: {
         // --font-ui é definida por useFont (default Manrope) → troca de fonte
         // re-renderiza toda a UI em tempo real. Manrope permanece como fallback.
@@ -61,7 +79,7 @@ export default {
       },
       animation: {
         'pulse-dot': 'pulse-dot 2s infinite',
-        'modal-in': 'modal-in 0.2s ease',
+        'modal-in': 'modal-in 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
         'toast-in': 'toast-in 0.25s ease',
         'effort-flow': 'effort-flow 2.4s linear infinite',
       },
@@ -76,7 +94,7 @@ export default {
           '100%': { boxShadow: '0 0 0 0 rgba(74,222,128,0)' },
         },
         'modal-in': {
-          from: { opacity: '0', transform: 'translateY(16px) scale(0.98)' },
+          from: { opacity: '0', transform: 'translateY(14px) scale(0.97)' },
           to: { opacity: '1', transform: 'none' },
         },
         'toast-in': {
