@@ -256,6 +256,15 @@ export function TalkPage() {
   const handleSuggestion = useCallback((t: string) => sendRef.current(t), []);
   // troca de conversa cancela edição pendente (evita truncar a sessão errada)
   useEffect(() => { setEditingFrom((e) => (e && e.sessionId !== activeId ? null : e)); }, [activeId]);
+  // Anexos são por conversa: ao trocar de sessão, os que ainda não foram enviados
+  // (selecionados no composer) não devem "vazar" pra próxima conversa.
+  useEffect(() => {
+    setAttachments((prev) => {
+      prev.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
+      return [];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
 
   // Carrega routing info (tier/reason) das msgs done pra exibir no RoutingBadge
   useEffect(() => {
@@ -575,6 +584,21 @@ export function TalkPage() {
   waitingRef.current = waiting;
   // mensagem do usuário em processamento → chave dos passos "por trás"
   const lastUserMsgId = waiting ? messages[messages.length - 1].id : null;
+  // Turno em andamento — mais amplo que `waiting`: cobre o ANTES do streaming
+  // (última msg = user pending/processing) E o DURANTE (a ponte já inseriu a msg
+  // do assistant e está streamando/executando passos). Sem isso o botão "Parar"
+  // sumia assim que a resposta começava a aparecer, deixando um turno rodando sem
+  // como cancelar. A ponte cancela pelo id da msg do USUÁRIO (pollCancel + kill),
+  // que segue 'processing' até o fim — então é esse id que devolvemos.
+  const running =
+    messages.length > 0 &&
+    (
+      (lastMsg.role === 'user' && ['pending', 'processing'].includes(lastMsg.status)) ||
+      (lastMsg.role === 'assistant' && lastMsg.status === 'processing')
+    );
+  const runningUserMsgId = running
+    ? ([...messages].reverse().find((m) => m.role === 'user' && ['pending', 'processing'].includes(m.status))?.id ?? null)
+    : null;
 
   // Aurora reativa — o fundo (tema glass) pulsa quando o Bukowiski pensa e ganha
   // vida quando ele FALA (TTS). Limpa as classes ao desmontar.
@@ -625,8 +649,14 @@ export function TalkPage() {
   }, [agentId, activeId, inChat, treeLoaded, period, sessions]);
 
   // Botão "Parar": marca a msg como cancelada (a ponte mata o claude) + UI otimista.
+  // Também congela a resposta do assistant que estiver streamando (cursor + passos
+  // ao vivo) na hora — a ponte confirma o estado final logo em seguida.
   async function cancelTurn(msgId: string) {
-    setMessages((m) => m.map((x) => (x.id === msgId ? { ...x, status: 'cancelled' } : x)));
+    setMessages((m) => m.map((x) => {
+      if (x.id === msgId) return { ...x, status: 'cancelled' };
+      if (x.role === 'assistant' && x.status === 'processing') return { ...x, status: 'done' };
+      return x;
+    }));
     try { await cancelMessage(msgId); }
     catch (e) { useAppStore.getState().addToast('Falha ao parar: ' + (e as Error).message, 'red'); }
   }
@@ -1527,7 +1557,7 @@ export function TalkPage() {
                     <AudioRecorderBar agentId={agentId ?? ''} onResult={(t) => { setRecording(false); if (t) setInput((c) => (c ? `${c} ${t}` : t)); }} onCancel={() => setRecording(false)} />
                   ) : (
                     <div
-                      className="glass-panel flex items-center gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 focus-within:border-brand transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]"
+                      className="glass-panel flex items-center gap-2 bg-surface-2 border border-default rounded-2xl pl-4 pr-2.5 py-2.5 transition-colors shadow-[0_18px_46px_-22px_rgba(0,0,0,0.75)]"
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => { e.preventDefault(); addFiles(Array.from(e.dataTransfer.files)); }}
                     >
@@ -1854,7 +1884,7 @@ export function TalkPage() {
             />
           ) : (
           <div
-            className="glass-panel relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 focus-within:border-brand transition-colors"
+            className="glass-panel relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 transition-colors"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); addFiles(Array.from(e.dataTransfer.files)); }}
           >
@@ -1978,9 +2008,9 @@ export function TalkPage() {
             >
               <Mic size={17} />
             </button>
-            {waiting && lastUserMsgId ? (
+            {running && runningUserMsgId ? (
               <button
-                onClick={() => cancelTurn(lastUserMsgId)}
+                onClick={() => cancelTurn(runningUserMsgId)}
                 title="Parar a resposta"
                 className="w-10 h-10 rounded-xl bg-semantic-red/15 text-semantic-red flex items-center justify-center shrink-0 hover:bg-semantic-red/25 transition-colors animate-pulse"
               >

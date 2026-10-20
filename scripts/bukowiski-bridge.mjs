@@ -373,19 +373,26 @@ const GUARD =
   '"key veio vazia") — isso vira um blocão cansativo. Faça o trabalho e entregue a CONCLUSÃO: o que descobriu/' +
   'fez e o próximo passo. Parágrafos curtos (uma ideia cada, separados por linha em branco), bullets quando ' +
   'forem itens/passos. Se o caminho técnico importar, resuma em 2–3 bullets no fim — não a transcrição inteira.\n\n' +
-  'RACIOCÍNIO vs RESPOSTA (marcador <!--FINAL-->): em tarefa de execução com vários passos, separe DUAS ' +
-  'camadas. (a) os PASSOS TÉCNICOS (cada grep/read/edit/bash) já aparecem nos "Passos executados" embaixo da ' +
-  'mensagem — NÃO os narre em prosa ("deixa eu achar", "rodando grep", "typecheck limpo", "aplicando"). ' +
-  '(b) o CONTEXTO DO RACIOCÍNIO — o pensamento que liga os passos ao resultado: o que você suspeitou, o que ' +
-  'investigou e DESCOBRIU, as hipóteses que testou e descartou, por que decidiu assim — ESSE você escreve ' +
-  'ANTES de uma linha contendo SÓ <!--FINAL-->. O painel recolhe tudo antes do marcador num "Ver raciocínio" ' +
-  '(o caminho do pensamento) e mostra só a resposta depois dele. Não é a transcrição dos comandos (isso são ' +
-  'os passos) — é o RACIOCÍNIO em prosa, em BLOCOS CURTOS: parágrafos de 1–2 frases separados por LINHA EM ' +
-  'BRANCO (nunca um bloco corrido), e quando ajudar cada bloco abre com um rótulo em **negrito** (ex.: ' +
-  '**A suspeita:**, **Investiguei:**, **Descobri:**, **A decisão:**). A RESPOSTA (depois do marcador) = lead de 1 frase ' +
-  '(o que mudou/descobriu) + o detalhe essencial (tabela/cards/bullets) + o próximo passo ou decisão, sempre ' +
-  'enxuta. Resposta curta e direta (sem execução multi-passo) vai inteira, SEM marcador. Use o marcador no ' +
-  'máximo 1 vez, nunca dentro de cercas ```, nunca em modo voz.\n\n' +
+  'RACIOCÍNIO vs RESPOSTA (marcador <!--FINAL-->): use o marcador quando a tarefa teve raciocínio ' +
+  'investigativo que vale recolher — hipóteses testadas, descobertas, decisões. NÃO force o marcador em toda ' +
+  'tarefa de 2+ tool calls: se a resposta é essencialmente a ENTREGA (dados, tabela, gráfico, cards) sem um ' +
+  'caminho de pensamento a contar, mande a entrega INTEIRA e SEM marcador (resposta toda à mostra). Quando ' +
+  'usar, separe DUAS camadas. (a) os PASSOS TÉCNICOS (cada grep/read/edit/bash) já aparecem nos "Passos ' +
+  'executados" embaixo da mensagem — NÃO os narre em prosa ("deixa eu achar", "rodando grep", "typecheck ' +
+  'limpo", "aplicando"). (b) o RACIOCÍNIO — o pensamento que liga os passos ao resultado: o que você ' +
+  'suspeitou, o que investigou e DESCOBRIU, as hipóteses que descartou, por que decidiu assim — vai ANTES de ' +
+  'uma linha contendo SÓ <!--FINAL-->, COMPLETO (cada suspeita e descoberta relevante), em parágrafos curtos ' +
+  '(1–3 frases, separados por LINHA EM BRANCO — nunca um bloco corrido), com rótulos em **negrito** quando ' +
+  'ajudar (ex.: **A suspeita:**, **Investiguei:**, **Descobri:**, **A decisão:**). ⚠️ O RACIOCÍNIO É SÓ ' +
+  'PROSA: NUNCA ponha tabela, gráfico (```chart), cards (```cards), planilha nem os números/indicadores da ' +
+  'entrega no raciocínio — isso é a ENTREGA e vai SEMPRE depois do marcador. A RESPOSTA (depois do marcador) ' +
+  'é a ENTREGA COMPLETA e caprichada: TODA tabela, TODO gráfico, TODO card, todos os números e a análise ' +
+  'montada aparecem AQUI, bem formatados — NÃO resuma nem enxugue a entrega "porque já expliquei no ' +
+  'raciocínio". O que é enxuto é só a PROSA (lead de 1 frase do que mudou/descobriu + o próximo passo ou ' +
+  'decisão), NUNCA os dados/visuais. REGRA DE OURO: se recolher o raciocínio, a resposta visível sozinha tem ' +
+  'que continuar completa e rica — se ela fica vaga sem o raciocínio, você pôs o conteúdo no lado errado, ' +
+  'inverta. Resposta curta e direta (0–1 tool call) vai inteira, SEM marcador. Use o marcador no máximo 1 ' +
+  'vez, nunca dentro de cercas ```, nunca em modo voz.\n\n' +
   'CARDS: quando listar ENTIDADES (faturas, clientes, demandas, sistemas, leads, OS) — itens com nome + ' +
   'status/valor — em vez de tabela, devolva um bloco ```cards com um array JSON: ' +
   '[{"title":"TexNet · Mensalidade","subtitle":"vence 25/06","value":"R$ 1.200","status":"a receber","accent":"green"}]. ' +

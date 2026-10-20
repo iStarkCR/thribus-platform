@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Agent, AgentSkill, AgentTemplate, DashboardMetrics, Escalation, Execution, Sector, Skill, Tool, Workspace, CreateWorkspacePayload } from '@/types';
 import { agentsApi, dashboardApi, escalationsApi, executionsApi, skillsApi, templatesApi, toolsApi, workspacesApi, type CreateToolPayload } from '@/services/api';
 import { listSectors } from '@/services/sectors';
+import { isTauri, notify } from '@/lib/native';
 
 interface AppState {
   // Data
@@ -471,6 +472,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const id = `toast-${Date.now()}`;
     set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
     setTimeout(() => get().removeToast(id), 3500);
+    // App nativo (macOS): se a janela está em background, o toast in-app passa
+    // batido — então espelhamos na Central de Notificações. Web: no-op.
+    if (isTauri() && !document.hasFocus()) {
+      const title =
+        type === 'red' ? 'Thribus — Atenção' : type === 'amber' ? 'Thribus — Aviso' : 'Thribus Platform';
+      void notify(title, message);
+    }
   },
 
   removeToast: (id) => {

@@ -16,7 +16,11 @@ import { Chart } from '@/components/shared/Chart';
 import { useAppStore } from '@/hooks/useAppStore';
 
 // URL aceita parênteses balanceados (ex.: .../Foo_(bar)) sem cortar no 1º ')'.
-const URLCORE = 'https?:\\/\\/(?:[^\\s()]+|\\([^\\s()]*\\))+';
+// IMPORTANTE: classes disjuntas ([^\s()] vs. o grupo \(…\)) — SEM quantificador
+// aninhado ambíguo tipo (?:[^\s()]+|…)+, que causava catastrophic backtracking
+// (ReDoS) e travava a thread principal quando uma linha começava com URL + token
+// longo sem espaço seguido de mais texto (ex.: relatório/artefato com link do Hub).
+const URLCORE = 'https?:\\/\\/[^\\s()]*(?:\\([^\\s()]*\\)[^\\s()]*)*';
 const INLINE = new RegExp(
   '(\\[([^\\]]+)\\]\\((' + URLCORE + ')\\))|(' + URLCORE + ')|(\\*\\*([^*]+?)\\*\\*)|(`([^`]+?)`)' +
     // itálico _…_ : fronteira não-palavra dos dois lados (m[9]=fronteira, m[10]=_…_, m[11]=conteúdo)
@@ -194,13 +198,13 @@ function miniChart(header: string[], rows: string[][], idxs: number[]): ReactNod
   if (vals.every((v) => v === 0)) return null;
   const max = Math.max(...vals.map((v) => Math.abs(v)), 1);
   return (
-    <div className="mt-2 px-3.5 py-3 rounded-xl border border-default bg-surface-1/60">
-      <div className="text-[10px] uppercase tracking-[0.08em] text-creme-faint font-semibold mb-2">{header[numCol] || 'valores'}</div>
-      <div className="flex flex-col gap-1.5">
+    <div className="mt-2 px-4 py-3.5 rounded-2xl border border-default/60 bg-surface-1/40">
+      <div className="text-[10px] uppercase tracking-[0.1em] text-creme-faint font-semibold mb-2.5">{header[numCol] || 'valores'}</div>
+      <div className="flex flex-col gap-2">
         {rows.map((r, i) => (
-          <div key={i} className="flex items-center gap-2.5 text-[13px]">
-            <span className="w-[34%] truncate text-creme-mute text-right shrink-0">{r[labCol]}</span>
-            <div className="flex-1 h-3 rounded-full bg-surface-3 overflow-hidden">
+          <div key={i} className="flex items-center gap-2.5 text-[12.5px]">
+            <span className="w-[32%] truncate text-creme-mute text-right shrink-0">{r[labCol]}</span>
+            <div className="flex-1 h-2 rounded-full bg-surface-3/70 overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${Math.max(3, (Math.abs(vals[i]) / max) * 100)}%`, background: 'linear-gradient(90deg, rgb(var(--brand)), rgb(var(--brand-bright)))' }} />
             </div>
             <span className="w-[18%] shrink-0 text-creme font-mono tabular-nums text-right">{r[numCol]}</span>
@@ -307,8 +311,8 @@ function CardList({ items, multi, onAction }: { items: CardItem[]; multi?: boole
             </div>
           </>
         );
-        const base = 'w-full flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 transition-all';
-        const selCls = isSel ? 'border-brand/50 bg-brand/8 ring-1 ring-brand/40' : 'border-default bg-surface-1/70';
+        const base = 'w-full flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 transition-all duration-150 shadow-[0_8px_28px_-20px_rgba(0,0,0,0.55)]';
+        const selCls = isSel ? 'border-brand/50 bg-brand/8 ring-1 ring-brand/40' : 'border-default/70 bg-surface-1/50';
         return clickable ? (
           <button
             key={i}
@@ -471,22 +475,22 @@ function MarkdownImpl({ text, className, onAction, onOpenArtifact }: { text: str
       const chart = miniChart(header, rows, idxs);
       blocks.push(
         <div key={key++} className="my-3">
-        <div className="overflow-x-auto rounded-xl border border-default shadow-[0_8px_24px_-16px_rgba(0,0,0,0.5)]">
-          <table className="w-full text-[14.5px] border-collapse">
+        <div className="overflow-x-auto rounded-2xl border border-default/60 bg-surface-1/40 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.65)]">
+          <table className="w-full text-[14px] border-collapse">
             <thead>
-              <tr className="bg-surface-3">
+              <tr>
                 {idxs.map((ci) => (
-                  <th key={ci} className={`font-semibold text-[11.5px] uppercase tracking-[0.07em] text-creme-mute px-3.5 py-2.5 border-b border-default whitespace-nowrap ${colNumeric[ci] ? 'text-right' : 'text-left'}`}>{renderInline(header[ci] ?? '')}</th>
+                  <th key={ci} className={`font-semibold text-[10.5px] uppercase tracking-[0.1em] text-creme-faint px-4 py-3 border-b border-default whitespace-nowrap ${colNumeric[ci] ? 'text-right' : 'text-left'}`}>{renderInline(header[ci] ?? '')}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((r, ri) => (
-                <tr key={ri} className="border-b border-default/40 last:border-0 hover:bg-surface-hover/50 transition-colors">
+                <tr key={ri} className={`border-b border-default/20 last:border-0 transition-colors hover:bg-surface-hover/40 ${ri % 2 === 1 ? 'bg-surface-2/20' : ''}`}>
                   {idxs.map((ci) => {
                     const cell = r[ci] ?? '';
                     return (
-                      <td key={ci} className={`px-3.5 py-2 align-middle ${colNumeric[ci] ? 'text-right font-mono tabular-nums whitespace-nowrap text-creme font-medium' : 'text-creme-dim'}`}>
+                      <td key={ci} className={`px-4 py-2.5 align-middle ${colNumeric[ci] ? 'text-right font-mono tabular-nums whitespace-nowrap text-creme font-medium' : ci === 0 ? 'text-creme font-medium' : 'text-creme-dim'}`}>
                         {renderInline(cell)}
                       </td>
                     );

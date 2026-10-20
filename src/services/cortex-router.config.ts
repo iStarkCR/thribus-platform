@@ -139,15 +139,15 @@ export function classifyWhatsapp(text: string): Classification {
 /** Thresholds de comprimento do painel (chars do texto trimado). */
 export const PAINEL_LENGTH = {
   /** len <= trivialMax + só sinal leve + sem pesado → trivial (haiku). */
-  trivialMax: 40,
+  trivialMax: 60,
   /** len >= complex (sem sinal pesado) → complexo (escalada por tamanho puro). */
-  complex: 400,
+  complex: 550,
   /** Pesado + len > dense → sobe complexo→crítico (escalador ~600 = +1 nível). */
-  dense: 600,
+  dense: 750,
   /** Sem pesado, len > heavy → crítico (texto muito longo sem sinal). */
-  heavy: 900,
+  heavy: 1100,
   /** len > maximo → máximo (opus max), com ou sem sinal. */
-  maximo: 1500,
+  maximo: 1800,
 } as const;
 
 /**
@@ -164,13 +164,15 @@ export const PAINEL_SIGNALS = {
     // chamada de função: foo() vazio ou foo(a, b)/foo(x=1) com args — evita "cliente(s)".
     fn: /\b[a-z_][\w.]*\(\s*\)|\b[a-z_][\w.]*\([^)]*[,;=][^)]*\)/i,
     nouns:
-      /\b(rls|schema|query|queries|migration|migrations|daemon|supabase|endpoint|endpoints|deploy|deploys|commit|commits|repo|repos|reposit[óo]rio)\b/i,
+      /\b(rls|schema|migration|migrations|daemon|supabase|endpoint|endpoints|deploy|deploys|commit|commits|repo|repos|reposit[óo]rio)\b/i,
     // prefixos de verbos de ação; lookaheads evitam casar substantivos soltos
     // que só compartilham o radical (validade, montante/montagem).
+    // an[aá]lis(?!e): exclui o substantivo "análise/análises" (rotineiro — setor
+    // de Análises, "manda a análise") e mantém só o verbo (analisar/analisa/analisando).
     verbs:
-      /\b(implementa|audita|auditoria|refatora|an[aá]lis|analisa|investiga|diagnostic|diagn[óo]stic|debug|corrig|corre[çc][ãa]o|configura|migra|otimiz|revis|valida(?!de)|planej|estrutura|monta(?!nte|gem|dor|nh))/i,
+      /\b(implementa|audita|auditoria|refatora|an[aá]lis(?!e)|investiga|diagnostic|diagn[óo]stic|debug|corrig|corre[çc][ãa]o|configura|migra|otimiz|revis|valida(?!de)|planej|estrutura|monta(?!nte|gem|dor|nh))/i,
     deleg:
-      /\b(manda o|manda a|despach|delega|cria(r)? demanda|distribui(r)? pro time|consulta(r)? o banco|roda(r)? (a|essa) query)\b/i,
+      /\b(manda o|manda a|despach|delega|cria(r)? demanda|distribui(r)? pro time)\b/i,
   },
   light: {
     ack: /^(ok|okay|blz|beleza|certo|sim|n[ãa]o|valeu|vlw|show|massa|perfeito|fechou|isso|exato|confirma(do|r)?|combinado|pode ser|👍|🙏|👌|✅|kk+|h[ae]h[ae]|obrigad[oa])\b/i,

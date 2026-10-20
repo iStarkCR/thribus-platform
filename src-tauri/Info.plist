@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>O Thribus Platform precisa acessar sua Agenda para listar e criar compromissos.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>O Thribus Platform precisa acessar seus Lembretes para listar e criar tarefas.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>O Thribus Platform precisa controlar outros apps (Notas, Atalhos e Agenda) para ler e criar conteúdo em seu nome.</string>
+</dict>
+</plist>

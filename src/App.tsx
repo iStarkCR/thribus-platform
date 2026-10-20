@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { onDeepLink, onNotificationClick, checkForUpdates } from '@/lib/native';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { AgentsPage } from '@/pages/AgentsPage';
@@ -96,6 +97,7 @@ export function App() {
 
   return (
     <HashRouter>
+      <NativeBridge />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         {/* Página de pagamento pública (sem login) — checkout Thribus sobre Asaas */}
@@ -111,6 +113,20 @@ export function App() {
       <ImageLightbox />
     </HashRouter>
   );
+}
+
+// Ponte nativa (app Mac): deep link `thribus://…` e clique em notificação nativa
+// → navegam pra rota interna. Fica dentro do HashRouter pra ter `useNavigate`.
+// No site web os handlers são no-op (isTauri() === false), então é inerte.
+function NativeBridge() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    void onDeepLink((route) => navigate(route));
+    void onNotificationClick((route) => navigate(route));
+    // Auto-updater: checa no launch; avisa via toast se baixar nova versão.
+    void checkForUpdates((msg) => useAppStore.getState().addToast(msg, 'green'));
+  }, [navigate]);
+  return null;
 }
 
 // Lê o :id da rota hash (#/pay/:id) e injeta no PayPage.

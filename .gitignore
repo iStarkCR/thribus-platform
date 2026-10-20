@@ -37,6 +37,10 @@ Thumbs.db
 # Vercel
 .vercel/
 
+# Tauri (Mac app build)
+src-tauri/target/
+src-tauri/gen/
+
 # Testing
 coverage/
 .nyc_output/
