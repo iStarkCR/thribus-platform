@@ -223,6 +223,44 @@ export async function checkForUpdates(onStatus?: (msg: string) => void): Promise
 }
 
 /**
+ * Abre uma URL no navegador padrão do sistema (plugin-opener). No web é no-op
+ * — ali o `<a target="_blank">` já abre nova aba sozinho.
+ */
+async function openExternal(url: string): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(url);
+    return true;
+  } catch (err) {
+    console.warn('[native] openExternal falhou', err);
+    return false;
+  }
+}
+
+/**
+ * Dentro do WKWebView nativo, `<a target="_blank">` não abre o navegador do
+ * sistema sozinho — precisa do plugin-opener. Este listener global intercepta
+ * (captura) clique em qualquer `<a href="http(s)://…">` da árvore e abre via
+ * `openExternal`, prevenindo a navegação interna da webview. No web é no-op
+ * (isTauri() === false), o clique segue o comportamento nativo do browser.
+ */
+export function installExternalLinkHandler(): () => void {
+  if (!isTauri()) return () => {};
+  const onClick = (e: MouseEvent) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const anchor = (e.target as HTMLElement)?.closest?.('a[href]') as HTMLAnchorElement | null;
+    if (!anchor) return;
+    const href = anchor.getAttribute('href') || '';
+    if (!/^https?:\/\//i.test(href)) return;
+    e.preventDefault();
+    void openExternal(href);
+  };
+  document.addEventListener('click', onClick, true);
+  return () => document.removeEventListener('click', onClick, true);
+}
+
+/**
  * Clique numa notificação nativa → navega pra rota que ela carrega (`extra.route`).
  * No web é no-op.
  */

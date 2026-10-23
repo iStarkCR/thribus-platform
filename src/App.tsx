@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { HashRouter, Routes, Route, useNavigate } from 'react-router-dom';
-import { onDeepLink, onNotificationClick, checkForUpdates } from '@/lib/native';
+import { onDeepLink, onNotificationClick, checkForUpdates, installExternalLinkHandler } from '@/lib/native';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { AgentsPage } from '@/pages/AgentsPage';
@@ -125,6 +125,9 @@ function NativeBridge() {
     void onNotificationClick((route) => navigate(route));
     // Auto-updater: checa no launch; avisa via toast se baixar nova versão.
     void checkForUpdates((msg) => useAppStore.getState().addToast(msg, 'green'));
+    // Links <a target="_blank"> do chat/markdown não abrem o navegador sozinhos
+    // dentro do WKWebView nativo — este handler intercepta e abre via plugin-opener.
+    return installExternalLinkHandler();
   }, [navigate]);
   return null;
 }

@@ -326,7 +326,8 @@ pub fn run() {
   let builder = tauri::Builder::default()
     .plugin(tauri_plugin_notification::init())
     .plugin(tauri_plugin_deep_link::init())
-    .plugin(tauri_plugin_process::init());
+    .plugin(tauri_plugin_process::init())
+    .plugin(tauri_plugin_opener::init());
 
   // Comandos nativos do macOS (Agenda/Lembretes/Notas/Atalhos) só existem no
   // target macOS — registra o handler apenas lá.
@@ -363,6 +364,7 @@ pub fn run() {
         .min_inner_size(960.0, 600.0)
         .resizable(true)
         .initialization_script(PERF_OVERRIDES)
+        .disable_drag_drop_handler()
         .build()?;
 
       Ok(())
