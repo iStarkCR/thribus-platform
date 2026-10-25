@@ -8,6 +8,11 @@ interface AgentCardProps {
   showFullInfo?: boolean;
   /** Cor de accent (do setor) — barra lateral. Supervisor sempre usa dourado. */
   accent?: string;
+  /**
+   * Stats reais agregados de demandas (team_demands). Quando ausente, cai no
+   * fallback de `agent.stats`. `active` acende o micro-indicador "ativo agora".
+   */
+  live?: { open: number; doneToday: number; escalated: number; active: boolean } | null;
   /** Clique no card — por padrão abre o chat com o colaborador. */
   onClick: () => void;
   /** Engrenagem — abre a configuração do colaborador. */
@@ -20,7 +25,7 @@ const STATUS = {
   offline: { label: 'Offline', dot: 'bg-creme-faint', text: 'text-creme-faint', pulse: false },
 } as const;
 
-export function AgentCard({ agent, showFullInfo, accent, onClick, onConfig }: AgentCardProps) {
+export function AgentCard({ agent, showFullInfo, accent, live, onClick, onConfig }: AgentCardProps) {
   const toggleAgent = useAppStore((s) => s.toggleAgent);
   const off = agent.status !== 'online';
   const sup = agent.isSupervisor;
@@ -28,10 +33,15 @@ export function AgentCard({ agent, showFullInfo, accent, onClick, onConfig }: Ag
   const ink = sup ? 'rgb(var(--gold-bright))' : accent || 'rgb(var(--brand-bright))';
   const tint = sup ? 'rgb(var(--gold-bright) / 0.14)' : accent ? `color-mix(in srgb, ${accent} 16%, transparent)` : 'rgb(var(--brand) / 0.14)';
   const st = STATUS[agent.status as keyof typeof STATUS] ?? STATUS.offline;
+  // Realce de setor: borda/glow sutil na cor do setor (não aplica a supervisor).
+  const accentStyle = !sup && accent && !off
+    ? { boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${accent} 24%, transparent), 0 0 24px -18px ${accent}` }
+    : undefined;
 
   return (
     <div
       onClick={onClick}
+      style={accentStyle}
       className={clsx(
         'group glass-panel relative overflow-hidden bg-surface-2 border border-default rounded-2xl p-4 pl-5 cursor-pointer',
         'transition-all duration-200 hover:border-brand/40 hover:-translate-y-0.5 hover:shadow-[0_20px_44px_-26px_rgba(0,0,0,0.65)]',
@@ -63,6 +73,11 @@ export function AgentCard({ agent, showFullInfo, accent, onClick, onConfig }: Ag
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
+          {live?.active && (
+            <span title="Ativo agora — executando demanda" className="hidden sm:flex items-center gap-1 text-[10.5px] font-semibold text-brand-bright">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-bright animate-pulse-dot" /> ativo
+            </span>
+          )}
           {sup && (
             <span className="hidden sm:inline-block text-[9.5px] font-bold uppercase tracking-wider bg-gold/12 text-gold-bright border border-gold/30 px-2 py-0.5 rounded-full">Supervisor</span>
           )}
@@ -119,10 +134,10 @@ export function AgentCard({ agent, showFullInfo, accent, onClick, onConfig }: Ag
       {/* Stats — números grandes com accent */}
       <div className="grid grid-cols-4 gap-1 pt-3 border-t border-default/60">
         {[
-          { label: 'Demandas', value: agent.stats.total || agent.stats.today || 0 },
-          { label: 'Hoje', value: agent.stats.today || 0 },
+          { label: live ? 'Em aberto' : 'Demandas', value: live ? live.open : agent.stats.total || agent.stats.today || 0 },
+          { label: 'Hoje', value: live ? live.doneToday : agent.stats.today || 0 },
           { label: 'Resp', value: agent.stats.avgResponseTime ? `${agent.stats.avgResponseTime}s` : null },
-          { label: 'Escalados', value: agent.stats.escalated || 0 },
+          { label: 'Escalados', value: live ? live.escalated : agent.stats.escalated || 0 },
         ].map((s) => {
           const has = s.value !== null && s.value !== 0 && s.value !== '0';
           return (

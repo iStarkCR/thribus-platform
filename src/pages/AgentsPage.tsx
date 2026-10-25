@@ -1,14 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { Bot, Plus, Search, Building2, Layers, Users, ChevronDown } from 'lucide-react';
+import { Bot, Plus, Search, Building2, Layers, Users, ChevronDown, Network } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
+import { useSession } from '@/hooks/useSession';
 import { AgentCard } from '@/components/agents/AgentCard';
 import { AgentDetailModal } from '@/components/agents/AgentDetailModal';
 import { NewAgentModal } from '@/components/agents/NewAgentModal';
+import { OrgChart } from '@/components/agents/OrgChart';
+import { listDemands, subscribeDemands, demandsConfigured, type Demand } from '@/services/demands';
+import { aggregateByAgent } from '@/lib/agent-live-stats';
 import type { Agent, Sector } from '@/types';
 
-type GroupBy = 'empresa' | 'setor' | 'colaborador';
+type GroupBy = 'empresa' | 'setor' | 'colaborador' | 'organograma';
 type SectorLike = Pick<Sector, 'id' | 'name'> & Partial<Pick<Sector, 'color' | 'sortOrder'>>;
 interface SectorGroup {
   sector: SectorLike | null;
@@ -27,6 +31,8 @@ export function AgentsPage() {
   const agents = useAppStore((s) => s.agents);
   const sectors = useAppStore((s) => s.sectors);
   const navigate = useNavigate();
+  const { user } = useSession();
+  const userId = user?.id ?? null;
   const [selected, setSelected] = useState<Agent | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
@@ -44,6 +50,20 @@ export function AgentsPage() {
 
   // Clicar no colaborador → abre o chat com ele. Engrenagem → config.
   const goToChat = (a: Agent) => navigate(`/talk?agent=${a.id}`);
+
+  // Stats reais: agrega demandas (team_demands) por colaborador. Fallback em
+  // agent.stats quando o Supabase/demandas não está configurado.
+  const [demands, setDemands] = useState<Demand[]>([]);
+  useEffect(() => {
+    if (!demandsConfigured || !userId) return;
+    listDemands(userId).then(setDemands).catch(() => {});
+    return subscribeDemands(userId, () => {
+      listDemands(userId).then(setDemands).catch(() => {});
+    });
+  }, [userId]);
+
+  const byAgent = useMemo(() => aggregateByAgent(demands), [demands]);
+  const liveFor = (id: string) => (demandsConfigured ? byAgent.get(id) ?? { open: 0, doneToday: 0, escalated: 0, active: false } : null);
 
   const sectorById = useMemo(() => new Map(sectors.map((s) => [s.id, s])), [sectors]);
 
@@ -133,7 +153,7 @@ export function AgentsPage() {
         {open && (
           <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
             {list.map((a) => (
-              <AgentCard key={a.id} agent={a} showFullInfo accent={sector?.color} onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
+              <AgentCard key={a.id} agent={a} showFullInfo accent={sector?.color} live={liveFor(a.id)} onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
             ))}
           </div>
         )}
@@ -177,7 +197,7 @@ export function AgentsPage() {
             />
           </div>
           <div className="flex items-center gap-0.5 p-1 rounded-xl bg-surface-2 border border-default shrink-0">
-            {([['empresa', 'Empresa', Building2], ['setor', 'Setor', Layers], ['colaborador', 'Colaborador', Users]] as const).map(([key, label, Icon]) => (
+            {([['empresa', 'Empresa', Building2], ['setor', 'Setor', Layers], ['colaborador', 'Colaborador', Users], ['organograma', 'Organograma', Network]] as const).map(([key, label, Icon]) => (
               <button
                 key={key}
                 onClick={() => setGroupBy(key)}
@@ -211,11 +231,20 @@ export function AgentsPage() {
         <div className="glass-panel bg-surface-2 border border-default rounded-2xl px-8 py-12 text-center">
           <p className="text-[13.5px] text-creme-mute">Nenhum colaborador corresponde a "{search}"</p>
         </div>
+      ) : groupBy === 'organograma' ? (
+        // ─── Organograma vivo (Bukowiski → setores → colaboradores) ──────────
+        <OrgChart
+          agents={filtered}
+          sectors={sectors}
+          byAgent={byAgent}
+          demandsConfigured={demandsConfigured}
+          onSelectAgent={goToChat}
+        />
       ) : groupBy === 'colaborador' ? (
         // ─── Plano: todos os colaboradores ───────────────────────────────────
         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
           {peopleView.map((a) => (
-            <AgentCard key={a.id} agent={a} showFullInfo accent={a.sectorId ? sectorById.get(a.sectorId)?.color : undefined} onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
+            <AgentCard key={a.id} agent={a} showFullInfo accent={a.sectorId ? sectorById.get(a.sectorId)?.color : undefined} live={liveFor(a.id)} onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
           ))}
         </div>
       ) : groupBy === 'setor' ? (
@@ -245,7 +274,7 @@ export function AgentsPage() {
                     {company.supervisors.length > 0 && (
                       <div className="grid grid-cols-1 gap-3 mb-5">
                         {company.supervisors.map((a) => (
-                          <AgentCard key={a.id} agent={a} showFullInfo onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
+                          <AgentCard key={a.id} agent={a} showFullInfo live={liveFor(a.id)} onClick={() => goToChat(a)} onConfig={() => setSelected(a)} />
                         ))}
                       </div>
                     )}
