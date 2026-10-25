@@ -1,0 +1,46 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Thribus Platform",
+  "version": "0.1.0",
+  "identifier": "com.thribustech.platform",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["thribus"]
+      }
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/iStarkCR/thribus-platform/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMwRTU3NEI3MkQwNjMyMkIKUldRck1nWXR0M1RsTUhDanI2b0ZXQ1cza2wzSUFFN2Y2RzlxeXg2VGIwaG9JQWROYkZ4R1cxK1YK"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}

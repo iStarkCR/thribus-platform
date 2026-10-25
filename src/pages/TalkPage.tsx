@@ -266,6 +266,15 @@ export function TalkPage() {
   const handleSuggestion = useCallback((t: string) => sendRef.current(t), []);
   // troca de conversa cancela edição pendente (evita truncar a sessão errada)
   useEffect(() => { setEditingFrom((e) => (e && e.sessionId !== activeId ? null : e)); }, [activeId]);
+  // Anexos são por conversa: ao trocar de sessão, os que ainda não foram enviados
+  // (selecionados no composer) não devem "vazar" pra próxima conversa.
+  useEffect(() => {
+    setAttachments((prev) => {
+      prev.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
+      return [];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
 
   // Carrega routing info (tier/reason) das msgs done pra exibir no RoutingBadge
   useEffect(() => {

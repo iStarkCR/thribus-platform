@@ -22,8 +22,8 @@ function fmt(n: number, unit?: string): string {
 
 function Frame({ title, children }: { title?: string; children: ReactNode }) {
   return (
-    <div className="my-3 rounded-xl border border-default bg-surface-1/60 px-4 py-3.5">
-      {title && <div className="text-[11px] uppercase tracking-[0.08em] text-creme-faint font-semibold mb-3">{title}</div>}
+    <div className="my-3 rounded-2xl border border-default/60 bg-surface-1/40 px-4 py-3.5 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.65)]">
+      {title && <div className="text-[11px] uppercase tracking-[0.1em] text-creme-faint font-semibold mb-3">{title}</div>}
       {children}
     </div>
   );
@@ -36,8 +36,8 @@ function BarChart({ data, unit }: { data: ChartPoint[]; unit?: string }) {
       {data.map((d, i) => (
         <div key={i} className="flex items-center gap-2.5 text-[12.5px]">
           <span className="w-[30%] shrink-0 truncate text-right text-creme-mute">{d.label}</span>
-          <div className="flex-1 h-4 rounded-full bg-surface-3 overflow-hidden">
-            <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.max(2, (Math.abs(d.value) / max) * 100)}%`, background: colorAt(i, d.color) }} />
+          <div className="flex-1 h-2.5 rounded-full bg-surface-3/70 overflow-hidden">
+            <div className="h-full w-full rounded-full origin-left transition-transform duration-500" style={{ transform: `scaleX(${Math.max(0.02, Math.abs(d.value) / max)})`, background: colorAt(i, d.color) }} />
           </div>
           <span className="w-[16%] shrink-0 text-right font-mono tabular-nums text-creme font-medium">{fmt(d.value, unit)}</span>
         </div>

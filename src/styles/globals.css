@@ -143,10 +143,18 @@
   h1, h2, h3 { letter-spacing: -0.02em; }
   ::selection { background: rgb(var(--brand) / 0.28); color: rgb(var(--creme)); }
 
-  /* Foco visível, estilo sistema: anel suave fora do elemento */
+  /* Foco visível, estilo sistema: anel suave fora do elemento.
+     Campos de texto (input/textarea/select) ficam de fora — o Chrome marca
+     :focus-visible neles mesmo em clique de mouse, o que gerava um realce
+     verde na caixa de mensagem só de clicar pra digitar. */
   :focus-visible {
     outline: none;
     box-shadow: 0 0 0 3px rgb(var(--brand) / 0.35);
+  }
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    box-shadow: none;
   }
 
   /* WebKit — gutter de 11px com thumb arredondado e inset (background-clip),

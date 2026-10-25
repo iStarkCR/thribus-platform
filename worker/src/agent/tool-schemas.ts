@@ -73,6 +73,22 @@ const SCHEMAS: Record<string, SchemaSpec> = {
     required: ['cpf', 'nome', 'email', 'celular', 'cep', 'rua', 'numero', 'bairro', 'tipo_cobranca', 'dia_vencimento', 'canal_venda'],
   },
 
+  // ─── Catálogo Gorki Imóveis (read-only, EXCLUSIVA da Ana Vitória) ───────────
+  // Internal tool — handler em tools/gorki-catalogo.ts. Busca o catálogo público
+  // da Gorki, filtra em memória e devolve até ~6 imóveis resumidos. Todos os
+  // parâmetros são OPCIONAIS: passe só os que o cliente informou.
+  consultar_imoveis_gorki: {
+    properties: {
+      cidade: { type: 'string', description: 'Cidade desejada (ex: "Fortaleza", "Eusébio", "Aquiraz"). Opcional.' },
+      bairro: { type: 'string', description: 'Bairro/região desejada (ex: "Porto das Dunas", "Aldeota"). Opcional.' },
+      tipo: { type: 'string', description: 'Tipo do imóvel: "apartamento", "casa", "terreno", "comercial", "lote", etc. Casamento é flexível (ex: "casa" retorna também "casa duplex"). Opcional.' },
+      quartos_min: { type: 'number', description: 'Número MÍNIMO de quartos (retorna imóveis com quartos >= este valor). Opcional.' },
+      preco_min: { type: 'number', description: 'Preço mínimo em reais (número, sem pontos/vírgula). Ex: 300000. Opcional.' },
+      preco_max: { type: 'number', description: 'Preço máximo em reais (número, sem pontos/vírgula). Ex: 800000. Opcional.' },
+    },
+    // Sem required — pode consultar sem filtro pra ter um panorama.
+  },
+
   status_contrato: {
     properties: {
       contrato_id: {

@@ -41,6 +41,22 @@ Deno.serve(async (req) => {
   }
 
   try {
+    if (cfg.provider === 'pocket-tts') {
+      // Voz local "rafael" (custo zero). api_key guarda "usuario:senha" do
+      // Basic Auth do servidor; voice_id guarda o nome da voz (default rafael).
+      const pocketUrl = Deno.env.get('POCKET_TTS_URL') || '';
+      if (!pocketUrl || !cfg.api_key) return json({ provider: 'browser' }, 200);
+      const form = new FormData();
+      form.append('text', phonetic(text));
+      form.append('voice_url', cfg.voice_id || 'rafael');
+      const r = await fetch(`${pocketUrl}/tts`, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${btoa(cfg.api_key)}` },
+        body: form,
+      });
+      if (!r.ok) return json({ error: `pocket-tts ${r.status}: ${(await r.text()).slice(0, 200)}` }, 400);
+      return new Response(await r.arrayBuffer(), { headers: { ...cors, 'Content-Type': 'audio/wav' } });
+    }
     if (cfg.provider === 'elevenlabs') {
       const voice = cfg.voice_id || '21m00Tcm4TlvDq8ikWAM'; // Rachel default
       const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
