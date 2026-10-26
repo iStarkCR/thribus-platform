@@ -10,9 +10,11 @@
  * aconteceu com `claude-sonnet-4-20250514` (não existia, parou Bianca em
  * produção até virar `claude-sonnet-4-5-20250929`).
  *
- * Última verificação: 2026-05-09
- *  - Anthropic: testado via worker em produção (model_id retornado em logs)
- *  - OpenAI: documentação oficial gpt-5 family + gpt-4o family
+ * Última verificação: 2026-10-26
+ *  - Anthropic: Claude 5.5 / Opus 5 / Fable 5.1 (atuais) — IDs usam o ALIAS puro
+ *    como snapshot canônico (sem date suffix). Modelos pré-5.5 ficam `hidden`:
+ *    somem do dropdown de seleção mas continuam válidos p/ agentes já gravados.
+ *  - OpenAI: documentação oficial gpt-5 family + gpt-4o family (inalterado)
  */
 
 import type { AIModel } from '@/types';
@@ -28,6 +30,8 @@ export interface ModelOption {
   provider: ModelProvider;
   /** True = verificado contra API do provedor */
   verified: boolean;
+  /** true = não aparece no dropdown de seleção, mas continua válido p/ agentes já gravados */
+  hidden?: boolean;
 }
 
 /**
@@ -36,42 +40,82 @@ export interface ModelOption {
  */
 export const MODEL_OPTIONS: ModelOption[] = [
   // ─── Anthropic ─────────────────────────────────────────────────────────────
-  // ── Atuais (jul/2026) ──
+  // ── Atuais (out/2026 — visíveis no dropdown) ──
   {
-    id: 'claude-fable-5',
-    label: 'claude-fable-5',
+    id: 'claude-fable-5-1',
+    label: 'claude-fable-5.1',
     badge: 'mais capaz',
     provider: 'anthropic',
     verified: true,
   },
   {
-    id: 'claude-opus-4-8',
-    label: 'claude-opus-4-8',
+    id: 'claude-opus-5-5',
+    label: 'claude-opus-5.5',
     badge: 'premium',
     provider: 'anthropic',
     verified: true,
   },
   {
-    id: 'claude-sonnet-5',
-    label: 'claude-sonnet-5',
+    id: 'claude-opus-5',
+    label: 'claude-opus-5',
+    badge: 'premium (anterior)',
+    provider: 'anthropic',
+    verified: true,
+  },
+  {
+    id: 'claude-sonnet-5-5',
+    label: 'claude-sonnet-5.5',
     badge: 'recomendado',
     provider: 'anthropic',
     verified: true,
   },
   {
-    id: 'claude-haiku-4-5-20251001',
-    label: 'claude-haiku-4-5',
+    id: 'claude-haiku-5-5',
+    label: 'claude-haiku-5.5',
     badge: 'rápido',
     provider: 'anthropic',
     verified: true,
   },
-  // ── Legacy (ainda disponíveis; mantidos p/ compat de agentes já gravados) ──
+  // ── Legacy (ocultos no dropdown; mantidos p/ compat de agentes já gravados) ──
+  {
+    id: 'claude-fable-5',
+    label: 'claude-fable-5',
+    badge: 'legacy',
+    provider: 'anthropic',
+    verified: true,
+    hidden: true,
+  },
+  {
+    id: 'claude-opus-4-8',
+    label: 'claude-opus-4-8',
+    badge: 'legacy',
+    provider: 'anthropic',
+    verified: true,
+    hidden: true,
+  },
+  {
+    id: 'claude-sonnet-5',
+    label: 'claude-sonnet-5',
+    badge: 'legacy',
+    provider: 'anthropic',
+    verified: true,
+    hidden: true,
+  },
+  {
+    id: 'claude-haiku-4-5-20251001',
+    label: 'claude-haiku-4-5',
+    badge: 'legacy',
+    provider: 'anthropic',
+    verified: true,
+    hidden: true,
+  },
   {
     id: 'claude-opus-4-7',
     label: 'claude-opus-4-7',
     badge: 'legacy',
     provider: 'anthropic',
     verified: true,
+    hidden: true,
   },
   {
     id: 'claude-opus-4-6',
@@ -79,6 +123,7 @@ export const MODEL_OPTIONS: ModelOption[] = [
     badge: 'legacy',
     provider: 'anthropic',
     verified: true,
+    hidden: true,
   },
   {
     id: 'claude-sonnet-4-6',
@@ -86,6 +131,7 @@ export const MODEL_OPTIONS: ModelOption[] = [
     badge: 'legacy',
     provider: 'anthropic',
     verified: true,
+    hidden: true,
   },
   {
     id: 'claude-sonnet-4-5-20250929',
@@ -93,13 +139,16 @@ export const MODEL_OPTIONS: ModelOption[] = [
     badge: 'legacy',
     provider: 'anthropic',
     verified: true,
+    hidden: true,
   },
-  // Notas de ID (referência oficial Anthropic /v1/models, jul/2026):
-  //  - Fable 5 (`claude-fable-5`) é o topo atual; Sonnet 5 (`claude-sonnet-5`)
-  //    é o combo velocidade/inteligência (preço introdutório $2/$10 até 31/ago/2026).
-  //  - IDs 4.6+ usam o ALIAS puro como snapshot canônico — NÃO adicionar date
-  //    suffix (ex: `claude-sonnet-5`, nunca `claude-sonnet-5-2026xxxx`).
-  //  - Legacy mantidos: agentes gravados no DB podem apontar pra eles; remover
+  // Notas de ID (referência oficial Anthropic /v1/models, out/2026):
+  //  - Opus 5.5 (`claude-opus-5-5`) é o topo premium; Sonnet 5.5
+  //    (`claude-sonnet-5-5`) é o combo velocidade/inteligência (default).
+  //    Fable 5.1 (`claude-fable-5-1`) é o mais capaz/criativo.
+  //  - IDs 5.x usam o ALIAS puro como snapshot canônico — NÃO adicionar date
+  //    suffix (ex: `claude-sonnet-5-5`, nunca `claude-sonnet-5-5-2026xxxx`).
+  //  - Legacy: `hidden: true` tira do dropdown de SELEÇÃO mas mantém no
+  //    VALID_MODEL_IDS — agentes gravados no DB continuam válidos; remover
   //    quebraria o select na edição (cairia no default e regravaria).
   //  - Mythos 5 (`claude-mythos-5`) é invitation-only (Project Glasswing) — fora.
 
@@ -111,10 +160,14 @@ export const MODEL_OPTIONS: ModelOption[] = [
   { id: 'gpt-4o-mini', label: 'gpt-4o-mini',                  provider: 'openai', verified: true },
 ];
 
-/** Default em criação de agente — primeiro recomendado da lista. */
-export const DEFAULT_MODEL: AIModel = 'claude-sonnet-5';
+/** Default em criação de agente — recomendado atual. */
+export const DEFAULT_MODEL: AIModel = 'claude-sonnet-5-5';
 
-/** Set de IDs válidos pra checagem rápida em runtime / migrations. */
+/**
+ * Set de IDs válidos pra checagem rápida em runtime / migrations.
+ * INCLUI os `hidden` de propósito — agentes/templates gravados com modelo
+ * antigo continuam válidos; `hidden` só controla a VISIBILIDADE no dropdown.
+ */
 export const VALID_MODEL_IDS = new Set<string>(MODEL_OPTIONS.map((m) => m.id));
 
 /**
@@ -134,11 +187,25 @@ export function safeModel(id: string | undefined | null): AIModel {
   return isValidModel(id) ? id : DEFAULT_MODEL;
 }
 
-/** Agrupa opções por provedor — pra renderizar <optgroup>. */
-export function groupedModelOptions(): Record<ModelProvider, ModelOption[]> {
+/**
+ * Opções que aparecem no dropdown de SELEÇÃO. Esconde os `hidden`, mas garante
+ * que `keepId` apareça mesmo se oculto — pra o select de EDIÇÃO não perder o
+ * modelo atual do agente/template (senão o select fica sem option correspondente,
+ * cai no default e regrava errado ao salvar).
+ */
+export function selectableModelOptions(keepId?: string | null): ModelOption[] {
+  return MODEL_OPTIONS.filter((m) => !m.hidden || m.id === keepId);
+}
+
+/**
+ * Agrupa opções por provedor — pra renderizar <optgroup>. Filtra os `hidden`.
+ * Passe `keepId` nos selects de edição pra manter o modelo atual visível.
+ */
+export function groupedModelOptions(keepId?: string | null): Record<ModelProvider, ModelOption[]> {
+  const visible = selectableModelOptions(keepId);
   return {
-    anthropic: MODEL_OPTIONS.filter((m) => m.provider === 'anthropic'),
-    openai: MODEL_OPTIONS.filter((m) => m.provider === 'openai'),
+    anthropic: visible.filter((m) => m.provider === 'anthropic'),
+    openai: visible.filter((m) => m.provider === 'openai'),
   };
 }
 

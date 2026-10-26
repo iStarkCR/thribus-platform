@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import type { AgentTemplate } from '@/types';
-import { MODEL_OPTIONS, modelLabel, safeModel } from '@/lib/models';
+import { selectableModelOptions, modelLabel, safeModel } from '@/lib/models';
 
 /**
  * Modal pra criar/editar AgentTemplate (M1).
@@ -306,7 +306,7 @@ export function TemplateFormModal({ mode, template, onClose, onSaved }: Props) {
                   onChange={(e) => setDefaultModel(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-default text-[12.5px] text-creme font-mono focus:outline-none focus:border-brand"
                 >
-                  {MODEL_OPTIONS.map((opt) => (
+                  {selectableModelOptions(defaultModel).map((opt) => (
                     <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
                   ))}
                 </select>

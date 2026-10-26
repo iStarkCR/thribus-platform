@@ -16,7 +16,7 @@ export const cortexBrainConfigured = Boolean(supabase);
 // `model` é o alias do CLI (claude --model <alias>) — resolve sozinho pro modelo
 // atual. `effortable` = esforço (capacidade) faz efeito (só opus/fable).
 
-export type CortexModel = 'opus' | 'sonnet' | 'haiku' | 'fable' | 'claude-opus-4-7';
+export type CortexModel = 'opus' | 'sonnet' | 'haiku' | 'fable';
 export type CortexEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 
 export interface CortexBrain {
@@ -40,18 +40,8 @@ export const CORTEX_BRAINS: CortexBrain[] = [
   {
     model: 'opus',
     name: 'Cortex Brain Max',
-    real: 'Claude Opus 4.8 · 1M',
+    real: 'Claude Opus 5.5 · 1M',
     tagline: 'Mais inteligente. Raciocínio profundo: relatórios, decisões, código difícil.',
-    effortable: true,
-    speed: 2,
-    intel: 5,
-    cost: 5,
-  },
-  {
-    model: 'claude-opus-4-7',
-    name: 'Cortex Brain Max 4.7',
-    real: 'Claude Opus 4.7',
-    tagline: 'Geração anterior do Opus, fixa. Estável e forte — use se preferir o comportamento do 4.7.',
     effortable: true,
     speed: 2,
     intel: 5,
@@ -60,7 +50,7 @@ export const CORTEX_BRAINS: CortexBrain[] = [
   {
     model: 'sonnet',
     name: 'Cortex Brain Core',
-    real: 'Claude Sonnet 5',
+    real: 'Claude Sonnet 5.5',
     tagline: 'Equilíbrio velocidade/qualidade. Padrão para a maioria das demandas.',
     effortable: false,
     speed: 4,
@@ -70,7 +60,7 @@ export const CORTEX_BRAINS: CortexBrain[] = [
   {
     model: 'haiku',
     name: 'Cortex Brain Fast',
-    real: 'Claude Haiku 4.5',
+    real: 'Claude Haiku 5.5',
     tagline: 'Mais rápido e barato. Volume, triagem e respostas curtas.',
     effortable: false,
     speed: 5,
@@ -80,7 +70,7 @@ export const CORTEX_BRAINS: CortexBrain[] = [
   {
     model: 'fable',
     name: 'Cortex Brain Fable',
-    real: 'Fable 5',
+    real: 'Fable 5.1',
     tagline: 'Criativo. Conteúdo, copy e brainstorming com mais imaginação.',
     effortable: true,
     speed: 3,
