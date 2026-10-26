@@ -54,6 +54,9 @@ worker/.env
 *.pem
 .cache/
 
+# check-models.mjs — relatório de diff gerado (artefato, não versionar)
+scripts/models-diff.json
+
 # Claude Code — local user permissions (not shared)
 .claude/settings.local.json
 .vercel
