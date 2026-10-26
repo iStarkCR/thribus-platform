@@ -97,11 +97,34 @@ export async function listCharges(status?: AsaasChargeStatus): Promise<AsaasChar
 export async function listSubscriptions(): Promise<AsaasSubscription[]> {
   return call('subscriptions.list');
 }
-export async function createPixCharge(customerId: string, value: number, description: string, dueDate: string): Promise<AsaasCharge> {
-  return call('charges.create', { customer: customerId, value, description, dueDate, billingType: 'PIX' });
+/**
+ * Split de pagamento: aponta um parceiro cadastrado (`split_recipients.id`) e a
+ * fatia dele. Use percentualValue OU fixedValue; omita ambos pra cair no default
+ * do cadastro. A Edge Function resolve o walletId e valida server-side.
+ */
+export interface SplitInput {
+  recipientId: string;
+  percentualValue?: number;
+  fixedValue?: number;
 }
-export async function createBoleto(customerId: string, value: number, description: string, dueDate: string): Promise<AsaasCharge> {
-  return call('charges.create', { customer: customerId, value, description, dueDate, billingType: 'BOLETO' });
+
+export async function createPixCharge(
+  customerId: string,
+  value: number,
+  description: string,
+  dueDate: string,
+  splits?: SplitInput[],
+): Promise<AsaasCharge> {
+  return call('charges.create', { customer: customerId, value, description, dueDate, billingType: 'PIX', splits });
+}
+export async function createBoleto(
+  customerId: string,
+  value: number,
+  description: string,
+  dueDate: string,
+  splits?: SplitInput[],
+): Promise<AsaasCharge> {
+  return call('charges.create', { customer: customerId, value, description, dueDate, billingType: 'BOLETO', splits });
 }
 export async function refundCharge(chargeId: string, value?: number): Promise<AsaasCharge> {
   return call('charges.refund', { id: chargeId, value });

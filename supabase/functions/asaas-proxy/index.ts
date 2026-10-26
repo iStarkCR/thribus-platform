@@ -15,15 +15,50 @@
  *   charges.list, charges.create, charges.refund
  *   charges.get        — público, read-only (página de pagamento Thribus)
  *   subscriptions.list
+ *
+ * charges.create aceita split opcional (Asaas split payment):
+ *   params.splits = [{ recipientId, percentualValue? | fixedValue? }]
+ *     → resolve o walletId de cada parceiro em `split_recipients` (service role)
+ *       e monta o array `split` do Asaas. Omitido → cobrança normal (sem split).
  */
 
 // @ts-expect-error — Deno runtime
 import { serve } from 'https://deno.land/std@0.220.0/http/server.ts';
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { buildSplitArray, SplitError, type SplitInput, type SplitRecipientRow } from './split.ts';
 
 // @ts-expect-error — Deno global
 const ASAAS_KEY = Deno.env.get('ASAAS_API_KEY')!;
 // @ts-expect-error — Deno global
 const ASAAS_BASE = Deno.env.get('ASAAS_BASE_URL') ?? 'https://api.asaas.com/v3';
+// @ts-expect-error — Deno global
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+// @ts-expect-error — Deno global
+const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+/**
+ * Resolve os splits pedidos na criação da cobrança em entradas Asaas.
+ * Carrega só os parceiros referenciados (service role, bypassa RLS) e delega a
+ * validação pro builder puro. Lança se a integração com o banco não existir mas
+ * o split foi pedido — pagamento não pode silenciosamente ignorar split.
+ */
+async function resolveSplits(splits: SplitInput[], chargeValue: number) {
+  if (!Array.isArray(splits) || splits.length === 0) return undefined;
+  if (!SUPABASE_URL || !SERVICE_ROLE) {
+    throw new SplitError('split pedido mas SUPABASE_URL/SERVICE_ROLE_KEY ausentes no ambiente');
+  }
+  const ids = [...new Set(splits.map((s) => s.recipientId).filter(Boolean))];
+  if (ids.length === 0) throw new SplitError('split sem recipientId');
+
+  const db = createClient(SUPABASE_URL, SERVICE_ROLE);
+  const { data, error } = await db
+    .from('split_recipients')
+    .select('id, wallet_id, name, active, default_percentual, default_fixed_value')
+    .in('id', ids);
+  if (error) throw new SplitError(`falha carregando parceiros de split: ${error.message}`);
+
+  return buildSplitArray(splits, (data ?? []) as SplitRecipientRow[], chargeValue);
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -98,6 +133,13 @@ serve(async (req: Request) => {
       }
 
       case 'charges.create': {
+        // Split opcional: resolve parceiros → walletId e monta o array do Asaas.
+        // Erro de split aborta a criação (não cria cobrança sem o split pedido).
+        const split = await resolveSplits(
+          (params.splits ?? []) as SplitInput[],
+          Number(params.value),
+        );
+
         const data = await asaasCall<AsaasChargeRaw>('/payments', {
           method: 'POST',
           body: JSON.stringify({
@@ -106,6 +148,7 @@ serve(async (req: Request) => {
             value: params.value,
             dueDate: params.dueDate,
             description: params.description,
+            ...(split && split.length > 0 ? { split } : {}),
           }),
         });
 
@@ -220,8 +263,9 @@ serve(async (req: Request) => {
     }
   } catch (err) {
     console.error('[asaas-proxy] error:', err);
+    const status = err instanceof SplitError ? 400 : 500;
     return new Response(JSON.stringify({ error: (err as Error).message }), {
-      status: 500, headers: { ...CORS, 'Content-Type': 'application/json' },
+      status, headers: { ...CORS, 'Content-Type': 'application/json' },
     });
   }
 });
