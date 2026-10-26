@@ -34,8 +34,8 @@ export interface Classification {
 
 /**
  * Hierarquia de modelos pro STICKY MODEL: dentro de uma conversa o modelo só
- * SOBE, nunca desce (trocar invalida o prompt cache). fable/claude-opus-4-7
- * ficam fora do automático → caem no `DEFAULT_RANK` (sonnet), idêntico ao
+ * SOBE, nunca desce (trocar invalida o prompt cache). fable fica fora do
+ * roteamento automático → cai no `DEFAULT_RANK` (sonnet), idêntico ao
  * `MODEL_RANK[x] ?? 1` do daemon.
  */
 export const MODEL_RANK: Record<string, number> = { haiku: 0, sonnet: 1, opus: 2, fable: 3 };

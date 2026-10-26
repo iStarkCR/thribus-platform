@@ -5,14 +5,21 @@
 export type AgentStatus = 'online' | 'standby' | 'offline';
 export type AgentType = 'modular' | 'operacional' | 'enterprise';
 export type AIModel =
-  // Anthropic — IDs verificados em jul/2026 (referência oficial claude-api).
+  // Anthropic — IDs verificados em out/2026 (referência oficial claude-api).
   // ⚠️ Mantenha sincronizado com src/lib/models.ts (fonte única de verdade
   //    pra dropdowns + pricing). Adicionar ID aqui sem testar contra
   //    /v1/models do provedor quebra o worker em runtime com 404.
-  | 'claude-fable-5'                // Fable 5 (mais capaz — topo atual)
-  | 'claude-opus-4-8'               // Opus 4.8 (premium — agentic coding/enterprise)
-  | 'claude-sonnet-5'              // Sonnet 5 (recomendado — uso geral)
-  | 'claude-haiku-4-5-20251001'     // Haiku 4.5 (rápido/barato — alta volumetria)
+  // ── Claude 5.5 / Opus 5 (out/2026 — atuais, visíveis no painel) ──
+  | 'claude-opus-5-5'               // Opus 5.5 (premium — topo agentic/enterprise)
+  | 'claude-opus-5'                 // Opus 5 (premium — geração anterior do Opus 5.x)
+  | 'claude-sonnet-5-5'             // Sonnet 5.5 (recomendado — uso geral, default)
+  | 'claude-haiku-5-5'              // Haiku 5.5 (rápido/barato — alta volumetria)
+  | 'claude-fable-5-1'              // Fable 5.1 (mais capaz — criativo/topo)
+  // ── Legacy (ocultos no dropdown; mantidos p/ compat de agentes já gravados) ──
+  | 'claude-fable-5'                // Fable 5 (legacy)
+  | 'claude-opus-4-8'               // Opus 4.8 (legacy)
+  | 'claude-sonnet-5'              // Sonnet 5 (legacy)
+  | 'claude-haiku-4-5-20251001'     // Haiku 4.5 (legacy)
   | 'claude-opus-4-7'               // Opus 4.7 (legacy)
   | 'claude-opus-4-6'               // Opus 4.6 (legacy)
   | 'claude-sonnet-4-6'             // Sonnet 4.6 (legacy)

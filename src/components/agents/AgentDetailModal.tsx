@@ -215,12 +215,12 @@ export function AgentDetailModal({ agent, onClose }: Props) {
             </label>
             <select className="input" value={model} onChange={(e) => setModel(e.target.value as AIModel)}>
               <optgroup label="Anthropic Claude">
-                {groupedModelOptions().anthropic.map((opt) => (
+                {groupedModelOptions(model).anthropic.map((opt) => (
                   <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
                 ))}
               </optgroup>
               <optgroup label="OpenAI GPT">
-                {groupedModelOptions().openai.map((opt) => (
+                {groupedModelOptions(model).openai.map((opt) => (
                   <option key={opt.id} value={opt.id}>{modelLabel(opt)}</option>
                 ))}
               </optgroup>

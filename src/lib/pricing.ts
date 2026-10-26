@@ -17,7 +17,13 @@ interface ModelPrice {
 }
 
 const PRICING: Record<AIModel, ModelPrice> = {
-  // ─── Anthropic (preços por 1M tokens — referência oficial /v1/models, jul/2026) ─
+  // ─── Anthropic — atuais (preços por 1M tokens — oficial /v1/models, out/2026) ─
+  'claude-opus-5-5':           { input: 4.00,  output: 20.00, cachedInput: 0.40 },
+  'claude-opus-5':             { input: 5.00,  output: 25.00, cachedInput: 0.50 },
+  'claude-sonnet-5-5':         { input: 2.00,  output: 10.00, cachedInput: 0.20 },
+  'claude-haiku-5-5':          { input: 0.10,  output:  0.50, cachedInput: 0.01 },
+  'claude-fable-5-1':          { input: 10.00, output: 50.00, cachedInput: 1.00 },
+  // ─── Anthropic — legacy (hidden no dropdown, mantidos p/ agentes gravados) ─
   'claude-fable-5':            { input: 10.00, output: 50.00, cachedInput: 1.00 },
   'claude-opus-4-8':           { input: 5.00,  output: 25.00, cachedInput: 0.50 },
   // Sonnet 5: preço cheio $3/$15 (introdutório $2/$10 até 31/ago/2026 — usamos
