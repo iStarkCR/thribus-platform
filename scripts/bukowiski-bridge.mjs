@@ -463,6 +463,28 @@ function bukowiskiPersona() {
   return bukowiskiCmd;
 }
 
+// ── Reply / quote ────────────────────────────────────────────────────────────
+// O painel embute a citação num marcador no início do content da msg do usuário
+// (`<!--reply {json}-->\n<texto>`) — sem coluna no banco. Aqui separamos o corpo
+// e injetamos o contexto da citação no prompt pro Claude responder no ponto certo.
+const REPLY_MARKER_RE = /^<!--reply ([\s\S]*?)-->\n?/;
+function parseReplyContent(content) {
+  const m = REPLY_MARKER_RE.exec(content || '');
+  if (!m) return { reply: null, body: content || '' };
+  try {
+    const r = JSON.parse(m[1]);
+    if (r && typeof r.text === 'string') return { reply: r, body: content.slice(m[0].length) };
+  } catch { /* marcador malformado → texto normal */ }
+  return { reply: null, body: content || '' };
+}
+// Monta o corpo da mensagem já com o contexto da citação (se houver).
+function applyReplyContext(content) {
+  const { reply, body } = parseReplyContent(content);
+  if (!reply) return body;
+  const origem = reply.role === 'assistant' ? 'uma resposta SUA anterior' : 'uma mensagem anterior do Charles';
+  return `[O Charles está respondendo a ${origem}: "${reply.text}"]\n\n${body}`;
+}
+
 function buildPrompt(agent, history, content, seed = null, memoryBlock = '') {
   let ctx = '';
   if (seed) {
@@ -473,7 +495,13 @@ function buildPrompt(agent, history, content, seed = null, memoryBlock = '') {
       `o histórico completo; use este resumo como sua memória):\n${seed}\n\n`;
   } else {
     const transcript = history
-      .map((m) => `${m.role === 'user' ? 'Charles' : agent.name}: ${m.content}`)
+      .map((m) => {
+        // Mensagens do histórico podem carregar o marcador de reply — expande em
+        // texto legível ("[respondendo a: …] corpo") em vez de vazar o marcador cru.
+        const { reply, body } = parseReplyContent(m.content);
+        const c = reply ? `[resp. a: "${reply.text}"] ${body}` : body;
+        return `${m.role === 'user' ? 'Charles' : agent.name}: ${c}`;
+      })
       .join('\n');
     ctx = transcript ? `Histórico recente da conversa:\n${transcript}\n\n` : '';
   }
@@ -701,7 +729,8 @@ async function processMessage(msg) {
   const voiceNote = msg.is_voice
     ? '\n\n[MODO VOZ — o usuário está falando com você e ESTA resposta será convertida em fala (TTS, voz OpenAI). Responda naturalmente pra ser OUVIDO: frases curtas, pontuação clara, PT-BR, sem markdown/código/listas. Você TEM voz — NUNCA diga que não pode falar/ler em voz alta; só responda normalmente que o sistema fala por você. Seja conciso.]'
     : '';
-  const content = msg.content + attachNote(files) + voiceNote;
+  // Reply/quote: injeta o contexto da mensagem citada (se houver marcador).
+  const content = applyReplyContext(msg.content) + attachNote(files) + voiceNote;
 
   let evSeq = 0;
   const onEvent = (e) => {
@@ -732,7 +761,7 @@ async function processMessage(msg) {
   } else if (route && !msg.is_voice) {
     const hasImage = files.some((f) => /^image\//.test(f.mime));
     const sticky = (msg.session_id && stickyByCortexSession.get(msg.session_id)) || null;
-    const rt = route({ text: msg.content, hasImage, currentModel: sticky, profile: 'painel' });
+    const rt = route({ text: parseReplyContent(msg.content).body, hasImage, currentModel: sticky, profile: 'painel' });
     runModel = rt.model;
     runEffort = rt.effort || BRAIN.effort; // route() devolve effort null em modelo sem esforço/sticky
     if (rt.stickyModel && msg.session_id) stickyByCortexSession.set(msg.session_id, rt.stickyModel);

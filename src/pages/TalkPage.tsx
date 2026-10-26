@@ -5,7 +5,7 @@ import {
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
   PanelLeftClose, PanelLeft, GitBranch, AlertTriangle, FileText, ChevronUp, Monitor, MessageCircle, Menu,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, Reply,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -23,8 +23,9 @@ import { RoutingBadge } from '@/components/cortex/RoutingBadge';
 import { WorkFolderBar } from '@/components/cortex/WorkFolderBar';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
 import { type RunEvent } from '@/services/runEvents';
-import { listMessages, sendMessage, cancelMessage, deleteMessagesFrom, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, type ChatMessage, type Attachment } from '@/services/collaboratorChat';
+import { listMessages, sendMessage, cancelMessage, deleteMessagesFrom, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, buildReplyContent, parseReply, summarizeForQuote, type ChatMessage, type Attachment, type ReplyRef } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
+import { ReplyQuote } from '@/components/chat/ReplyQuote';
 import { createDemand } from '@/services/demands';
 import { listStatusComponents, platformConfigured } from '@/services/platform';
 import { RoutineModal } from '@/components/routines/RoutineModal';
@@ -113,6 +114,8 @@ export function TalkPage() {
   const [routingMap, setRoutingMap] = useState<Record<string, RoutingInfo>>({});
   // "Editar & reenviar": a partir desta msg (inclusive) tudo é apagado ao reenviar.
   const [editingFrom, setEditingFrom] = useState<{ id: string; sessionId: string; createdAt: string } | null>(null);
+  // "Responder" (reply/quote estilo WhatsApp): mensagem citada no próximo envio.
+  const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
   // Pasta de trabalho escolhida na landing → vira o working_dir da 1ª conversa criada.
   const [pendingWorkingDir, setPendingWorkingDir] = useState<string | null>(null);
   const pendingWorkingDirRef = useRef<string | null>(null);
@@ -266,6 +269,8 @@ export function TalkPage() {
   const handleSuggestion = useCallback((t: string) => sendRef.current(t), []);
   // troca de conversa cancela edição pendente (evita truncar a sessão errada)
   useEffect(() => { setEditingFrom((e) => (e && e.sessionId !== activeId ? null : e)); }, [activeId]);
+  // troca de conversa limpa a citação pendente (não faz sentido citar entre conversas)
+  useEffect(() => { setReplyTo(null); }, [activeId]);
   // Anexos são por conversa: ao trocar de sessão, os que ainda não foram enviados
   // (selecionados no composer) não devem "vazar" pra próxima conversa.
   useEffect(() => {
@@ -959,12 +964,17 @@ export function TalkPage() {
   // Vira o texto digitado numa DEMANDA (fila async), opcionalmente delegada a outro agente.
   // Ações por mensagem (hover): copiar, ouvir, refazer, virar demanda.
   function copyMsg(text: string) { navigator.clipboard.writeText(text); useAppStore.getState().addToast('Copiado', 'green'); }
+  function startReply(m: ChatMessage) {
+    setReplyTo({ id: m.id, role: m.role, text: summarizeForQuote(m.content) });
+    requestAnimationFrame(() => composerRef.current?.focus());
+  }
   async function improveMyPrompt(m: ChatMessage) {
-    if (!agent || !m.content.trim() || improvingId) return;
+    const original = parseReply(m.content).body;
+    if (!agent || !original.trim() || improvingId) return;
     setImprovingId(m.id);
     try {
-      const improved = await improvePrompt(agent.id, m.content);
-      if (improved && improved !== m.content) {
+      const improved = await improvePrompt(agent.id, original);
+      if (improved && improved !== original) {
         setInput(improved);
         useAppStore.getState().addToast('Prompt melhorado no campo — revise e reenvie', 'green');
       } else {
@@ -976,7 +986,7 @@ export function TalkPage() {
       setImprovingId(null);
     }
   }
-  function regenerate(mi: number) { const u = [...messages.slice(0, mi)].reverse().find((x) => x.role === 'user'); if (u) send(u.content); }
+  function regenerate(mi: number) { const u = [...messages.slice(0, mi)].reverse().find((x) => x.role === 'user'); if (u) send(parseReply(u.content).body); }
   async function msgToDemand(text: string) {
     if (!userId || !agent) return;
     try {
@@ -1013,11 +1023,14 @@ export function TalkPage() {
     }
   }
 
-  async function send(textArg?: string) {
+  async function send(textArg?: string, replyArg?: ReplyRef | null) {
     const raw = (textArg ?? input).trim();
     const text = planMode && raw
       ? `${raw}\n\n[MODO PLANO: liste os passos que você faria pra isso e PARE — não execute ainda, espere meu OK.]`
       : raw;
+    // Citação: só do composer principal (textArg undefined). Envio programático
+    // (sugestões, refazer) pode passar replyArg explícito; senão vai sem citação.
+    const reply = replyArg !== undefined ? replyArg : (textArg === undefined ? replyTo : null);
     const atts = attachments;
     if ((!raw && atts.length === 0) || !agent || !userId || sending || uploading > 0) return;
     stickToBottomRef.current = true; // ao enviar, volta a acompanhar o fundo
@@ -1025,7 +1038,9 @@ export function TalkPage() {
     setHistOpen(false);
     const edit = editingFrom;
     setEditingFrom(null);
-    if (textArg === undefined) { setInput(''); setAttachments([]); }
+    if (textArg === undefined) { setInput(''); setAttachments([]); setReplyTo(null); }
+    // Marcador de reply embutido no content (invisível na UI, lido pela ponte).
+    const content = buildReplyContent(reply, text);
 
     let sessionId = activeId;
     let isFirst = false;
@@ -1082,12 +1097,12 @@ export function TalkPage() {
 
     setMessages((m) => [
       ...m,
-      { id: `tmp-${m.length}`, sessionId, agentId: agent.id, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: atts, createdAt: '' },
+      { id: `tmp-${m.length}`, sessionId, agentId: agent.id, userId, role: 'user', content, status: 'pending', channel: 'thribus', error: null, attachments: atts, createdAt: '' },
     ]);
     setView('chat'); setChatMode(true); // só vai pro chat com sessão + mensagem já no ar (sem flash)
 
     try {
-      await sendMessage(sessionId, agent.id, userId, text, atts);
+      await sendMessage(sessionId, agent.id, userId, content, atts);
       await touchSession(sessionId);
       // auto-título na primeira mensagem
       if (isFirst) {
@@ -1736,17 +1751,23 @@ export function TalkPage() {
                     </div>
                   </div>
                 ) : m.role === 'user' ? (() => {
+                  const { reply, body } = parseReply(m.content);
                   const COLLAPSE_AT = 440;
-                  const isLong = m.content.length > COLLAPSE_AT;
+                  const isLong = body.length > COLLAPSE_AT;
                   const open = expandedMsgs.has(m.id);
-                  const shown = isLong && !open ? m.content.slice(0, COLLAPSE_AT).trimEnd() : m.content;
+                  const shown = isLong && !open ? body.slice(0, COLLAPSE_AT).trimEnd() : body;
                   const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
                   return (
                   <div key={m.id} data-msg-id={m.id} className={`group flex flex-col items-end gap-1 scroll-mt-4 rounded-[20px] transition-shadow ${flashId === m.id ? 'ring-2 ring-brand/60' : ''}`}>
                     <div className="flex items-end gap-2.5 max-w-[82%]">
                       <div className="px-[18px] py-3 rounded-[20px] rounded-br-md bg-brand text-white text-[17px] leading-[1.7] shadow-[0_12px_28px_-16px_rgba(0,0,0,0.55)] min-w-0">
+                        {reply && (
+                          <div className="mb-2">
+                            <ReplyQuote role={reply.role} text={reply.text} agentName={agent.name} variant="onBrand" />
+                          </div>
+                        )}
                         {m.attachments.length > 0 && <MessageAttachments items={m.attachments} />}
-                        {m.content && (
+                        {body && (
                           <span className="whitespace-pre-wrap">
                             {shown}{isLong && !open && '… '}
                             {isLong && (
@@ -1759,7 +1780,7 @@ export function TalkPage() {
                         {m.status === 'error' && (
                           <div className="text-[11px] mt-1 text-white/80 flex items-center gap-2 flex-wrap">
                             <span>erro: {m.error}</span>
-                            <button onClick={() => send(m.content)} disabled={sending} className="underline underline-offset-2 hover:text-white disabled:opacity-50 shrink-0">↻ Reenviar</button>
+                            <button onClick={() => send(body)} disabled={sending} className="underline underline-offset-2 hover:text-white disabled:opacity-50 shrink-0">↻ Reenviar</button>
                           </div>
                         )}
                       </div>
@@ -1768,10 +1789,11 @@ export function TalkPage() {
                     <div className="flex items-center gap-1 mr-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       {time && <span className="text-[10.5px] text-creme-faint mr-1">{time}</span>}
                       {[
-                        { icon: Pencil, label: 'Editar & reenviar', on: () => { if (!m.sessionId) return; setInput(m.content); setEditingFrom({ id: m.id, sessionId: m.sessionId, createdAt: m.createdAt }); requestAnimationFrame(() => composerRef.current?.focus()); useAppStore.getState().addToast('Editando — ao reenviar, esta e as mensagens seguintes são substituídas', 'green'); } },
-                        { icon: Copy, label: 'Copiar', on: () => copyMsg(m.content) },
+                        { icon: Reply, label: 'Responder', on: () => startReply(m) },
+                        { icon: Pencil, label: 'Editar & reenviar', on: () => { if (!m.sessionId) return; setInput(body); setEditingFrom({ id: m.id, sessionId: m.sessionId, createdAt: m.createdAt }); requestAnimationFrame(() => composerRef.current?.focus()); useAppStore.getState().addToast('Editando — ao reenviar, esta e as mensagens seguintes são substituídas', 'green'); } },
+                        { icon: Copy, label: 'Copiar', on: () => copyMsg(body) },
                         { icon: GitBranch, label: 'Bifurcar a conversa', on: () => { if (active) forkSessionAction(active); } },
-                        { icon: ListChecks, label: 'Virar demanda', on: () => msgToDemand(m.content) },
+                        { icon: ListChecks, label: 'Virar demanda', on: () => msgToDemand(body) },
                       ].map((a) => (
                         <button key={a.label} onClick={a.on} title={a.label} className="group/act h-7 px-1.5 rounded-lg bg-surface-3 border border-default text-creme-faint hover:text-creme hover:bg-surface-hover flex items-center transition-all">
                           <a.icon size={12} className="shrink-0" />
@@ -1806,6 +1828,7 @@ export function TalkPage() {
                       {m.status === 'done' && (
                         <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           {[
+                            { icon: Reply, label: 'Responder', on: () => startReply(m), gold: false },
                             { icon: Copy, label: 'Copiar', on: () => copyMsg(m.content), gold: false },
                             { icon: Volume2, label: 'Ouvir', on: () => speakReply(m.content), gold: true },
                             { icon: RefreshCw, label: 'Refazer', on: () => regenerate(mi), gold: false },
@@ -1887,6 +1910,12 @@ export function TalkPage() {
               <Pencil size={13} className="shrink-0" />
               <span className="flex-1 truncate">Editando — ao reenviar, esta mensagem e as seguintes serão substituídas.</span>
               <button onClick={() => { setEditingFrom(null); setInput(''); }} title="Cancelar edição" className="shrink-0 text-creme-faint hover:text-creme"><X size={14} /></button>
+            </div>
+          )}
+
+          {replyTo && (
+            <div className="mb-2">
+              <ReplyQuote role={replyTo.role} text={replyTo.text} agentName={agent.name} onCancel={() => setReplyTo(null)} />
             </div>
           )}
 

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Send, Mic, Loader2, AudioLines, Plus } from 'lucide-react';
+import { X, Send, Mic, Loader2, AudioLines, Plus, Reply } from 'lucide-react';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
 import { Markdown } from '@/components/shared/Markdown';
+import { ReplyQuote } from '@/components/chat/ReplyQuote';
+import { parseReply, summarizeForQuote, type ReplyRef } from '@/services/collaboratorChat';
 import type { OrbConversation } from '@/hooks/useOrbConversation';
 
 const PANEL_W = 360;
@@ -12,6 +14,7 @@ const PANEL_H = 460;
 export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; size: number }; onClose: () => void; conv: OrbConversation }) {
   const { messages, voiceActive, listening, talking, speaking, waiting } = conv;
   const [input, setInput] = useState('');
+  const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Liga a transcrição do mic (fora do modo voz) ao input.
@@ -37,10 +40,16 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
   const submit = () => {
     const t = input.trim();
     if (!t) return;
+    const reply = replyTo;
     setInput('');
+    setReplyTo(null);
     // Comando local — NÃO vai pro modelo: zera a conversa (sessão nova, contexto limpo).
     if (/^\/(limpar|clear|nova|novo|reset|new)\b/i.test(t)) { void conv.resetSession(); return; }
-    conv.send(t);
+    conv.send(t, reply);
+  };
+
+  const startReply = (m: { id: string; role: 'user' | 'assistant' | 'system'; content: string }) => {
+    setReplyTo({ id: m.id, role: m.role, text: summarizeForQuote(m.content) });
   };
 
   return (
@@ -74,11 +83,32 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
             <div className="text-[12.5px] text-creme-mute">Fale ou escreva. No modo voz, diga <span className="font-semibold text-creme">"Bukowiski off"</span> pra encerrar.</div>
           </div>
         ) : (
-          messages.map((m) => (
-            <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[82%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-brand text-white rounded-br-sm' : 'bg-surface-2 text-creme border border-default rounded-bl-sm'}`}>{m.role === 'assistant' ? <Markdown text={m.content} /> : m.content}</div>
-            </div>
-          ))
+          messages.map((m) => {
+            const { reply, body } = m.role === 'user' ? parseReply(m.content) : { reply: null, body: m.content };
+            const isUser = m.role === 'user';
+            return (
+              <div key={m.id} className={`group/msg flex items-end gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                {isUser && (
+                  <button onClick={() => startReply({ id: m.id, role: m.role, content: body })} title="Responder" className="shrink-0 opacity-0 group-hover/msg:opacity-100 transition-opacity text-creme-faint hover:text-creme p-1 self-center">
+                    <Reply size={13} />
+                  </button>
+                )}
+                <div className={`max-w-[82%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed ${isUser ? 'bg-brand text-white rounded-br-sm' : 'bg-surface-2 text-creme border border-default rounded-bl-sm'}`}>
+                  {reply && (
+                    <div className="mb-1.5">
+                      <ReplyQuote role={reply.role} text={reply.text} variant={isUser ? 'onBrand' : 'onSurface'} />
+                    </div>
+                  )}
+                  <div className="whitespace-pre-wrap">{m.role === 'assistant' ? <Markdown text={body} /> : body}</div>
+                </div>
+                {!isUser && (
+                  <button onClick={() => startReply({ id: m.id, role: m.role, content: body })} title="Responder" className="shrink-0 opacity-0 group-hover/msg:opacity-100 transition-opacity text-creme-faint hover:text-creme p-1 self-center">
+                    <Reply size={13} />
+                  </button>
+                )}
+              </div>
+            );
+          })
         )}
         {waiting && (
           <div className="flex justify-start"><div className="px-3 py-2 rounded-2xl bg-surface-2 border border-default text-creme-faint text-[12px] flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Bukowiski está pensando…</div></div>
@@ -90,6 +120,11 @@ export function OrbChat({ orb, onClose, conv }: { orb: { x: number; y: number; s
         <div className="mb-1.5 px-0.5">
           <CortexBrainBar />
         </div>
+        {replyTo && (
+          <div className="mb-1.5">
+            <ReplyQuote role={replyTo.role} text={replyTo.text} onCancel={() => setReplyTo(null)} />
+          </div>
+        )}
         <div className="flex items-end gap-1.5 bg-surface-2 border border-default rounded-xl px-2 py-1.5">
           <textarea
             value={input}
