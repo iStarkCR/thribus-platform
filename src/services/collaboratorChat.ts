@@ -33,6 +33,53 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+// ─── Reply / quote (estilo WhatsApp) ────────────────────────────────────────
+// Sem coluna no banco: a referência da mensagem citada viaja num MARCADOR no
+// início do `content` da mensagem do usuário — `<!--reply {json}-->\n<texto>`.
+// O marcador é invisível ao usuário (parseReply o separa pra render) e é lido
+// pela ponte (bukowiski-bridge) pra injetar o contexto da citação no prompt do
+// Claude. Só mensagens role='user' carregam o marcador.
+export interface ReplyRef {
+  id: string;
+  role: ChatRole;
+  text: string; // trecho resumido da mensagem citada
+}
+
+// Terminador por `-->`; o texto da citação é sanitizado (sem `-->`) ao montar,
+// então o JSON nunca contém o terminador e o parse é robusto a `{`/`}` no texto.
+const REPLY_MARKER_RE = /^<!--reply ([\s\S]*?)-->\n?/;
+
+/** Resume um trecho pra usar como citação (tira markdown/código, colapsa espaço). */
+export function summarizeForQuote(text: string): string {
+  return parseReply(text).body
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[#>*`_|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
+}
+
+/** Prefixa o marcador de reply no conteúdo (no-op quando não há citação). */
+export function buildReplyContent(reply: ReplyRef | null | undefined, text: string): string {
+  if (!reply) return text;
+  const safe = reply.text.replace(/-->/g, '— >').replace(/\s+/g, ' ').trim().slice(0, 240);
+  const meta = JSON.stringify({ id: reply.id, role: reply.role, text: safe });
+  return `<!--reply ${meta}-->\n${text}`;
+}
+
+/** Separa o marcador de reply do corpo da mensagem. */
+export function parseReply(content: string): { reply: ReplyRef | null; body: string } {
+  const m = REPLY_MARKER_RE.exec(content);
+  if (!m) return { reply: null, body: content };
+  try {
+    const r = JSON.parse(m[1]) as ReplyRef;
+    if (r && typeof r.text === 'string' && typeof r.id === 'string') {
+      return { reply: r, body: content.slice(m[0].length) };
+    }
+  } catch { /* marcador malformado → trata o conteúdo inteiro como texto */ }
+  return { reply: null, body: content };
+}
+
 const ATTACH_BUCKET = 'chat-attachments';
 
 /** Sobe um arquivo pro bucket e devolve o metadado pra anexar na mensagem. */

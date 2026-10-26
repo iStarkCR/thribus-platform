@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/hooks/useSession';
 import { useAppStore } from '@/hooks/useAppStore';
-import { listMessages, sendMessage, cancelMessage, subscribeChat, type ChatMessage } from '@/services/collaboratorChat';
+import { listMessages, sendMessage, cancelMessage, subscribeChat, buildReplyContent, type ChatMessage, type ReplyRef } from '@/services/collaboratorChat';
 import { listSessions, createSession, touchSession, listFolders, createFolder } from '@/services/chatSessions';
 import { ttsBlob, transcribeBlob, quickAck } from '@/services/voiceSkill';
 import { VoiceController, type VoiceState as RawVoiceState } from '@/lib/voiceMode';
@@ -163,22 +163,24 @@ export function useOrbConversation(enabled = false) {
 
   // Envia o texto e RESOLVE com a resposta do daemon (via realtime). Recria a
   // sessão se ela sumiu (FK). Usado pelo modo voz e pelo chat de texto.
-  const sendAndAwait = useCallback(async (textArg: string, isVoice = false): Promise<string> => {
+  const sendAndAwait = useCallback(async (textArg: string, isVoice = false, replyRef: ReplyRef | null = null): Promise<string> => {
     const text = textArg.trim();
     if (!text || !userId) return '';
     let sid = await ensureSession(userId);
     if (!sid) return '';
-    setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid as string, agentId: BUKOWISKI_ID, userId, role: 'user', content: text, status: 'pending', channel: 'thribus', error: null, attachments: [], createdAt: '' }]);
+    // Reply/quote: o marcador fica embutido no content (invisível na UI, lido pela ponte).
+    const content = buildReplyContent(replyRef, text);
+    setMessages((m) => [...m, { id: `tmp-${m.length}`, sessionId: sid as string, agentId: BUKOWISKI_ID, userId, role: 'user', content, status: 'pending', channel: 'thribus', error: null, attachments: [], createdAt: '' }]);
     try {
       let sent;
       try {
-        sent = await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
+        sent = await sendMessage(sid, BUKOWISKI_ID, userId, content, undefined, isVoice);
       } catch (e) {
         if (!/foreign key|violates|constraint/i.test((e as Error).message)) throw e;
         setSessionId(null); sessionRef.current = null;
         sid = await ensureSession(userId);
         if (!sid) throw e;
-        sent = await sendMessage(sid, BUKOWISKI_ID, userId, text, undefined, isVoice);
+        sent = await sendMessage(sid, BUKOWISKI_ID, userId, content, undefined, isVoice);
       }
       inflightMsgIdRef.current = sent.id; // pra cancelar na ponte se pedir parada
       await touchSession(sid);
@@ -259,8 +261,8 @@ export function useOrbConversation(enabled = false) {
     useAppStore.getState().addToast('Conversa da orbe limpa — contexto zerado.', 'green');
   }, [userId, stopVoice]);
 
-  // Chat de texto (OrbChat) — envia sem TTS.
-  const send = useCallback((textArg: string) => { void sendAndAwait(textArg).then(() => refetch()); }, [sendAndAwait, refetch]);
+  // Chat de texto (OrbChat) — envia sem TTS. `reply` opcional (citação).
+  const send = useCallback((textArg: string, replyRef: ReplyRef | null = null) => { void sendAndAwait(textArg, false, replyRef).then(() => refetch()); }, [sendAndAwait, refetch]);
 
   const waiting = messages.length > 0 && messages[messages.length - 1].role === 'user' && ['pending', 'processing'].includes(messages[messages.length - 1].status);
 
