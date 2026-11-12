@@ -25,6 +25,7 @@ import { Customer360Page } from '@/pages/Customer360Page';
 import { InboxPage } from '@/pages/InboxPage';
 import { StudioPage } from '@/pages/StudioPage';
 import { VoicePage } from '@/pages/VoicePage';
+import { VoiceTestPage } from '@/pages/VoiceTestPage';
 import { MarketplacePage } from '@/pages/MarketplacePage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { ExperimentsPage } from '@/pages/ExperimentsPage';
@@ -237,6 +238,7 @@ function InnerRoutes() {
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/studio" element={<StudioPage />} />
           <Route path="/voice" element={<VoicePage />} />
+          <Route path="/voice-test" element={<VoiceTestPage />} />
           <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/experiments" element={<ExperimentsPage />} />
