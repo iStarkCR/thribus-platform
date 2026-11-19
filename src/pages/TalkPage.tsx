@@ -2187,13 +2187,6 @@ export function TalkPage() {
         >
           <style>{`@keyframes orbDot{0%,100%{opacity:.2;transform:scaleY(1)}50%{opacity:1;transform:scaleY(2.4)}}`}</style>
 
-          {/* Rede de fundo — esfera grande bem esmaecida (igual ao orbe) */}
-          <div className="absolute inset-0 opacity-[0.18] pointer-events-none">
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 aspect-square w-[140vmin]">
-              <NeuralSphere className="absolute inset-0" intensity={0.2} speedMultiplier={0.6} interactionMultiplier={0} parallaxMultiplier={0} ambient={false} connectScale={1} />
-            </div>
-          </div>
-
           {/* Topo: rótulo + mutar mic + fechar */}
           <div className="absolute top-0 inset-x-0 h-16 px-7 flex items-center justify-between">
             <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint">Modo voz{panelMuted ? ' · mic pausado' : ''}</div>
@@ -2232,7 +2225,7 @@ export function TalkPage() {
             return (
               <div className="relative z-10 flex flex-col items-center gap-8">
                 <style>{`@keyframes orbSpin{to{transform:rotate(360deg)}}@keyframes voiceBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}@keyframes voiceRipple{0%{transform:scale(0.9);opacity:.55}100%{transform:scale(1.7);opacity:0}}`}</style>
-                <div className="relative aspect-square w-[min(60vmin,540px)]">
+                <div className="relative aspect-square w-[min(84vmin,760px)]">
                   {/* Ondas (ripple) emanando — quando você fala ou ele responde */}
                   {reacting && [0, 1, 2].map((i) => (
                     <span key={i} className="absolute inset-0 rounded-full border-2 pointer-events-none" style={{ borderColor: `rgba(${color}/0.5)`, animation: `voiceRipple ${responding ? 1.9 : 1.5}s ease-out ${i * 0.55}s infinite` }} />
