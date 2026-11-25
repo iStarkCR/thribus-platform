@@ -10,5 +10,11 @@
 	<string>O Thribus Platform precisa controlar outros apps (Notas, Atalhos e Agenda) para ler e criar conteúdo em seu nome.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>O Thribus Platform precisa acessar o microfone para gravar sua voz e transcrever com o Whisper.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

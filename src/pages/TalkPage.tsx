@@ -14,6 +14,7 @@ import { useVoice } from '@/hooks/useVoice';
 import { isStopPhrase, isNoise, mapVoiceState, ORB_FOLDER_NAME, type VoiceState } from '@/hooks/useOrbConversation';
 import { VoiceController, type VoiceTurn } from '@/lib/voiceMode';
 import { RealtimeVoice, buildRealtimeInstructions } from '@/lib/realtimeVoice';
+import { voiceIsland } from '@/lib/native';
 import { AudioRecorderBar } from '@/components/voice/AudioRecorderBar';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar, type BrainDraft } from '@/components/cortex/CortexBrainBar';
@@ -249,6 +250,20 @@ export function TalkPage() {
   // modo dividido. Separado do orbe.
   const [panelVoiceState, setPanelVoiceState] = useState<VoiceState>('idle');
   const [panelMuted, setPanelMuted] = useState(false); // mic pausado no modo voz
+  // Dynamic Island (app iOS): a Live Activity acompanha o modo voz — o iOS só a
+  // mostra na ilha quando você sai/minimiza o app.
+  const islandOnRef = useRef(false);
+  useEffect(() => {
+    if (!voiceMode || !agent) {
+      if (islandOnRef.current) { islandOnRef.current = false; voiceIsland('end'); }
+      return;
+    }
+    const phase = panelMuted ? 'muted' : panelVoiceState === 'thinking' ? 'thinking' : panelVoiceState === 'speaking' ? 'speaking' : panelVoiceState === 'talking' ? 'talking' : 'listening';
+    const label = panelMuted ? 'Mic pausado' : phase === 'thinking' ? 'Pensando' : phase === 'speaking' ? 'Respondendo' : phase === 'talking' ? 'Você falando' : 'Ouvindo';
+    voiceIsland(islandOnRef.current ? 'update' : 'start', phase, label, agent.name);
+    islandOnRef.current = true;
+  }, [voiceMode, panelVoiceState, panelMuted, agent]);
+  useEffect(() => () => { if (islandOnRef.current) voiceIsland('end'); }, []);
   const [panelLevel, setPanelLevel] = useState(0); // energia do mic (esfera reativa)
   const [panelPlayLevel, setPanelPlayLevel] = useState(0); // energia do TTS tocando
   const playLevelRef = useRef(0);

@@ -347,6 +347,28 @@ fn hide_keyboard_accessory_bar() {
   }
 }
 
+// iOS: Live Activity do modo voz (Dynamic Island). O lado Swift
+// (src-tauri/ios/App/VoiceIslandBridge.swift) é achado em runtime pelo nome da
+// classe ObjC — sem símbolo extern, o cdylib linka sem ele.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+fn voice_island(action: String, phase: String, label: String, agent: String) {
+  use objc2::msg_send;
+  use objc2::runtime::{AnyClass, AnyObject};
+  use std::ffi::CString;
+
+  let (Some(cls), Some(ns_string)) = (AnyClass::get(c"ThribusVoiceIsland"), AnyClass::get(c"NSString")) else {
+    return;
+  };
+  let ns = |s: &str| -> *mut AnyObject {
+    let c = CString::new(s.replace('\0', "")).unwrap_or_default();
+    unsafe { msg_send![ns_string, stringWithUTF8String: c.as_ptr()] }
+  };
+  unsafe {
+    let _: () = msg_send![cls, apply: ns(&action), phase: ns(&phase), label: ns(&label), agent: ns(&agent)];
+  }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   #[cfg(target_os = "ios")]
@@ -371,6 +393,9 @@ pub fn run() {
     mac_native::list_shortcuts,
     mac_native::run_shortcut,
   ]);
+
+  #[cfg(target_os = "ios")]
+  let builder = builder.invoke_handler(tauri::generate_handler![voice_island]);
 
   builder
     .setup(|app| {

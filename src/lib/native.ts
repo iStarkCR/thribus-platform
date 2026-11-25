@@ -83,6 +83,16 @@ async function call<T>(cmd: string, args: Record<string, unknown>, fallback: T):
   }
 }
 
+/**
+ * Dynamic Island do modo voz (só no app iOS). `start` cria a Live Activity
+ * (o iOS só mostra na ilha quando o app sai da tela), `update` troca o estado,
+ * `end` encerra. No web/desktop é no-op.
+ */
+export function voiceIsland(action: 'start' | 'update' | 'end', phase = '', label = '', agent = ''): void {
+  if (!isTauri() || !/iPhone|iPad|iPod/.test(navigator.userAgent)) return;
+  void call('voice_island', { action, phase, label, agent }, undefined);
+}
+
 /** Eventos da Agenda nos próximos `days` dias (a partir de hoje 00:00). */
 export async function getCalendarEvents(days = 1): Promise<CalendarEvent[]> {
   const raw = await call<string>('get_calendar_events', { days }, '[]');
