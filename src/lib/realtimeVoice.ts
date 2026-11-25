@@ -32,6 +32,8 @@ export interface RealtimeVoiceOpts {
   onLevel?: (rms: number) => void;
   onPlaybackLevel?: (rms: number) => void;
   onTurns?: (turns: VoiceTurn[]) => void;
+  /** Legenda ao vivo: o que o usuário disse / o que o assistente está falando. */
+  onCaption?: (c: { role: 'user' | 'assistant'; text: string }) => void;
   onError?: (e: Error) => void;
   /** Sessão terminou sozinha (pedido de encerrar, queda de conexão). */
   onEnd?: () => void;
@@ -95,6 +97,8 @@ export class RealtimeVoice {
   private abort = new AbortController();
   private turns: VoiceTurn[] = [];
   private state: VoiceState = 'idle';
+  private captionResp = '';
+  private captionText = '';
 
   constructor(opts: RealtimeVoiceOpts) { this.o = opts; }
 
@@ -211,9 +215,20 @@ export class RealtimeVoice {
         this._onResponseDone(evt);
         this._flushResponse();
         break;
-      case 'conversation.item.input_audio_transcription.completed':
-        this._persist('user', String(evt.transcript ?? ''));
+      case 'conversation.item.input_audio_transcription.completed': {
+        const t = String(evt.transcript ?? '');
+        if (t.trim()) this.o.onCaption?.({ role: 'user', text: t.trim() });
+        this._persist('user', t);
         break;
+      }
+      case 'response.output_audio_transcript.delta':
+      case 'response.audio_transcript.delta': {
+        const rid = String(evt.response_id ?? '');
+        if (rid !== this.captionResp) { this.captionResp = rid; this.captionText = ''; }
+        this.captionText += String(evt.delta ?? '');
+        this.o.onCaption?.({ role: 'assistant', text: this.captionText });
+        return;
+      }
       case 'response.output_audio_transcript.done':
       case 'response.audio_transcript.done':
         this._persist('assistant', String(evt.transcript ?? ''));

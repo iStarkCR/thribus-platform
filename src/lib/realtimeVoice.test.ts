@@ -85,6 +85,17 @@ describe('RealtimeVoice', () => {
     expect(saveVoiceTranscript).toHaveBeenCalledWith('s1', 'a', 'u', 'assistant', 'fala, Charles');
   });
 
+  it('legenda acumula os deltas da fala do assistente por resposta', () => {
+    const { rv } = setup();
+    const caps: { role: string; text: string }[] = [];
+    (rv as unknown as { o: { onCaption: (c: { role: string; text: string }) => void } }).o.onCaption = (c) => caps.push(c);
+    const i = rv as unknown as Internals;
+    i._onEvent({ type: 'response.output_audio_transcript.delta', response_id: 'r1', delta: 'Fala, ' });
+    i._onEvent({ type: 'response.output_audio_transcript.delta', response_id: 'r1', delta: 'Charles.' });
+    i._onEvent({ type: 'response.output_audio_transcript.delta', response_id: 'r2', delta: 'Novo.' });
+    expect(caps.map((c) => c.text)).toEqual(['Fala, ', 'Fala, Charles.', 'Novo.']);
+  });
+
   it('encerrar_voz termina a sessão quando o áudio de despedida acaba', () => {
     const { i, onEnd } = setup();
     i._onEvent(fnCall('encerrar_voz', {}));

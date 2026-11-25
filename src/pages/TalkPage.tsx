@@ -5,7 +5,7 @@ import {
   Users, Check, Settings2, Mic, MicOff, Volume2, VolumeX, Pencil, Palette, FolderPlus as SubfolderIcon, Headphones, AudioLines, X, Cog, Paperclip, Square, Copy, RefreshCw, ArrowRight,
   ListChecks, Lightbulb, Clock, BarChart3, MoreVertical, Archive, Pin, History, Sparkles, Search,
   PanelLeftClose, PanelLeft, GitBranch, AlertTriangle, FileText, ChevronUp, Monitor, MessageCircle, Menu,
-  Maximize2, Minimize2, Reply,
+  Maximize2, Minimize2, Reply, Columns2,
 } from 'lucide-react';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -24,7 +24,7 @@ import { RoutingBadge } from '@/components/cortex/RoutingBadge';
 import { WorkFolderBar } from '@/components/cortex/WorkFolderBar';
 import { ThinkingActivity, MessageSteps, type StepAction } from '@/components/shared/ThinkingActivity';
 import { type RunEvent } from '@/services/runEvents';
-import { listMessages, sendMessage, cancelMessage, deleteMessagesFrom, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, buildReplyContent, parseReply, summarizeForQuote, type ChatMessage, type Attachment, type ReplyRef } from '@/services/collaboratorChat';
+import { listMessages, sendMessage, cancelMessage, waitForReply, deleteMessagesFrom, subscribeChat, chatConfigured, uploadAttachment, improvePrompt, buildReplyContent, parseReply, summarizeForQuote, type ChatMessage, type Attachment, type ReplyRef } from '@/services/collaboratorChat';
 import { MessageAttachments } from '@/components/chat/MessageAttachments';
 import { ReplyQuote } from '@/components/chat/ReplyQuote';
 import { createDemand } from '@/services/demands';
@@ -53,6 +53,11 @@ const BUKOWISKI_ID = 'bukowiski-thribus';
 type VoiceEngine = 'realtime' | 'classic';
 type PanelVoiceEngine = Pick<VoiceController, 'stop' | 'setMuted' | 'editTurn' | 'removeTurn'>;
 const VOICE_ENGINE_KEY = 'thribus.voiceEngine';
+type VoiceLayout = 'full' | 'split';
+const VOICE_LAYOUT_KEY = 'thribus.voiceLayout';
+function loadVoiceLayout(): VoiceLayout {
+  try { return localStorage.getItem(VOICE_LAYOUT_KEY) === 'split' ? 'split' : 'full'; } catch { return 'full'; }
+}
 function loadVoiceEngine(): VoiceEngine {
   try { return localStorage.getItem(VOICE_ENGINE_KEY) === 'classic' ? 'classic' : 'realtime'; } catch { return 'realtime'; }
 }
@@ -225,8 +230,9 @@ export function TalkPage() {
   const wasListeningRef = useRef(false);
   const waitingRef = useRef(false); // já há mensagem do usuário aguardando resposta
   const voiceCfgRef = useRef<VoiceConfig | null>(null);
-  // Motor de voz do PAINEL (VoiceController) — atrelado à sessão ATIVA: a fala vira
-  // mensagem (is_voice) NESTA conversa, e a resposta é falada. Separado do orbe.
+  // Motor de voz do PAINEL — preso à conversa em que começou (voiceSessionId): a
+  // fala vira mensagem (is_voice) NELA, mesmo se você navegar pra outro chat no
+  // modo dividido. Separado do orbe.
   const [panelVoiceState, setPanelVoiceState] = useState<VoiceState>('idle');
   const [panelMuted, setPanelMuted] = useState(false); // mic pausado no modo voz
   const [panelLevel, setPanelLevel] = useState(0); // energia do mic (esfera reativa)
@@ -241,11 +247,15 @@ export function TalkPage() {
   const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>(loadVoiceEngine);
   const [voiceConnecting, setVoiceConnecting] = useState(false);
   const [runningEngine, setRunningEngine] = useState<VoiceEngine>('realtime'); // pode cair pro clássico
+  // Layout: tela cheia (imersivo) ou dividido (voz numa coluna, chat navegável ao lado).
+  const [voiceLayout, setVoiceLayout] = useState<VoiceLayout>(loadVoiceLayout);
+  const voiceSplit = voiceLayout === 'split' && !isMobile;
+  const [voiceCaption, setVoiceCaption] = useState<{ user: string; assistant: string }>({ user: '', assistant: '' });
+  const [voiceSessionId, setVoiceSessionId] = useState<string | null>(null);
+  const voiceSessionIdRef = useRef<string | null>(null);
+  const panelAbortRef = useRef<AbortController | null>(null);
   const levelRef = useRef(0);
   const lastLevelAtRef = useRef(0);
-  const pendingReplyRef = useRef<((s: string) => void) | null>(null);
-  // TTS streaming do modo voz: callback que recebe o conteúdo PARCIAL da resposta.
-  const panelPartialCbRef = useRef<((t: string) => void) | null>(null);
   // id da msg do usuário em processamento no modo voz — pra matar o claude na
   // ponte quando pedir parada (senão a voz fecha mas o processo segue rodando).
   const panelInflightRef = useRef<string | null>(null);
@@ -301,22 +311,25 @@ export function TalkPage() {
     getRoutingForRefs(userIds).then(setRoutingMap).catch(() => {});
   }, [messages]);
 
-  // ─── Modo voz do painel (VoiceController na sessão ativa) ────────────────────
-  // Manda o texto falado p/ a conversa ATIVA (is_voice) e resolve com a resposta
-  // do daemon via realtime. Cria sessão se não houver nenhuma aberta.
-  // Conversa ativa do modo voz — cria uma se não houver (promise compartilhada:
-  // falas simultâneas no realtime não criam duas sessões).
+  // ─── Modo voz do painel ───────────────────────────────────────────────────────
+  const bindVoiceSession = (sid: string | null) => { voiceSessionIdRef.current = sid; setVoiceSessionId(sid); };
+  // Conversa do modo voz: a que estava aberta quando a voz começou; sem nenhuma,
+  // cria (promise compartilhada: falas simultâneas no realtime não criam duas).
   const ensuringSessionRef = useRef<Promise<string | null> | null>(null);
   const ensureVoiceSession = useCallback(async (): Promise<string | null> => {
-    if (activeIdRef.current) return activeIdRef.current;
+    if (voiceSessionIdRef.current) return voiceSessionIdRef.current;
     if (!agent || !userId) return null;
     if (!ensuringSessionRef.current) {
       ensuringSessionRef.current = createSession(agent.id, userId, { workingDir: pendingWorkingDirRef.current })
         .then((s) => {
-          activeIdRef.current = s.id;
-          setActiveId(s.id);
-          setView('chat'); setChatMode(true);
+          bindVoiceSession(s.id);
           setSessions((prev) => [s, ...prev]);
+          // Só abre a conversa nova se você não está olhando outra no momento.
+          if (!activeIdRef.current) {
+            activeIdRef.current = s.id;
+            setActiveId(s.id);
+            setView('chat'); setChatMode(true);
+          }
           return s.id;
         })
         .catch(() => null)
@@ -329,20 +342,20 @@ export function TalkPage() {
     if (!agent || !userId) return '';
     const sid = await ensureVoiceSession();
     if (!sid) return '';
+    let sent: ChatMessage;
     try {
-      const sent = await sendMessage(sid, agent.id, userId, text, undefined, true);
+      sent = await sendMessage(sid, agent.id, userId, text, undefined, true);
       panelInflightRef.current = sent.id; // pra cancelar na ponte se pedir parada
       await touchSession(sid);
     } catch (e) {
       useAppStore.getState().addToast('Falha ao enviar: ' + (e as Error).message, 'red');
       return '';
     }
-    const reply = await new Promise<string>((resolve) => {
-      pendingReplyRef.current = resolve;
-      setTimeout(() => { if (pendingReplyRef.current === resolve) { pendingReplyRef.current = null; resolve(''); } }, 240000);
-    });
-    panelInflightRef.current = null;
-    return reply;
+    // Espera a resposta DESTA mensagem (amarrada pelo id) — independe do chat que
+    // está na tela, então dá pra navegar entre conversas com a voz ligada.
+    const res = await waitForReply(sent, { timeoutMs: 240000, intervalMs: 800, signal: panelAbortRef.current?.signal });
+    if (panelInflightRef.current === sent.id) panelInflightRef.current = null;
+    return res.kind === 'done' ? res.content : '';
   }, [agent, userId, ensureVoiceSession]);
 
   function togglePanelMute() {
@@ -368,6 +381,9 @@ export function TalkPage() {
 
   function startPanelVoice(engine: VoiceEngine = voiceEngine) {
     if (panelVoiceRef.current || !agent) return;
+    bindVoiceSession(activeIdRef.current);
+    panelAbortRef.current = new AbortController();
+    setVoiceCaption({ user: '', assistant: '' });
     if (engine === 'realtime') { void startRealtimeVoice(); return; }
     startClassicVoice();
   }
@@ -385,6 +401,7 @@ export function TalkPage() {
       onLevel: onPanelLevel,
       onPlaybackLevel: onPanelPlaybackLevel,
       onTurns: (turns) => setPanelTurns(turns),
+      onCaption: (c) => setVoiceCaption((prev) => (c.role === 'user' ? { user: c.text, assistant: '' } : { ...prev, assistant: c.text })),
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
       onEnd: () => { if (panelVoiceRef.current === ctrl) stopPanelVoice(); },
     });
@@ -404,10 +421,26 @@ export function TalkPage() {
 
   function switchVoiceEngine() {
     const next: VoiceEngine = runningEngine === 'realtime' ? 'classic' : 'realtime';
+    const sid = voiceSessionIdRef.current;
     setVoiceEngine(next);
     try { localStorage.setItem(VOICE_ENGINE_KEY, next); } catch { /* noop */ }
     stopPanelVoice();
     startPanelVoice(next);
+    if (sid) bindVoiceSession(sid); // troca de motor mantém a mesma conversa
+  }
+
+  function toggleVoiceLayout() {
+    const next: VoiceLayout = voiceLayout === 'split' ? 'full' : 'split';
+    setVoiceLayout(next);
+    try { localStorage.setItem(VOICE_LAYOUT_KEY, next); } catch { /* noop */ }
+  }
+
+  function openVoiceConversation() {
+    const sid = voiceSessionIdRef.current;
+    if (!sid) return;
+    activeIdRef.current = sid;
+    setActiveId(sid);
+    setView('chat'); setChatMode(true);
   }
 
   function startClassicVoice() {
@@ -424,16 +457,12 @@ export function TalkPage() {
       isStopPhrase, // barge-in: "parar"/"Bukowiski parar" corta a resposta no meio
       // Interrompeu com um pedido novo (não "parar") → enfileira e confirma:
       bargeAck: 'Beleza, anotei. Termino isso e já já vejo seu pedido.',
-      // TTS streaming: fala frase-a-frase conforme a ponte streama a resposta.
-      watchPartial: (cb) => {
-        panelPartialCbRef.current = cb;
-        return () => { if (panelPartialCbRef.current === cb) panelPartialCbRef.current = null; };
-      },
       onState: (s) => setPanelVoiceState(mapVoiceState(s)),
       onLevel: onPanelLevel,
       onPlaybackLevel: onPanelPlaybackLevel,
       onTurns: (turns) => setPanelTurns(turns),
-      onTranscript: (t) => { if (isStopPhrase(t)) stopPanelVoice(); },
+      onTranscript: (t) => { setVoiceCaption({ user: t, assistant: '' }); if (isStopPhrase(t)) stopPanelVoice(); },
+      onReply: (t) => setVoiceCaption((prev) => ({ ...prev, assistant: t })),
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
     });
     panelVoiceRef.current = ctrl;
@@ -446,23 +475,14 @@ export function TalkPage() {
     if (inflight) cancelMessage(inflight).catch(() => { /* best-effort */ });
     panelVoiceRef.current?.stop();
     panelVoiceRef.current = null;
-    pendingReplyRef.current = null;
+    panelAbortRef.current?.abort();
+    panelAbortRef.current = null;
+    bindVoiceSession(null);
+    setVoiceCaption({ user: '', assistant: '' });
     levelRef.current = 0; setPanelLevel(0); playLevelRef.current = 0; setPanelPlayLevel(0); setPanelTurns([]); setEditingTurn(null); setExpandedTurn(null);
     setPanelVoiceState('idle');
     setVoiceMode(false); voiceModeRef.current = false; setVoiceModeActive(false);
   }
-
-  // Resolve a resposta pendente do modo voz quando a msg assistant 'done' chega;
-  // enquanto 'processing', alimenta o TTS streaming com o conteúdo parcial.
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (last.role !== 'assistant') return;
-    if (last.status === 'processing' && last.content) panelPartialCbRef.current?.(last.content);
-    if (last.status === 'done' && pendingReplyRef.current) {
-      const r = pendingReplyRef.current; pendingReplyRef.current = null; r(last.content);
-    }
-  }, [messages]);
 
   // Limpa o flag global de modo voz + para o motor ao sair da página.
   useEffect(() => () => { panelVoiceRef.current?.stop(); panelVoiceRef.current = null; setVoiceModeActive(false); }, [setVoiceModeActive]);
@@ -2254,25 +2274,37 @@ export function TalkPage() {
         onPublish={(a) => { setArtifact(null); send(`Publica este relatório no Hub Thribus: "${a.title}" (o artefato/relatório que você acabou de me mostrar). Gera no padrão de relatório Thribus e me devolve o link de compartilhamento pro cliente.`); }}
       />
 
-      {/* Modo voz — tela cheia imersiva (estilo CORTEX) */}
+      {/* Modo voz — tela cheia imersiva (estilo CORTEX) ou coluna à direita
+          (dividido: o chat continua navegável ao lado). */}
       {voiceMode && (
         <div
-          className="fixed inset-0 z-[65] flex flex-col items-center justify-center overflow-hidden"
+          className={voiceSplit
+            ? 'relative shrink-0 w-[min(420px,36vw)] min-h-0 border-l border-default flex flex-col items-center justify-start pt-24 overflow-hidden'
+            : 'fixed inset-0 z-[65] flex flex-col items-center justify-center overflow-hidden'}
           style={{ background: 'radial-gradient(ellipse at center, #142e1f 0%, #040805 76%)' }}
         >
           <style>{`@keyframes orbDot{0%,100%{opacity:.2;transform:scaleY(1)}50%{opacity:1;transform:scaleY(2.4)}}`}</style>
 
           {/* Topo: rótulo + mutar mic + fechar */}
-          <div className="absolute top-0 inset-x-0 h-16 px-7 flex items-center justify-between">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint">Modo voz{voiceConnecting ? ' · conectando' : ''}{panelMuted ? ' · mic pausado' : ''}</div>
-            <div className="flex items-center gap-2">
+          <div className={`absolute top-0 inset-x-0 h-16 flex items-center justify-between gap-2 ${voiceSplit ? 'px-4' : 'px-7'}`}>
+            <div className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint">Modo voz{voiceConnecting ? ' · conectando' : ''}{panelMuted ? ' · mic pausado' : ''}</div>
+            <div className="flex items-center gap-2 shrink-0">
+              {!isMobile && (
+                <button
+                  onClick={toggleVoiceLayout}
+                  title={voiceSplit ? 'Tela cheia' : 'Dividir com o chat (voz ao lado, chat navegável)'}
+                  className="w-9 h-9 rounded-full border border-default bg-surface-1/60 backdrop-blur text-creme-mute hover:text-creme hover:bg-surface-hover flex items-center justify-center transition-colors"
+                >
+                  {voiceSplit ? <Maximize2 size={16} /> : <Columns2 size={16} />}
+                </button>
+              )}
               <button
                 onClick={switchVoiceEngine}
                 disabled={voiceConnecting}
                 title={runningEngine === 'realtime' ? 'Tempo real (OpenAI Realtime). Clique pra usar o modo clássico.' : 'Modo clássico (Whisper + TTS). Clique pra usar tempo real.'}
                 className="h-9 px-3 rounded-full border border-default bg-surface-1/60 backdrop-blur text-[11px] font-semibold uppercase tracking-[0.2em] text-creme-mute hover:text-creme hover:bg-surface-hover disabled:opacity-50 transition-colors"
               >
-                {runningEngine === 'realtime' ? 'Tempo real' : 'Clássico'}
+                {runningEngine === 'realtime' ? (voiceSplit ? 'Real' : 'Tempo real') : 'Clássico'}
               </button>
               <button
                 onClick={togglePanelMute}
@@ -2308,7 +2340,7 @@ export function TalkPage() {
             return (
               <div className="relative z-10 flex flex-col items-center gap-8">
                 <style>{`@keyframes orbSpin{to{transform:rotate(360deg)}}@keyframes voiceBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}@keyframes voiceRipple{0%{transform:scale(0.9);opacity:.55}100%{transform:scale(1.7);opacity:0}}`}</style>
-                <div className="relative aspect-square w-[min(84vmin,760px)]">
+                <div className={`relative aspect-square ${voiceSplit ? 'w-[min(26vw,260px)]' : 'w-[min(84vmin,760px)]'}`}>
                   {/* Ondas (ripple) emanando — quando você fala ou ele responde */}
                   {reacting && [0, 1, 2].map((i) => (
                     <span key={i} className="absolute inset-0 rounded-full border-2 pointer-events-none" style={{ borderColor: `rgba(${color}/0.5)`, animation: `voiceRipple ${responding ? 1.9 : 1.5}s ease-out ${i * 0.55}s infinite` }} />
@@ -2326,21 +2358,37 @@ export function TalkPage() {
                   <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: `rgb(${color})` }} />
                   <span className="text-[12px] font-semibold uppercase tracking-[0.3em]" style={{ color: `rgb(${color})` }}>{label}</span>
                 </div>
+                {voiceSplit && voiceSessionId && voiceSessionId !== activeId && (
+                  <button onClick={openVoiceConversation} className="flex items-center gap-1.5 text-[12px] text-brand-bright hover:underline">
+                    <MessageSquare size={13} /> Voltar à conversa da voz
+                  </button>
+                )}
               </div>
             );
           })()}
+
+          {/* Legenda ao vivo — o que você disse e o que ele está falando. */}
+          {(voiceCaption.user || voiceCaption.assistant) && (
+            <div className={voiceSplit
+              ? 'relative z-10 mt-6 w-full px-5 space-y-2 text-center'
+              : 'absolute bottom-8 right-7 z-10 w-[min(440px,40vw)] space-y-2 text-right'}
+            >
+              {voiceCaption.user && <div className="text-[13px] leading-snug text-white/50">Você: {captionTail(voiceCaption.user, 160)}</div>}
+              {voiceCaption.assistant && <div className="text-[15px] leading-relaxed text-white/90">{captionTail(voiceCaption.assistant, 320)}</div>}
+            </div>
+          )}
 
           {/* Fila de falas — canto inferior esquerdo. Clique no item pra ver o texto
               completo. Mostra o que está processando agora e o que está na fila. */}
           {panelTurns.length > 0 && (() => {
             const pend = panelTurns.filter((t) => t.status !== 'done').length;
             return (
-            <div className="absolute bottom-8 left-7 z-10 w-[min(440px,48vw)] flex flex-col gap-2">
+            <div className={`absolute z-10 flex flex-col gap-2 ${voiceSplit ? 'bottom-4 left-4 right-4' : 'bottom-8 left-7 w-[min(440px,48vw)]'}`}>
               <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.22em] text-white/85">
                 <ListChecks size={15} className="text-brand-bright" />
                 Fila {pend > 0 && <span className="ml-0.5 px-2 py-0.5 rounded-full bg-brand text-white text-[11px]">{pend} pendente{pend > 1 ? 's' : ''}</span>}
               </div>
-              <div className="flex flex-col gap-2 max-h-[52vh] overflow-y-auto pr-1">
+              <div className={`flex flex-col gap-2 overflow-y-auto pr-1 ${voiceSplit ? 'max-h-[28vh]' : 'max-h-[52vh]'}`}>
                 {panelTurns.map((t) => {
                   const done = t.status === 'done';
                   const queued = t.status === 'queued';
@@ -2399,6 +2447,12 @@ export function TalkPage() {
       )}
     </div>
   );
+}
+
+// Legenda: mostra só o final do texto (a fala corre; o começo já foi ouvido).
+function captionTail(t: string, max: number): string {
+  const s = t.trim();
+  return s.length > max ? '…' + s.slice(-max) : s;
 }
 
 // Efeito de digitação (typewriter). once=true → digita uma vez e para (entrada);
