@@ -18,6 +18,7 @@
 import { createRealtimeSession, OPENAI_REALTIME_CALLS_URL } from '@/services/realtime';
 import { sendMessage, saveVoiceTranscript, waitForReply, type ChatMessage } from '@/services/collaboratorChat';
 import type { VoiceState, VoiceTurn } from '@/lib/voiceMode';
+import { createNoiseGate } from '@/lib/noiseGate';
 
 const TOOL_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_TOOL_OUTPUT = 6000;
@@ -82,6 +83,8 @@ export function buildRealtimeInstructions(p: {
     'repetida — e siga conversando enquanto a tarefa roda. NUNCA invente dados, números ou status.',
     'Quando o resultado chegar, conte em 2 a 4 frases o essencial, como numa conversa, e ofereça detalhar. Erro ou timeout: diga com honestidade.',
     'Se ele pedir para parar, sair ou encerrar a conversa por voz, chame encerrar_voz.',
+    'ÁUDIO RUIM: se a fala vier cortada, sem sentido ou fora do contexto, NÃO chute — diga que não entendeu e peça para repetir.',
+    'Nunca chame perguntar_bukowiski com um pedido que você não entendeu com clareza.',
     ...(lines.length ? ['', 'Contexto recente da conversa no chat:', ...lines] : []),
   ].join('\n');
 }
@@ -92,6 +95,7 @@ export class RealtimeVoice {
   private pc: RTCPeerConnection | null = null;
   private dc: RTCDataChannel | null = null;
   private mic: MediaStream | null = null;
+  private sendStream: MediaStream | null = null;
   private audioEl: HTMLAudioElement | null = null;
   private audioCtx: AudioContext | null = null;
   private micAnalyser: AnalyserNode | null = null;
@@ -128,7 +132,20 @@ export class RealtimeVoice {
       this.micAnalyser = this.audioCtx.createAnalyser();
       this.micAnalyser.fftSize = 1024;
       this.micAnalyser.smoothingTimeConstant = 0.6;
-      this.audioCtx.createMediaStreamSource(this.mic).connect(this.micAnalyser);
+      const src = this.audioCtx.createMediaStreamSource(this.mic);
+      // Ruído de fundo constante é cortado antes de ir pra OpenAI; sem worklet, vai o mic cru.
+      try {
+        const gate = await createNoiseGate(this.audioCtx);
+        const dest = this.audioCtx.createMediaStreamDestination();
+        src.connect(gate);
+        gate.connect(dest);
+        gate.connect(this.micAnalyser);
+        this.sendStream = dest.stream;
+      } catch {
+        src.connect(this.micAnalyser);
+        this.sendStream = this.mic;
+      }
+      if (this.cancelled) return this._teardown();
 
       // Criado no gesto do clique (autoplay); o stream remoto entra no ontrack.
       this.audioEl = new Audio();
@@ -167,7 +184,8 @@ export class RealtimeVoice {
       dc.onmessage = (ev) => {
         try { this._onEvent(JSON.parse(ev.data) as ServerEvent); } catch { /* evento malformado */ }
       };
-      this.mic.getTracks().forEach((t) => pc.addTrack(t, this.mic!));
+      const out = this.sendStream ?? this.mic;
+      out.getAudioTracks().forEach((t) => pc.addTrack(t, out));
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -453,7 +471,9 @@ export class RealtimeVoice {
     if (this.pc) { this.pc.onconnectionstatechange = null; this.pc.close(); }
     this.pc = null;
     this.mic?.getTracks().forEach((t) => t.stop());
+    this.sendStream?.getTracks().forEach((t) => t.stop());
     this.mic = null;
+    this.sendStream = null;
     if (this.audioEl) { this.audioEl.pause(); this.audioEl.srcObject = null; }
     this.audioEl = null;
     if (this.audioCtx && this.audioCtx.state !== 'closed') this.audioCtx.close().catch(() => {});
