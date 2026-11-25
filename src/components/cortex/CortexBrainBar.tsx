@@ -23,7 +23,7 @@ interface BarState {
 
 const DEFAULT_BAR: BarState = { mode: 'auto', model: 'opus', effort: 'high' };
 
-export function CortexBrainBar({ className, sessionId }: { className?: string; sessionId?: string | null }) {
+export function CortexBrainBar({ className, sessionId, compact = false }: { className?: string; sessionId?: string | null; compact?: boolean }) {
   const [state, setState] = useState<BarState>(DEFAULT_BAR);
   const [open, setOpen] = useState(false);
   const isAuto = state.mode === 'auto';
@@ -56,12 +56,14 @@ export function CortexBrainBar({ className, sessionId }: { className?: string; s
     <div className={clsx('relative', className)}>
       <button
         onClick={() => { if (!open) load(); setOpen((o) => !o); }}
-        className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[13px] hover:bg-surface-hover transition-colors"
+        className={compact
+          ? 'h-[30px] flex items-center gap-1.5 px-2.5 rounded-full border border-default text-[12px] whitespace-nowrap hover:bg-surface-hover transition-colors'
+          : 'flex items-center gap-1.5 px-2 py-1 rounded-lg text-[13px] hover:bg-surface-hover transition-colors'}
         title={locked ? 'Cortex Brain — envie a primeira mensagem pra escolher o modelo desta conversa' : 'Cortex Brain — modelo e capacidade desta conversa'}
       >
         {isAuto ? <Sparkles size={13} className="text-brand-bright" /> : <Brain size={13} className="text-brand-bright" />}
-        <span className="font-semibold text-creme-dim">{isAuto ? 'Cortex Brain Auto' : brain.name}</span>
-        {!isAuto && brain.effortable && <span className="text-creme-faint">· {effortLabel}</span>}
+        <span className="font-semibold text-creme-dim">{isAuto ? (compact ? 'Auto' : 'Cortex Brain Auto') : brain.name}</span>
+        {!compact && !isAuto && brain.effortable && <span className="text-creme-faint">· {effortLabel}</span>}
         <ChevronDown size={12} className="text-creme-faint" />
       </button>
 

@@ -147,6 +147,7 @@ export function TalkPage() {
   const [routineOpen, setRoutineOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false); // celular: menu ⋯ do cabeçalho
   const [switcherQuery, setSwitcherQuery] = useState('');
   // Recolher a sidebar de conversas (persistido).
   const [navCollapsed, setNavCollapsed] = useState<boolean>(() => {
@@ -163,6 +164,14 @@ export function TalkPage() {
   const setMobileNavOpen = useAppStore((s) => s.setMobileNavOpen);
   // Mensagens longas do usuário colapsadas (id → expandida).
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
+  // Celular: ações da mensagem aparecem ao tocar nela (não ficam sempre à mostra).
+  const [actionsFor, setActionsFor] = useState<string | null>(null);
+  // Celular: com o campo focado (teclado aberto) os chips somem — sobra espaço pras mensagens.
+  const [composerFocused, setComposerFocused] = useState(false);
+  const toggleActions = (id: string) => (e: React.MouseEvent) => {
+    if (!isMobile || (e.target as HTMLElement).closest('button,a,input,textarea,select,summary')) return;
+    setActionsFor((x) => (x === id ? null : id));
+  };
   const toggleExpanded = (id: string) => setExpandedMsgs((prev) => {
     const n = new Set(prev);
     if (n.has(id)) n.delete(id); else n.add(id);
@@ -1328,6 +1337,11 @@ export function TalkPage() {
         <div className="p-3.5 border-b border-default space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-widest text-creme-faint">Conversas</span>
+            <span className="flex-1" />
+            {/* Celular: um menu só — o menu do app abre daqui (não há 2º hambúrguer) */}
+            <button onClick={() => { setConvDrawer(false); setMobileNavOpen(true); }} className="md:hidden h-8 px-2.5 mr-1 rounded-lg border border-default text-[12px] font-semibold text-creme-dim hover:text-creme hover:bg-surface-hover inline-flex items-center gap-1.5 transition-colors">
+              <Menu size={14} /> Menu do app
+            </button>
             <button onClick={() => (isMobile ? setConvDrawer(false) : toggleNav())} title={isMobile ? 'Fechar' : 'Recolher conversas'} className="w-7 h-7 rounded-md text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors">
               {isMobile ? <X size={16} /> : <PanelLeftClose size={15} />}
             </button>
@@ -1451,14 +1465,11 @@ export function TalkPage() {
 
       {/* Thread */}
       <div className={`flex-1 flex flex-col bg-surface-0 min-w-0 min-h-0 ${voiceMini ? 'pt-12' : ''}`}>
-        <div className="glass-panel relative z-30 h-16 px-3 md:px-6 flex items-center justify-between gap-2 md:gap-3 border-b border-default shrink-0">
-          <div className="flex items-center gap-2 md:gap-3 min-w-0">
-            {/* Mobile: abre a nav global e a lista de conversas */}
-            <button onClick={() => setMobileNavOpen(true)} title="Menu" className="md:hidden w-9 h-9 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors shrink-0">
-              <Menu size={18} />
-            </button>
-            <button onClick={() => setConvDrawer(true)} title="Conversas" className="md:hidden w-9 h-9 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors shrink-0">
-              <MessageSquare size={17} />
+        <div className="glass-panel relative z-30 h-14 md:h-16 px-1.5 md:px-6 flex items-center justify-between gap-1 md:gap-3 border-b border-default shrink-0">
+          <div className="flex items-center gap-1 md:gap-3 min-w-0 flex-1 md:flex-none">
+            {/* Celular: um menu só — abre as conversas (e de lá o menu do app) */}
+            <button onClick={() => setConvDrawer(true)} aria-label="Abrir menu" className="md:hidden w-11 h-11 rounded-xl text-creme-dim hover:text-creme hover:bg-surface-hover inline-flex items-center justify-center transition-colors shrink-0">
+              <Menu size={20} />
             </button>
             {navCollapsed && (
               <button onClick={toggleNav} title="Mostrar conversas" className="hidden md:inline-flex w-9 h-9 rounded-lg text-creme-faint hover:text-creme hover:bg-surface-hover items-center justify-center transition-colors shrink-0">
@@ -1469,24 +1480,54 @@ export function TalkPage() {
             <button
               onClick={() => setInfoOpen(true)}
               title={`Ver perfil de ${agent.name}`}
-              className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center text-[15px] font-bold text-white shrink-0 hover:ring-2 hover:ring-brand/50 active:scale-95 transition-all cursor-pointer"
+              className="hidden md:flex w-10 h-10 rounded-full bg-gradient-to-br from-brand-dim to-brand items-center justify-center text-[15px] font-bold text-white shrink-0 hover:ring-2 hover:ring-brand/50 active:scale-95 transition-all cursor-pointer"
             >
               {agent.name[0]}
             </button>
-            <button onClick={() => setInfoOpen(true)} title={`Ver perfil de ${agent.name}`} className="min-w-0 text-left">
-              <div className="text-[17px] font-bold tracking-tight text-creme flex items-center gap-2 hover:text-brand-bright transition-colors min-w-0">
-                <span className="truncate">{agent.name}</span>
-                {agent.isSupervisor && <Crown size={15} className="text-gold-bright shrink-0" />}
+            {/* Título = a conversa aberta (antes não aparecia); sem conversa, o agente. */}
+            <button onClick={() => setInfoOpen(true)} title={`Ver perfil de ${agent.name}`} className="min-w-0 flex-1 md:flex-none text-left">
+              <div className="text-[15px] md:text-[17px] font-bold tracking-tight text-creme flex items-center gap-2 hover:text-brand-bright transition-colors min-w-0">
+                <span className="truncate">{inChat && active ? sessionSource(active.title, active.source).clean : agent.name}</span>
+                {!(inChat && active) && agent.isSupervisor && <Crown size={15} className="text-gold-bright shrink-0" />}
               </div>
-              <div className="text-[12.5px] text-creme-faint truncate">
-                {agent.sector} · {agent.status}{active ? ` · ${sessionSource(active.title, active.source).clean}` : ''}
+              <div className="text-[12px] md:text-[12.5px] text-creme-faint truncate flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-semantic-green shrink-0" />
+                {inChat && active ? `${agent.name} · ${agent.status}` : `${agent.sector} · ${agent.status}`}
               </div>
             </button>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Toolbar segmentada de vidro — orbe · uso · voz */}
-            <div className="flex items-center gap-0.5 p-1 rounded-2xl glass-panel bg-surface-2/80 border border-default shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_24px_-16px_rgba(0,0,0,0.55)]">
+          <div className="flex items-center gap-1 md:gap-2 shrink-0">
+            {/* Celular: voz em destaque + ⋯ com o resto (orbe, busca, uso, colaboradores) */}
+            <button onClick={() => startPanelVoice()} aria-label="Modo voz" className="md:hidden w-11 h-11 rounded-xl bg-brand/12 text-brand-bright inline-flex items-center justify-center active:scale-95 transition-transform">
+              <Headphones size={20} />
+            </button>
+            <div className="relative md:hidden">
+              <button onClick={() => setMoreOpen((o) => !o)} aria-label="Mais opções" className="w-11 h-11 rounded-xl text-creme-dim hover:bg-surface-hover inline-flex items-center justify-center">
+                <MoreVertical size={20} className="rotate-90" />
+              </button>
+              {moreOpen && (
+                <>
+                  <div className="fixed inset-0 z-[55]" onClick={() => setMoreOpen(false)} />
+                  <div className="absolute right-0 mt-1.5 w-60 bg-surface-1 border border-default rounded-2xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8)] z-[56] p-1.5">
+                    {[
+                      { label: 'Tela inicial', icon: <Sparkles size={16} />, on: () => { setActiveId(null); setMessages([]); setView('orb'); setChatMode(false); setHistOpen(false); } },
+                      ...(inChat ? [{ label: 'Buscar na conversa', icon: <Search size={16} />, on: () => { setConvSearch(''); window.setTimeout(() => searchInputRef.current?.focus(), 30); } }] : []),
+                      ...(inChat && messages.length >= 8 && !waiting ? [{ label: isCompacting ? 'Compactando…' : 'Compactar conversa', icon: <History size={16} />, on: () => { if (!isCompacting) compactConversation(); } }] : []),
+                      { label: 'Uso por sessão', icon: <BarChart3 size={16} />, on: () => setUsageOpen(true) },
+                      { label: 'Trocar colaborador', icon: <Users size={16} />, on: () => setSwitcherOpen(true) },
+                      { label: 'Menu do app', icon: <Menu size={16} />, on: () => setMobileNavOpen(true) },
+                    ].map((it) => (
+                      <button key={it.label} onClick={() => { setMoreOpen(false); it.on(); }} className="w-full h-11 px-3 rounded-xl flex items-center gap-3 text-[14px] text-creme-dim hover:bg-surface-hover hover:text-creme text-left">
+                        <span className="text-creme-faint">{it.icon}</span>{it.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            {/* Desktop: toolbar segmentada de vidro — orbe · uso · voz */}
+            <div className="hidden md:flex items-center gap-0.5 p-1 rounded-2xl glass-panel bg-surface-2/80 border border-default shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_24px_-16px_rgba(0,0,0,0.55)]">
               <button
                 onClick={() => { setActiveId(null); setMessages([]); setView("orb"); setChatMode(false); setHistOpen(false); }}
                 title="Tela inicial — o orbe"
@@ -1517,7 +1558,7 @@ export function TalkPage() {
               <button
                 onClick={() => { setConvSearch((s) => (s === null ? '' : null)); window.setTimeout(() => searchInputRef.current?.focus(), 30); }}
                 title="Buscar nesta conversa (⌘F)"
-                className={`w-9 h-9 rounded-xl inline-flex items-center justify-center transition-colors shrink-0 ${convSearch !== null ? 'bg-brand/15 text-brand-bright' : 'text-creme-mute hover:text-creme hover:bg-surface-hover'}`}
+                className={`hidden md:inline-flex w-9 h-9 rounded-xl items-center justify-center transition-colors shrink-0 ${convSearch !== null ? 'bg-brand/15 text-brand-bright' : 'text-creme-mute hover:text-creme hover:bg-surface-hover'}`}
               >
                 <Search size={16} />
               </button>
@@ -1527,7 +1568,7 @@ export function TalkPage() {
             <div className="relative">
             <button
               onClick={() => setSwitcherOpen((o) => !o)}
-              className="flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-2xl glass-panel bg-surface-2/80 border border-default text-[13px] font-semibold text-creme-dim hover:text-creme hover:border-brand/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_24px_-16px_rgba(0,0,0,0.55)] transition-colors"
+              className="hidden md:flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-2xl glass-panel bg-surface-2/80 border border-default text-[13px] font-semibold text-creme-dim hover:text-creme hover:border-brand/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_24px_-16px_rgba(0,0,0,0.55)] transition-colors"
             >
               <span className="w-7 h-7 rounded-xl bg-brand/12 flex items-center justify-center shrink-0"><Users size={15} className="text-brand-bright" /></span>
               <span className="hidden lg:inline">Colaboradores</span>
@@ -1812,7 +1853,8 @@ export function TalkPage() {
               {/* Compactar conversa — flutua no topo em conversas longas. Gera um
                   resumo (TL;DR) e recomeça o contexto a partir dele; o histórico
                   visual fica intacto. Ver requestCompaction / ponte (caminho C). */}
-              {messages.length >= 8 && !waiting && (
+              {/* Celular: o banner cobria o texto — lá a ação mora no menu ⋯ do cabeçalho. */}
+              {messages.length >= 8 && !waiting && !isMobile && (
                 <div className="sticky top-0 z-20 flex justify-center pointer-events-none -mt-2 mb-1">
                   <button
                     onClick={compactConversation}
@@ -1858,9 +1900,9 @@ export function TalkPage() {
                   const shown = isLong && !open ? body.slice(0, COLLAPSE_AT).trimEnd() : body;
                   const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
                   return (
-                  <div key={m.id} data-msg-id={m.id} className={`group flex flex-col items-end gap-1 scroll-mt-4 rounded-[20px] transition-shadow ${flashId === m.id ? 'ring-2 ring-brand/60' : ''}`}>
-                    <div className="flex items-end gap-2.5 max-w-[82%]">
-                      <div className="px-[18px] py-3 rounded-[20px] rounded-br-md bg-brand text-white text-[17px] leading-[1.7] shadow-[0_12px_28px_-16px_rgba(0,0,0,0.55)] min-w-0">
+                  <div key={m.id} data-msg-id={m.id} onClick={toggleActions(m.id)} className={`group flex flex-col items-end gap-1 scroll-mt-4 rounded-[20px] transition-shadow ${flashId === m.id ? 'ring-2 ring-brand/60' : ''}`}>
+                    <div className="flex items-end gap-2.5 max-w-[85%] md:max-w-[82%]">
+                      <div className="px-3.5 py-2.5 md:px-[18px] md:py-3 rounded-[18px] rounded-br-md bg-brand-dim text-white text-[15px] md:text-[16px] leading-[1.5] shadow-[0_12px_28px_-16px_rgba(0,0,0,0.55)] min-w-0">
                         {reply && (
                           <div className="mb-2">
                             <ReplyQuote role={reply.role} text={reply.text} agentName={agent.name} variant="onBrand" />
@@ -1885,8 +1927,8 @@ export function TalkPage() {
                         )}
                       </div>
                     </div>
-                    {/* horário + ações ao passar o mouse */}
-                    <div className="flex items-center gap-1 mr-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* horário + ações: hover no desktop, toque na mensagem no celular */}
+                    <div className={`items-center gap-1 mr-0.5 flex-wrap justify-end ${isMobile ? (actionsFor === m.id ? 'flex' : 'hidden') : 'flex opacity-0 group-hover:opacity-100 transition-opacity'}`}>
                       {time && <span className="text-[10.5px] text-creme-faint mr-1">{time}</span>}
                       {[
                         { icon: Reply, label: 'Responder', on: () => startReply(m) },
@@ -1913,10 +1955,14 @@ export function TalkPage() {
                   </div>
                   );
                 })() : (
-                  <div key={m.id} data-msg-id={m.id} className={`group flex max-w-[88%] scroll-mt-4 rounded-[20px] transition-shadow ${flashId === m.id ? 'ring-2 ring-brand/60' : ''}`}>
+                  <div key={m.id} data-msg-id={m.id} onClick={toggleActions(m.id)} className={`group flex w-full md:max-w-[88%] scroll-mt-4 rounded-[20px] transition-shadow ${flashId === m.id ? 'ring-2 ring-brand/60' : ''}`}>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[12px] font-semibold text-creme-mute mb-1.5 tracking-wide">{agent.name}</div>
-                      <div className="px-[18px] py-3.5 rounded-[20px] rounded-tl-md bg-surface-2 border border-default text-creme text-[17px] leading-[1.7] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_32px_-22px_rgba(0,0,0,0.6)]">
+                      {/* Resposta do agente sem balão (texto corrido, estilo documento) */}
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="w-[22px] h-[22px] rounded-[7px] bg-brand text-surface-0 text-[12px] font-extrabold flex items-center justify-center shrink-0">{agent.name[0]}</span>
+                        <span className="text-[13px] font-bold text-creme-dim">{agent.name}</span>
+                      </div>
+                      <div className="text-creme text-[15px] md:text-[16px] leading-[1.6]">
                         <StreamingMarkdown text={m.content} streaming={m.status === 'pending' || m.status === 'processing'} onAction={handleSuggestion} onOpenArtifact={setArtifact} />
                         {/* Streaming: cursor piscando enquanto a resposta ainda chega */}
                         {(m.status === 'pending' || m.status === 'processing') && <span className="inline-block w-[2px] h-[1.1em] -mb-[2px] ml-0.5 bg-brand-bright align-middle animate-[twBlink_1.05s_step-end_infinite]" />}
@@ -1924,9 +1970,9 @@ export function TalkPage() {
                       </div>
                       <MessageSteps refId={precedingUserId.get(m.id) ?? null} live={m.status === 'pending' || m.status === 'processing'} onAct={handleStepAct} />
                       <RoutingBadge info={routingMap[precedingUserId.get(m.id) ?? '']} />
-                      {/* Ações ao passar o mouse */}
+                      {/* Ações: hover no desktop, toque na mensagem no celular */}
                       {m.status === 'done' && (
-                        <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className={`items-center gap-1 mt-1.5 flex-wrap ${isMobile ? (actionsFor === m.id ? 'flex' : 'hidden') : 'flex opacity-0 group-hover:opacity-100 transition-opacity'}`}>
                           {[
                             { icon: Reply, label: 'Responder', on: () => startReply(m), gold: false },
                             { icon: Copy, label: 'Copiar', on: () => copyMsg(m.content), gold: false },
@@ -1981,9 +2027,9 @@ export function TalkPage() {
 
         {inChat && (
         <div className="px-3 md:px-6 py-3 md:py-4 border-t border-default shrink-0">
-          {/* Celular: indicadores e medidor de contexto quebram linha em vez de se
-              espremer e sobrepor texto. */}
-          <div className="flex flex-wrap md:flex-nowrap items-center justify-between mb-2 px-1 gap-2 gap-y-1.5">
+          {/* Desktop: indicadores acima do composer. No celular eles viram chips
+              dentro do composer (modelo + contexto). */}
+          <div className="hidden md:flex md:flex-nowrap items-center justify-between mb-2 px-1 gap-2 gap-y-1.5">
             <div className="flex flex-wrap md:flex-nowrap items-center gap-2 gap-y-1.5 min-w-0 w-full md:w-auto [&>*]:shrink-0 md:[&>*]:shrink">
               <CortexBrainBar sessionId={activeId} />
               <CortexUsageBadge />
@@ -2059,7 +2105,7 @@ export function TalkPage() {
             />
           ) : (
           <div
-            className="glass-panel relative flex items-end gap-2.5 bg-surface-2 border border-default rounded-2xl px-3 py-2 transition-colors"
+            className="glass-panel relative flex flex-wrap md:flex-nowrap items-end gap-1 md:gap-2.5 bg-surface-2 border border-default rounded-[22px] md:rounded-2xl px-2.5 md:px-3 pt-2 pb-2 transition-colors"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); addFiles(Array.from(e.dataTransfer.files)); }}
           >
@@ -2133,10 +2179,15 @@ export function TalkPage() {
                 </>
               )}
             </div>
+            {/* Celular: chips de modelo e contexto dentro do composer (somem com o teclado) */}
+            <div className="md:hidden flex items-center gap-1 min-w-0 flex-1 self-center">
+              {!composerFocused && <CortexBrainBar sessionId={activeId} compact />}
+              {!composerFocused && active && active.contextTokens > 0 && <ContextMeter tokens={active.contextTokens} compact />}
+            </div>
             <button
               onClick={() => setComposerExpanded((v) => !v)}
               title={composerExpanded ? 'Recolher' : 'Expandir barra de texto'}
-              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors text-creme-faint hover:text-creme hover:bg-surface-hover"
+              className="hidden md:flex w-9 h-9 rounded-xl items-center justify-center shrink-0 transition-colors text-creme-faint hover:text-creme hover:bg-surface-hover"
             >
               {composerExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
@@ -2164,14 +2215,16 @@ export function TalkPage() {
                 }
               }}
               rows={1}
+              onFocus={() => setComposerFocused(true)}
+              onBlur={() => setComposerFocused(false)}
               placeholder={voice.listening ? 'Ouvindo… fale agora' : `Mensagem para ${agent.name}…`}
-              className="flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[16.5px] leading-[1.5] text-creme placeholder-creme-faint focus:outline-none"
+              className="order-first md:order-none basis-full md:basis-auto flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[16px] md:text-[16.5px] leading-[1.5] text-creme placeholder-creme-faint focus:outline-none"
             />
             {voice.ttsSupported && (
               <button
                 onClick={() => { const next = !ttsOn; setTtsOn(next); if (!next) voice.cancelSpeak(); }}
                 title={ttsOn ? 'Voz do colaborador: ligada' : 'Voz do colaborador: desligada'}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${ttsOn ? 'bg-brand/15 text-brand-bright' : 'text-creme-faint hover:text-creme hover:bg-surface-hover'}`}
+                className={`hidden md:flex w-9 h-9 rounded-xl items-center justify-center shrink-0 transition-colors ${ttsOn ? 'bg-brand/15 text-brand-bright' : 'text-creme-faint hover:text-creme hover:bg-surface-hover'}`}
               >
                 {ttsOn ? <Volume2 size={17} /> : <VolumeX size={17} />}
               </button>
@@ -2572,7 +2625,7 @@ function MenuRow({ icon, label, hint, onClick, disabled, active, chevron }: {
 
 // Janela de contexto da conversa: uso atual vs TETO configurável. Clique abre o
 // slider pra ajustar o teto na hora (mesmo valor do /cortex-brain, global).
-function ContextMeter({ tokens }: { tokens: number }) {
+function ContextMeter({ tokens, compact = false }: { tokens: number; compact?: boolean }) {
   const [limit, setLimit] = useState(CONTEXT_LIMIT_MIN);
   const [open, setOpen] = useState(false);
   useEffect(() => { getCortexConfig().then((c) => setLimit(c.contextLimitTokens)).catch(() => {}); }, []);
@@ -2582,6 +2635,20 @@ function ContextMeter({ tokens }: { tokens: number }) {
   const save = async (v: number) => { setLimit(v); try { await updateContextLimit(v); } catch { /* noop */ } };
   return (
     <div className="relative shrink-0">
+      {compact ? (
+      // Chip do composer no celular: anel + % (o detalhe abre no toque).
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-label={`Contexto ${pct.toFixed(0)}% usado`}
+        className="h-[30px] px-2.5 rounded-full border border-default flex items-center gap-1.5 text-[12px] font-mono text-creme-mute"
+      >
+        <svg width="14" height="14" viewBox="0 0 36 36" aria-hidden="true">
+          <circle cx="18" cy="18" r="14" fill="none" stroke="rgb(var(--surface-4))" strokeWidth="5" />
+          <circle cx="18" cy="18" r="14" fill="none" stroke={pct >= 85 ? '#fbbf24' : 'rgb(var(--brand))'} strokeWidth="5" strokeDasharray={`${(pct / 100) * 88} 88`} transform="rotate(-90 18 18)" />
+        </svg>
+        {pct.toFixed(0)}%
+      </button>
+      ) : (
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 text-[12.5px] text-creme-faint hover:text-creme-mute transition-colors"
@@ -2593,10 +2660,11 @@ function ContextMeter({ tokens }: { tokens: number }) {
         </div>
         <span className="font-mono text-creme-mute">{fmt(tokens)}/{fmtLimit(limit)} · {pct.toFixed(0)}%</span>
       </button>
+      )}
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 bottom-full mb-2 z-50 w-64 rounded-xl border border-default bg-surface-2 p-3 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.6)]">
+          <div className={`absolute ${compact ? 'left-0' : 'right-0'} bottom-full mb-2 z-50 w-64 rounded-xl border border-default bg-surface-2 p-3 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.6)]`}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[12px] font-semibold text-creme">Teto de contexto</span>
               <span className="text-[11px] font-mono text-creme-mute">{fmtLimit(limit)} tokens</span>
