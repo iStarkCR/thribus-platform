@@ -38,6 +38,26 @@ private struct Orb: View {
   }
 }
 
+/// Pausar/ligar o mic sem abrir o app (iOS 17+: botão com App Intent).
+private struct MicButton: View {
+  let phase: String
+
+  var body: some View {
+    if #available(iOS 17.0, *) {
+      let muted = phase == "muted"
+      Button(intent: ToggleVoiceMicIntent()) {
+        Label(muted ? "Ligar mic" : "Pausar mic", systemImage: muted ? "mic.slash.fill" : "mic.fill")
+          .font(.caption.weight(.semibold))
+          .foregroundColor(muted ? Color(red: 1, green: 0.42, blue: 0.42) : .white)
+          .padding(.horizontal, 12)
+          .padding(.vertical, 7)
+          .background(Capsule().fill(Color.white.opacity(0.14)))
+      }
+      .buttonStyle(.plain)
+    }
+  }
+}
+
 struct VoiceIslandLiveActivity: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: VoiceIslandAttributes.self) { ctx in
@@ -49,7 +69,7 @@ struct VoiceIslandLiveActivity: Widget {
           Text(ctx.state.label).font(.subheadline).foregroundColor(phaseColor(ctx.state.phase))
         }
         Spacer()
-        Image(systemName: "waveform").font(.title3).foregroundColor(phaseColor(ctx.state.phase))
+        MicButton(phase: ctx.state.phase)
       }
       .padding(16)
       .activityBackgroundTint(surface)
@@ -72,7 +92,12 @@ struct VoiceIslandLiveActivity: Widget {
           }
         }
         DynamicIslandExpandedRegion(.bottom) {
-          Text("Toque para voltar à conversa").font(.caption).foregroundColor(.secondary)
+          HStack {
+            Text("Toque para abrir a conversa").font(.caption).foregroundColor(.secondary)
+            Spacer()
+            MicButton(phase: ctx.state.phase)
+          }
+          .padding(.horizontal, 6)
         }
       } compactLeading: {
         Orb(phase: ctx.state.phase, size: 20)

@@ -369,6 +369,64 @@ fn voice_island(action: String, phase: String, label: String, agent: String) {
   }
 }
 
+// iOS: modo voz na Dynamic Island = conversa seguindo com o app em segundo
+// plano (UIBackgroundModes=audio). Por padrão o WebKit corta o microfone e
+// suspende a página quando ela sai da tela; aqui desligamos isso. São SPIs do
+// WKPreferences — respondsToSelector/busca por chave protegem se mudarem.
+#[cfg(target_os = "ios")]
+fn keep_mic_in_background(webview: *mut objc2::runtime::AnyObject) {
+  use objc2::runtime::{AnyObject, Bool};
+  use objc2::{msg_send, sel};
+  if webview.is_null() {
+    return;
+  }
+  unsafe {
+    let config: *mut AnyObject = msg_send![webview, configuration];
+    if config.is_null() {
+      return;
+    }
+    let prefs: *mut AnyObject = msg_send![config, preferences];
+    if prefs.is_null() {
+      return;
+    }
+    let ok: Bool = msg_send![prefs, respondsToSelector: sel!(_setInterruptAudioOnPageVisibilityChangeEnabled:)];
+    if ok.as_bool() {
+      let _: () = msg_send![prefs, _setInterruptAudioOnPageVisibilityChangeEnabled: Bool::NO];
+    }
+    // WKInactiveSchedulingPolicyNone (2): não suspende/estrangula a página fora da tela.
+    let sched: Bool = msg_send![prefs, respondsToSelector: sel!(setInactiveSchedulingPolicy:)];
+    if sched.as_bool() {
+      let _: () = msg_send![prefs, setInactiveSchedulingPolicy: 2isize];
+    }
+    // Ao ir pro fundo, o WebKit tenta pôr o indicador de captura na status bar
+    // (SPI da SpringBoard, só o Safari tem o entitlement); a falha ENCERRA o
+    // microfone. Desligar esse controle no GPU process mantém a captura viva.
+    let (Some(wkp), Some(ns_string)) = (objc2::runtime::AnyClass::get(c"WKPreferences"), objc2::runtime::AnyClass::get(c"NSString")) else {
+      return;
+    };
+    let target: *mut AnyObject = msg_send![ns_string, stringWithUTF8String: c"ManageCaptureStatusBarInGPUProcessEnabled".as_ptr()];
+    for list_sel in [sel!(_features), sel!(_internalDebugFeatures), sel!(_experimentalFeatures)] {
+      let has: Bool = msg_send![wkp, respondsToSelector: list_sel];
+      if !has.as_bool() {
+        continue;
+      }
+      let list: *mut AnyObject = msg_send![wkp, performSelector: list_sel];
+      if list.is_null() {
+        continue;
+      }
+      let n: usize = msg_send![list, count];
+      for i in 0..n {
+        let f: *mut AnyObject = msg_send![list, objectAtIndex: i];
+        let key: *mut AnyObject = msg_send![f, key];
+        let eq: Bool = msg_send![key, isEqualToString: target];
+        if eq.as_bool() {
+          let _: () = msg_send![prefs, _setEnabled: Bool::NO, forFeature: f];
+        }
+      }
+    }
+  }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   #[cfg(target_os = "ios")]
@@ -427,7 +485,9 @@ pub fn run() {
         .inner_size(1280.0, 840.0)
         .min_inner_size(960.0, 600.0)
         .resizable(true);
-      builder.build()?;
+      let _window = builder.build()?;
+      #[cfg(target_os = "ios")]
+      let _ = _window.with_webview(|wv| keep_mic_in_background(wv.inner() as *mut objc2::runtime::AnyObject));
 
       Ok(())
     })

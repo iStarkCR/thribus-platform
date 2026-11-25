@@ -394,6 +394,15 @@ export function TalkPage() {
     setPanelMuted(next);
     panelVoiceRef.current?.setMuted(next);
   }
+  // Botão de mic da Dynamic Island (nativo) chama isto com o app em segundo plano.
+  const togglePanelMuteRef = useRef(togglePanelMute);
+  togglePanelMuteRef.current = togglePanelMute;
+  useEffect(() => {
+    if (!voiceMode) return;
+    const w = window as unknown as { __thribusVoice?: { toggleMute: () => void } };
+    w.__thribusVoice = { toggleMute: () => togglePanelMuteRef.current() };
+    return () => { delete w.__thribusVoice; };
+  }, [voiceMode]);
 
   // Callbacks de nível/estado comuns aos dois motores (esfera reativa).
   const onPanelLevel = (rms: number) => {
