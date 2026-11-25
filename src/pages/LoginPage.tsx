@@ -119,12 +119,12 @@ export function LoginPage() {
         }}
       />
 
-      <div className="relative min-h-full flex flex-col items-center px-6 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.75rem,env(safe-area-inset-bottom))]">
+      <div className="relative min-h-full flex flex-col items-center px-6 pt-[max(0.75rem,env(safe-area-inset-top))] md:pt-10 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-8">
         {/* Orb — a mesma do modo voz */}
-        <div className="flex-1 w-full flex items-center justify-center min-h-[240px] py-4">
+        <div className="flex-1 w-full flex items-center justify-center min-h-[180px] py-2 md:py-4">
           <div
             ref={orbRef}
-            className="relative aspect-square w-[min(74vw,40vh)] md:w-[min(46vh,440px)] will-change-transform"
+            className="relative aspect-square w-[min(70vw,34vh)] md:w-[min(46vh,440px)] will-change-transform"
             style={{
               transform: orbTransform,
               filter: phase === 'suck' ? 'brightness(2.2)' : 'none',
@@ -170,7 +170,7 @@ export function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={submit} className="mt-5 space-y-3">
+          <form onSubmit={submit} className="mt-4 space-y-2.5">
             <div className="relative">
               <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none text-creme-faint" />
               <input
@@ -212,7 +212,7 @@ export function LoginPage() {
             </button>
           </form>
 
-          <div className="relative my-5">
+          <div className="relative my-4">
             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-default" /></div>
             <div className="relative flex justify-center"><span className="px-3 bg-surface-0 text-[12px] text-creme-faint">ou continue com</span></div>
           </div>
@@ -222,7 +222,7 @@ export function LoginPage() {
             <OAuthBtn provider="apple" label="Apple" onClick={() => oauth('apple')} disabled={loading} />
           </div>
 
-          <p className="mt-6 text-center text-[11.5px] text-creme-faint">© 2026 Thribus Tech · Dados protegidos conforme a LGPD</p>
+          <p className="mt-4 text-center text-[11.5px] text-creme-faint">© 2026 Thribus Tech · Dados protegidos conforme a LGPD</p>
         </div>
       </div>
 
