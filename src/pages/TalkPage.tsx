@@ -1659,10 +1659,10 @@ export function TalkPage() {
         <div className="flex-1 relative overflow-hidden">
           {!inChat ? (
             /* Boas-vindas estilo CORTEX — esfera animada + saudação */
-            <div className="absolute inset-0 flex flex-col items-center justify-center overflow-hidden">
-              {/* Esfera — mais acesa (opacidade alta) */}
+            <div className="absolute inset-0 flex flex-col items-center justify-end md:justify-center overflow-hidden">
+              {/* Esfera — mais acesa (opacidade alta). Celular: menor e no alto (a ação fica embaixo, no polegar). */}
               <div
-                className="absolute aspect-square w-[min(82vmin,640px)] rounded-full overflow-hidden opacity-90"
+                className="absolute top-[19%] md:top-auto aspect-square w-[52vw] md:w-[min(82vmin,640px)] rounded-full overflow-hidden opacity-90"
                 style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
               >
                 <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} pulseSpeed={0.9} />
@@ -1695,7 +1695,7 @@ export function TalkPage() {
 
               {/* short: barra acompanha a esfera (que já escala por vmin) só em
                   tela baixa/larga (notebook) — no Mac (altura normal) fica 600px fixo */}
-              <div className="relative z-10 w-full max-w-[600px] short:max-w-[min(600px,74vmin)] flex flex-col items-center text-center px-6">
+              <div className="relative z-10 w-full max-w-[600px] short:max-w-[min(600px,74vmin)] flex flex-col items-center text-center px-3 md:px-6 pb-3 md:pb-0">
                 {/* Começo rápido — chips do COO (caixa/infra/demandas) SÓ pro Bukowiski (supervisor).
                     Pros outros colaboradores não faz sentido — fica só a barra. */}
                 {/* Atenção agora — só aparece quando há algo real pra ver (escalações + sistemas com problema) */}
@@ -1726,8 +1726,8 @@ export function TalkPage() {
                 })()}
 
 
-                {/* Composer no MEIO (igual à referência) — onde estava */}
-                <div className="w-full">
+                {/* Composer no MEIO (igual à referência) — onde estava. Celular: por último, no polegar. */}
+                <div className="w-full order-last md:order-none mt-3 md:mt-0">
                   {/* Anexos selecionados no hero — mesmo state do composer da conversa */}
                   {(attachments.length > 0 || uploading > 0) && (
                     <div className="flex flex-wrap gap-2 mb-2 px-1 justify-center">
@@ -1797,7 +1797,7 @@ export function TalkPage() {
                   onClick={() => { setTtsOn(true); send(agent.isSupervisor
                     ? 'Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'
                     : 'Me dá um briefing falado e curtinho de como está a sua área agora: o que precisa de atenção, pendências e próximos passos. Fala natural, como se estivesse me contando ao vivo.'); }}
-                  className="mt-5 short:mt-3 flex items-center gap-2 pl-3.5 pr-4 py-2.5 short:py-2 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[14px] short:text-[13px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
+                  className="order-2 md:order-none w-full md:w-auto justify-center md:justify-start mt-2 md:mt-5 short:mt-3 flex items-center gap-2 pl-3.5 pr-4 py-3 md:py-2.5 short:py-2 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[14px] short:text-[13px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
                 >
                   <Volume2 size={15} className="shrink-0" /> Ouvir briefing do dia
                 </button>
@@ -1809,7 +1809,7 @@ export function TalkPage() {
                   const sorted = [...visible].sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1));
                   const last = sorted[0];
                   return (
-                    <div className="mt-5 short:mt-3 relative max-w-[calc(100vw-2rem)]">
+                    <div className="order-1 md:order-none w-full md:w-auto mt-0 md:mt-5 short:mt-3 relative max-w-[calc(100vw-1.5rem)]">
                       <div className="flex items-center gap-3 max-w-full text-[13px] rounded-full bg-surface-1/80 backdrop-blur-md border border-default px-4 py-2 shadow-[0_10px_28px_-14px_rgba(0,0,0,0.65)]">
                         <button onClick={() => setHistOpen((o) => !o)} className="flex items-center gap-1.5 shrink-0 text-creme-mute hover:text-creme transition-colors">
                           <Clock size={13} className="text-creme-faint" /> histórico <span className="text-creme font-bold">{visible.length}</span>
