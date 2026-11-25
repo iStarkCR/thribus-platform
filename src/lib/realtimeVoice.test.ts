@@ -66,6 +66,23 @@ describe('RealtimeVoice', () => {
     expect(sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
   });
 
+  it('runTask anuncia, manda a tarefa como mensagem normal e fala o resultado', async () => {
+    const { rv, sent } = setup();
+    sendMessage.mockResolvedValue({ id: 'm1', sessionId: 's1', createdAt: 't' });
+    waitForReply.mockResolvedValue({ kind: 'done', content: '## Atenção agora\n- caixa ok' });
+    const onSent = vi.fn();
+
+    await rv.runTask({ label: 'Briefing do dia', pedido: '[[briefing]] monte', announce: 'avise', speak: 'CHEGOU:', onSent });
+
+    expect(sent[0]).toEqual({ type: 'response.create', response: { instructions: 'avise' } });
+    expect(sendMessage).toHaveBeenCalledWith('s1', 'a', 'u', '[[briefing]] monte');
+    expect(onSent).toHaveBeenCalledWith('s1');
+    const note = sent.find((e) => e.type === 'conversation.item.create') as { item: { role: string; content: { text: string }[] } };
+    expect(note.item.role).toBe('system');
+    expect(note.item.content[0].text).toContain('CHEGOU:\n\n## Atenção agora');
+    expect(sent[sent.length - 1]).toEqual({ type: 'response.create' });
+  });
+
   it('não processa a mesma function_call duas vezes', async () => {
     const { i } = setup();
     sendMessage.mockResolvedValue({ id: 'm1', sessionId: 's1', createdAt: 't' });

@@ -190,6 +190,54 @@ export class RealtimeVoice {
     this.mic?.getAudioTracks().forEach((t) => { t.enabled = !b; });
   }
 
+  /**
+   * Tarefa disparada pelo painel (ex.: briefing do dia): anuncia em voz, roda no
+   * Claude por trás como mensagem NORMAL (resposta estruturada no chat) e, quando
+   * chega, fala o essencial. `onSent` recebe a conversa onde a tarefa foi gravada.
+   */
+  async runTask(t: { label: string; pedido: string; announce: string; speak: string; onSent?: (sid: string) => void }): Promise<void> {
+    await this._channelOpen();
+    if (this.cancelled) return;
+    if (!this.responseActive) this._send({ type: 'response.create', response: { instructions: t.announce } });
+
+    const turn: VoiceTurn = { id: `task-${Date.now()}`, text: t.label, status: 'processing' };
+    this.turns = [...this.turns, turn].slice(-12);
+    this._emitTurns();
+    this._refreshState();
+
+    let note: string;
+    try {
+      const sid = await this.o.ensureSessionId();
+      if (!sid) throw new Error('sem conversa ativa');
+      const sent = await sendMessage(sid, this.o.agentId, this.o.userId, t.pedido);
+      t.onSent?.(sid);
+      const res = await waitForReply(sent, { timeoutMs: TOOL_TIMEOUT_MS, signal: this.abort.signal });
+      if (res.kind === 'done') note = `${t.speak}\n\n${toolOutputText(res.content)}`;
+      else if (res.kind === 'error') note = `A tarefa "${t.label}" deu erro (${res.error.slice(0, 300)}). Diga isso com honestidade, em uma frase.`;
+      else if (res.kind === 'cancelled') note = `A tarefa "${t.label}" foi cancelada. Avise em uma frase.`;
+      else note = `"${t.label}" ainda está sendo montado. Diga em uma frase que vai aparecer no chat quando terminar.`;
+    } catch (e) {
+      note = `Não deu pra rodar "${t.label}" (${(e as Error).message}). Diga isso em uma frase.`;
+    }
+    if (this.cancelled) return;
+    turn.status = 'done';
+    this._emitTurns();
+    this._send({ type: 'conversation.item.create', item: { type: 'message', role: 'system', content: [{ type: 'input_text', text: note }] } });
+    this.responsePending = true;
+    this._flushResponse();
+    this._refreshState();
+  }
+
+  private _channelOpen(): Promise<void> {
+    const dc = this.dc;
+    if (!dc || dc.readyState === 'open') return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => { dc.removeEventListener('open', done); dc.removeEventListener('close', done); resolve(); };
+      dc.addEventListener('open', done);
+      dc.addEventListener('close', done);
+    });
+  }
+
   // Turnos aqui são tarefas já delegadas ao Claude — não há fila editável.
   editTurn(): void { /* noop */ }
   removeTurn(): void { /* noop */ }

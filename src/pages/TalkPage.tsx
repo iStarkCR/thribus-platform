@@ -52,6 +52,7 @@ const BUKOWISKI_ID = 'bukowiski-thribus';
 // 'classic' (VoiceController: VAD local → Whisper → Claude → TTS). Preferência local.
 type VoiceEngine = 'realtime' | 'classic';
 type PanelVoiceEngine = Pick<VoiceController, 'stop' | 'setMuted' | 'editTurn' | 'removeTurn'>;
+const BRIEFING_MARK = '[[briefing]]';
 const VOICE_ENGINE_KEY = 'thribus.voiceEngine';
 type VoiceLayout = 'full' | 'split';
 const VOICE_LAYOUT_KEY = 'thribus.voiceLayout';
@@ -403,8 +404,8 @@ export function TalkPage() {
     startClassicVoice();
   }
 
-  async function startRealtimeVoice() {
-    if (panelVoiceRef.current || !agent || !userId) return;
+  async function startRealtimeVoice(): Promise<RealtimeVoice | null> {
+    if (panelVoiceRef.current || !agent || !userId) return null;
     setVoiceMode(true); voiceModeRef.current = true; setVoiceModeActive(true); setPanelMuted(false);
     setRunningEngine('realtime');
     const ctrl = new RealtimeVoice({
@@ -424,11 +425,13 @@ export function TalkPage() {
     setVoiceConnecting(true);
     try {
       await ctrl.start();
+      return panelVoiceRef.current === ctrl ? ctrl : null;
     } catch (e) {
-      if (panelVoiceRef.current !== ctrl) return; // usuário fechou durante a conexão
+      if (panelVoiceRef.current !== ctrl) return null; // usuário fechou durante a conexão
       panelVoiceRef.current = null;
       useAppStore.getState().addToast(`Voz em tempo real indisponível (${(e as Error).message}) — usando o modo clássico.`, 'amber');
       startClassicVoice();
+      return null;
     } finally {
       setVoiceConnecting(false);
     }
@@ -970,12 +973,43 @@ export function TalkPage() {
     setView('orb');
   }
   // Entrar de fato no chat (Abrir conversa / retomar última): pré-carrega e vai pro chat.
-  function playBriefing() {
+  // Briefing: abre o modo voz, o colaborador monta o briefing ESTRUTURADO no chat
+  // por trás e a voz conta o essencial quando chega. No chat o pedido aparece
+  // como etiqueta (BRIEFING_MARK), não como o prompt inteiro.
+  async function playBriefing() {
     if (!agent) return;
-    setTtsOn(true);
-    send(agent.isSupervisor
-      ? 'Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'
-      : 'Me dá um briefing falado e curtinho de como está a sua área agora: o que precisa de atenção, pendências e próximos passos. Fala natural, como se estivesse me contando ao vivo.');
+    const pedido = `${BRIEFING_MARK} ` + (agent.isSupervisor
+      ? 'Monte o briefing do meu dia agora, com dados reais (caixa, infra/sistemas, demandas em aberto, agenda). '
+      : 'Monte o briefing de como está a sua área agora, com dados reais (o que precisa de atenção, pendências, próximos passos). ')
+      + 'Formato pra LEITURA no chat: comece por "## Atenção agora" (só o que pede ação, com o porquê), depois uma seção "##" por frente, '
+      + 'bullets curtos com números concretos, e feche com "## Próximos passos". Sem enrolação; nada inventado — se não conseguir um dado, diga.';
+    const freshSession = !activeIdRef.current && !voiceSessionIdRef.current;
+    let ctrl = panelVoiceRef.current;
+    if (!ctrl) {
+      bindVoiceSession(activeIdRef.current);
+      panelAbortRef.current = new AbortController();
+      setVoiceCaption({ user: '', assistant: '' });
+      ctrl = await startRealtimeVoice();
+    }
+    if (!(ctrl instanceof RealtimeVoice)) {
+      // Sem tempo real (fallback clássico ou falhou): briefing no chat + leitura em voz.
+      if (panelVoiceRef.current) stopPanelVoice();
+      setTtsOn(true);
+      void send(pedido);
+      return;
+    }
+    void ctrl.runTask({
+      label: 'Briefing do dia',
+      pedido,
+      announce: 'Diga em UMA frase curta e natural que vai puxar o briefing do dia agora. Não cite nenhum dado.',
+      speak: 'O BRIEFING CHEGOU — já está estruturado no chat. Conte em voz, natural, em 5 a 8 frases: comece pelo que pede atenção, '
+        + 'depois o resto; números arredondados, sem ler listas nem markdown. No fim, ofereça detalhar alguma frente. Conteúdo:',
+      onSent: (sid) => {
+        if (!freshSession) return;
+        void renameSession(sid, 'Briefing do dia').catch(() => {});
+        setSessions((prev) => prev.map((x) => (x.id === sid ? { ...x, title: 'Briefing do dia' } : x)));
+      },
+    });
   }
 
   async function enterConversation(id: string) {
@@ -1909,6 +1943,12 @@ export function TalkPage() {
                         </button>
                       )}
                     </div>
+                  </div>
+                ) : m.role === 'user' && m.content.startsWith(BRIEFING_MARK) ? (
+                  <div key={m.id} data-msg-id={m.id} className="flex justify-end">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gold/40 bg-gold/10 text-gold-bright text-[13px] font-semibold">
+                      <Volume2 size={13} /> Briefing do dia
+                    </span>
                   </div>
                 ) : m.role === 'user' ? (() => {
                   const { reply, body } = parseReply(m.content);
