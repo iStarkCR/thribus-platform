@@ -24,13 +24,16 @@ const INNER_CONNECT_DISTANCE = 0.95;
 const AUTO_ROTATE_SPEED_OUTER = 0.0004; // contemplativo, mas visivelmente vivo
 const AUTO_ROTATE_SPEED_INNER = -0.0007;
 
-// "Viva": a casca externa deixa de ser um círculo rígido e ondula como uma gota
-// (soma de senoides 3D na direção de cada nó). Parada: quase imperceptível;
-// com voz (intensity) a superfície respira e se deforma mais.
-const DEFORM_IDLE = 0.03;
-const DEFORM_ACTIVE = 0.13;
-const NOISE_SPEED_IDLE = 0.5;
-const NOISE_SPEED_ACTIVE = 1.6;
+// Ondas de água: tocar/passar o dedo ou o mouse na esfera solta uma onda que
+// corre pela superfície a partir do ponto tocado (deslocamento tangencial → a
+// silhueta continua um círculo perfeito) e acende os nós na crista.
+const RIPPLE_MAX = 7;
+const RIPPLE_SPEED = 1.9;   // rad/s ao longo da superfície
+const RIPPLE_WIDTH = 0.32;  // largura da crista (rad)
+const RIPPLE_WAVES = 9;     // frequência das ondinhas dentro da crista
+const RIPPLE_AMP = 0.2;     // deslocamento máximo (fração do raio)
+const RIPPLE_DECAY = 1.05;  // some em ~2s
+const RIPPLE_SPAWN_MS = 140; // intervalo mínimo entre ondas ao arrastar
 const MOUSE_INFLUENCE = 1.4;
 const REPULSION_STRENGTH = 0.14;
 const DAMPING = 0.86; // mais líquido — os pontos seguem com lag suave
@@ -291,22 +294,44 @@ export function NeuralSphere({
     inner.pointsMaterial.needsUpdate = true;
     innerGroup.add(inner.points, inner.lines);
 
-    // Halo + núcleo luminoso (sprites aditivos) — dão a sensação de "energia" que
-    // pulsa com a voz. Ficam atrás da malha (adicionados primeiro no grupo).
-    const haloMat = new THREE.SpriteMaterial({ map: dotTex, color: baseColor.clone(), transparent: true, opacity: 0.1, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
-    const halo = new THREE.Sprite(haloMat);
-    halo.scale.setScalar(OUTER_RADIUS * 2.9);
-    const coreMat = new THREE.SpriteMaterial({ map: dotTex, color: baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.35), transparent: true, opacity: 0.14, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
-    const core = new THREE.Sprite(coreMat);
-    core.scale.setScalar(INNER_RADIUS * 2.2);
-    parallaxGroup.add(halo, core);
-    parallaxGroup.children.unshift(parallaxGroup.children.pop()!); // core atrás
-    parallaxGroup.children.unshift(parallaxGroup.children.pop()!); // halo atrás de tudo
-
-    // direção unitária de cada nó da casca (pra deformação radial)
+    // direção unitária de cada nó da casca + estado das ondas de água
     const outerDirs = outerShell.originals.map((o) => o.clone().normalize());
-    let noisePhase = 0;
-    let deformAmp = DEFORM_IDLE;
+    type Ripple = { dir: THREE.Vector3; t0: number; strength: number };
+    const ripples: Ripple[] = [];
+    const rippleGlow = new Float32Array(OUTER_COUNT);
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const hitSphere = new THREE.Sphere(new THREE.Vector3(), OUTER_RADIUS);
+    const hitPoint = new THREE.Vector3();
+    let lastRippleAt = 0;
+    let lastRippleDir: THREE.Vector3 | null = null;
+    // Ponteiro (mouse OU dedo) em coordenadas da janela → onda no ponto da
+    // superfície sob ele. Escuta na janela porque o conteúdo por cima da esfera
+    // (composer, saudação) não deixa o evento chegar no container.
+    const spawnRipple = (clientX: number, clientY: number, strength: number) => {
+      const rect = container.getBoundingClientRect();
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+      const nowMs = performance.now();
+      if (nowMs - lastRippleAt < RIPPLE_SPAWN_MS) return;
+      ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(ndc, camera);
+      parallaxGroup.getWorldPosition(hitSphere.center);
+      hitSphere.radius = OUTER_RADIUS * parallaxGroup.scale.x;
+      if (!raycaster.ray.intersectSphere(hitSphere, hitPoint)) return;
+      const dir = outerGroup.worldToLocal(hitPoint.clone()).normalize();
+      // arrasto curtinho no mesmo lugar não empilha ondas iguais
+      if (lastRippleDir && lastRippleDir.dot(dir) > 0.995 && nowMs - lastRippleAt < 600) return;
+      lastRippleAt = nowMs;
+      lastRippleDir = dir;
+      ripples.push({ dir, t0: nowMs * 0.001, strength });
+      if (ripples.length > RIPPLE_MAX) ripples.shift();
+    };
+    const onPointerMove = (e: PointerEvent) => spawnRipple(e.clientX, e.clientY, e.pointerType === 'touch' ? 1 : 0.75);
+    const onPointerDown = (e: PointerEvent) => { lastRippleAt = 0; spawnRipple(e.clientX, e.clientY, 1.25); };
+    // Água funciona em toda esfera (inclusive no modo voz, onde o empurrão do
+    // mouse fica desligado) — o teste de área já limita ao retângulo dela.
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerdown', onPointerDown, { passive: true });
 
     const mouse = { x: 0, y: 0, active: false };
     const targetRot = { x: 0, y: 0 };
@@ -345,6 +370,7 @@ export function NeuralSphere({
     const mouseVec = new THREE.Vector3();
     const waveTarget = new THREE.Vector3();
     const tangent = new THREE.Vector3();
+    const rippleTan = new THREE.Vector3();
     const UP = new THREE.Vector3(0, 1, 0);
     // matiz base (pra fazer o drift de cor)
     const baseHSL = { h: 0, s: 0, l: 0 };
@@ -389,6 +415,27 @@ export function NeuralSphere({
           if (tangent.lengthSq() < 1e-4) tangent.set(1, 0, 0);
           tangent.normalize();
           waveTarget.copy(orig).addScaledVector(tangent, amt);
+          // Ondas de água: anel que se afasta do ponto tocado pela superfície.
+          let glow = 0;
+          if (ripples.length) {
+            const n = outerDirs[i];
+            for (let r = 0; r < ripples.length; r++) {
+              const rp = ripples[r];
+              const age = now - rp.t0;
+              const d = rp.dir.dot(n);
+              const ang = Math.acos(Math.max(-1, Math.min(1, d)));
+              const x = ang - age * RIPPLE_SPEED;
+              const env = Math.exp(-(x * x) / (2 * RIPPLE_WIDTH * RIPPLE_WIDTH)) * Math.exp(-age * RIPPLE_DECAY) * rp.strength;
+              if (env < 0.003) continue;
+              const w = Math.sin(x * RIPPLE_WAVES) * env;
+              // direção tangente "pra fora" do centro da onda
+              rippleTan.copy(n).addScaledVector(rp.dir, -d);
+              const tl = rippleTan.length();
+              if (tl > 1e-4) waveTarget.addScaledVector(rippleTan, (w * RIPPLE_AMP * lockRadius) / tl);
+              glow = Math.max(glow, env);
+            }
+          }
+          rippleGlow[i] = glow;
         } else {
           // Onda radial — só no miolo interno (não afeta a silhueta).
           const phase = (orig.x + orig.y * 0.7 + orig.z) * WAVE_FREQ - now * WAVE_SPEED;
@@ -414,17 +461,9 @@ export function NeuralSphere({
         vel.multiplyScalar(DAMPING);
         pos.add(vel);
 
-        // Raio controlado: a onda e o mouse deslizam os pontos pela superfície, e a
-        // deformação orgânica (gota viva) define o raio de cada nó.
-        if (lockRadius != null) {
-          const n = outerDirs[i];
-          const np = noisePhase;
-          const d =
-            Math.sin(n.x * 2.1 + np * 0.9) * Math.sin(n.y * 2.6 + np * 1.13) * 0.55 +
-            Math.sin(n.z * 3.2 - np * 0.77 + n.x * 1.7) * 0.32 +
-            Math.sin((n.x + n.y - n.z) * 4.1 + np * 1.9) * 0.13;
-          pos.setLength(lockRadius * (1 + d * deformAmp));
-        }
+        // Trava o raio → casca externa fica sempre no círculo perfeito (onda, água e
+        // mouse só deslizam os pontos pela superfície, nunca pra fora).
+        if (lockRadius != null) pos.setLength(lockRadius);
 
         arr[i * 3] = pos.x;
         arr[i * 3 + 1] = pos.y;
@@ -476,10 +515,8 @@ export function NeuralSphere({
       smoothI += (target - smoothI) * (target > smoothI ? 0.3 : 0.08);
       const I = smoothI;
       const waveBoost = 1 + I * 1.6;
-      // Deformação e "pulsação" da superfície acompanham a intensidade (voz), com
-      // a fase acumulada → mudar de velocidade nunca dá salto.
-      noisePhase += (elapsed / 1000) * (NOISE_SPEED_IDLE + I * (NOISE_SPEED_ACTIVE - NOISE_SPEED_IDLE));
-      deformAmp += ((DEFORM_IDLE + I * (DEFORM_ACTIVE - DEFORM_IDLE)) - deformAmp) * 0.12;
+      // ondas que já morreram saem da lista
+      while (ripples.length && now - ripples[0].t0 > 4) ripples.shift();
 
       // Conexões quase estáveis: com voz a malha não vira um emaranhado denso.
       const dynOuterConnect = OUTER_CONNECT_DISTANCE * connectScale * (1 + I * 0.06);
@@ -534,6 +571,13 @@ export function NeuralSphere({
         } else if (nodeSize[n] !== 1) {
           nodeSize[n] = 1;
         }
+        // crista da onda de água acende o nó (brilho + leve crescimento)
+        const rg = rippleGlow[n];
+        if (rg > 0.01) {
+          const k = Math.min(1, rg * 0.9);
+          r += (0.75 - r) * k * 0.6; g += (1 - g) * k * 0.6; bl += (0.9 - bl) * k * 0.6;
+          nodeSize[n] = Math.max(nodeSize[n], 1 + k * 0.9);
+        }
         const ci = n * 3;
         outerPtCol[ci] = r; outerPtCol[ci + 1] = g; outerPtCol[ci + 2] = bl;
       }
@@ -543,16 +587,8 @@ export function NeuralSphere({
       inner.lineMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
 
       const t = (performance.now() - startTime) * 0.00085;
-      // Respiração (mais funda com voz) + flutuação leve — sensação de algo vivo.
-      const breath = 1 + Math.sin(t * 0.85) * (0.022 + I * 0.03) + Math.sin(t * 2.3) * I * 0.012;
+      const breath = 1 + Math.sin(t * 0.85) * 0.018;
       parallaxGroup.scale.setScalar(breath);
-      parallaxGroup.position.y = Math.sin(t * 0.7) * 0.06;
-      parallaxGroup.position.x = Math.sin(t * 0.45) * 0.03;
-      haloMat.color.setHSL(((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1, baseHSL.s, baseHSL.l);
-      haloMat.opacity = Math.min(1, (0.14 + Math.sin(t * 0.85) * 0.04 + I * 0.22) * (isLight ? 0.6 : 1));
-      halo.scale.setScalar(OUTER_RADIUS * (2.8 + I * 0.5));
-      coreMat.opacity = Math.min(1, (0.18 + Math.sin(t * 1.6) * 0.06 + I * 0.34) * (isLight ? 0.6 : 1));
-      core.scale.setScalar(INNER_RADIUS * (2.1 + I * 0.9 + Math.sin(t * 1.6) * 0.12));
 
       const innerPulse = 0.86 + Math.sin(t * 1.3) * 0.08 + I * 0.22;
       inner.pointsMaterial.opacity = Math.min(1, INNER_POINT_OPACITY * innerPulse * opBoost);
@@ -595,8 +631,8 @@ export function NeuralSphere({
       inner.pointsMaterial.dispose();
       inner.linesGeometry.dispose();
       inner.lineMaterial.dispose();
-      haloMat.dispose();
-      coreMat.dispose();
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerdown', onPointerDown);
       dotTex.dispose();
       renderer.dispose();
       // CRÍTICO: dispose() libera os recursos mas NÃO o contexto WebGL. Sem
