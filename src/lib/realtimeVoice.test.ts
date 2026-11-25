@@ -106,11 +106,11 @@ describe('RealtimeVoice', () => {
 });
 
 describe('buildRealtimeInstructions', () => {
-  it('inclui só as últimas 10 falas, sem blocos de código', () => {
-    const ctx = Array.from({ length: 14 }, (_, k) => ({ role: (k % 2 ? 'assistant' : 'user') as 'user' | 'assistant', content: `msg ${k} \`\`\`sql\nselect 1\n\`\`\`` }));
+  it('inclui só as últimas 16 falas, sem blocos de código', () => {
+    const ctx = Array.from({ length: 20 }, (_, k) => ({ role: (k % 2 ? 'assistant' : 'user') as 'user' | 'assistant', content: `msg ${k} \`\`\`sql\nselect 1\n\`\`\`` }));
     const s = buildRealtimeInstructions({ userName: 'Charles', context: ctx });
     expect(s).not.toContain('msg 3 ');
-    expect(s).toContain('msg 13');
+    expect(s).toContain('msg 19');
     expect(s).not.toContain('select 1');
   });
 });

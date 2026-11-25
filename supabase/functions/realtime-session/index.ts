@@ -27,8 +27,9 @@ const TOOLS = [
     name: 'perguntar_bukowiski',
     description:
       'Delega ao Bukowiski completo (Claude com acesso a sistemas, dados, memória, código, VPS, clientes, agenda, financeiro). ' +
-      'Use para QUALQUER pedido que precise de dado real, consulta, ação, análise ou memória de conversas anteriores. ' +
-      'Pode levar de segundos a minutos. Não use para conversa casual ou esclarecimento.',
+      'Use SÓ quando precisar de dado ao vivo dos sistemas, memória antiga fora do contexto ou executar uma ação. ' +
+      'NÃO use para conversa, opinião, estratégia, brainstorm, explicação ou o que já está no contexto — responda direto. ' +
+      'Pode levar de segundos a minutos.',
     parameters: {
       type: 'object',
       properties: {
