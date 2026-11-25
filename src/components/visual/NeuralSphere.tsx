@@ -156,7 +156,15 @@ export function NeuralSphere({
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     camera.position.z = 6;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'low-power' });
+    // Sem WebGL (contexto perdido, modo economia, webview restrita) o three lança
+    // erro no construtor — sem o try, isso derrubava a página inteira (o chat).
+    // Decorativo: na falha, a esfera só não aparece.
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'low-power' });
+    } catch {
+      return;
+    }
     // Retina renderiza 4× os pixels (dpr 2). Cap em 1.5 corta ~44% da carga de GPU
     // por frame sem borrar perceptível — é o que mantém o movimento fluido leve.
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));

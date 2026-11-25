@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { Sidebar } from './Sidebar';
@@ -6,6 +6,47 @@ import { useAppStore } from '@/hooks/useAppStore';
 
 interface AppLayoutProps {
   children: ReactNode;
+}
+
+/**
+ * Teclado no celular (iOS/WKWebView): o teclado não encolhe a janela — só a
+ * viewport VISÍVEL (visualViewport). Sem isso o shell `fixed` do chat fica com a
+ * altura cheia e o composer some atrás do teclado. Aqui o shell acompanha a área
+ * visível (topo + altura). Só em toque; no desktop fica `inset-0`.
+ */
+function useVisibleViewportBox(enabled: boolean): CSSProperties | undefined {
+  const [box, setBox] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const touch = window.matchMedia?.('(pointer: coarse)').matches;
+    if (!enabled || !vv || !touch) { setBox(null); return; }
+    // Ao focar o campo, o iOS rola os ancestrais `overflow:hidden` pra mostrar o
+    // input — o que empurra o header do chat pra fora. Como o shell já encolheu
+    // pra área visível, essa rolagem é desnecessária: desfaz.
+    const unscrollAncestors = () => {
+      let el = (document.activeElement as HTMLElement | null)?.parentElement ?? null;
+      while (el && el !== document.body) {
+        if (el.scrollTop && getComputedStyle(el).overflowY === 'hidden') el.scrollTop = 0;
+        el = el.parentElement;
+      }
+    };
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      // Sempre segue a área visível: sem teclado é igual ao inset-0; com teclado,
+      // topo = quanto o iOS rolou (offsetTop) e altura = o que sobrou visível.
+      // (No Safari iOS 26 o innerHeight também encolhe, então não dá pra detectar
+      // teclado comparando os dois.)
+      setBox({ top: vv.offsetTop, height: vv.height });
+      unscrollAncestors();
+      clearTimeout(t);
+      t = setTimeout(unscrollAncestors, 60); // o iOS rola de novo logo após o resize
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => { clearTimeout(t); vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update); };
+  }, [enabled]);
+  return box ? { top: box.top, height: box.height, bottom: 'auto' } : undefined;
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
@@ -41,8 +82,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   // dentro (colunas), sem scroll de página. Demais páginas rolam normalmente.
   const isBoard = pathname.startsWith('/demands');
   const isFull = isChat || isBoard;
+  const kbBox = useVisibleViewportBox(isFull);
   return (
-    <div className={isFull ? 'fixed inset-0 flex overflow-hidden' : 'flex min-h-screen'}>
+    <div className={isFull ? 'fixed inset-0 flex overflow-hidden' : 'flex min-h-screen'} style={kbBox}>
       <Sidebar />
       {/* Backdrop do drawer da nav (só mobile) */}
       {mobileNavOpen && (
@@ -50,7 +92,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       )}
       {/* Em mobile o conteúdo ocupa a tela toda (ml-0); margem só vale no desktop. */}
       {/* Sidebar flutua com 10px de margem no desktop → o conteúdo começa 10px depois da largura dela. */}
-      <main className={`flex-1 flex flex-col transition-[margin] duration-200 ml-0 ${collapsed ? 'md:ml-[74px]' : 'md:ml-[254px]'} ${isFull ? 'h-full min-h-0 overflow-hidden' : 'min-h-screen'}`}>
+      <main className={`flex-1 min-w-0 flex flex-col transition-[margin] duration-200 ml-0 ${collapsed ? 'md:ml-[74px]' : 'md:ml-[254px]'} ${isFull ? 'h-full min-h-0 overflow-hidden' : 'min-h-screen'}`}>
         {/* Páginas não-chat: hamburger flutuante pra abrir a nav (o chat tem o seu no header). */}
         {!isChat && (
           <button onClick={() => setMobileNavOpen(true)} className="md:hidden fixed top-3 left-3 z-[45] w-9 h-9 rounded-lg bg-surface-2/90 border border-default text-creme-mute hover:text-creme backdrop-blur flex items-center justify-center shadow-lg" title="Menu">
@@ -59,12 +101,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
         {/* Páginas do sistema (não-chat) ganham um zoom leve pra ficar legíveis como o
             chat — o chat já usa tipografia grande, então fica de fora.
-            max-md:pt-16 abre espaço pro hamburger flutuante não cobrir o título em mobile. */}
+            pt-16 (só celular) abre espaço pro hamburger flutuante não cobrir o título em mobile. */}
         {/* `key={pathname}` remonta o wrapper a cada rota → a entrada (.page-enter) toca de novo. */}
         <div key={isChat ? 'chat' : pathname} className={
           isChat ? 'flex-1 min-h-0 flex flex-col'
-          : isBoard ? 'flex-1 min-h-0 flex flex-col overflow-hidden [zoom:1.1] page-enter'
-          : 'flex-1 p-6 max-md:pt-16 [zoom:1.1] page-enter'
+          : isBoard ? 'flex-1 min-h-0 flex flex-col overflow-hidden md:[zoom:1.1] page-enter'
+          : 'flex-1 px-4 pt-16 pb-6 md:p-6 md:[zoom:1.1] page-enter'
         }>{children}</div>
       </main>
     </div>

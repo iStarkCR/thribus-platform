@@ -376,3 +376,15 @@ html.light .greet-anim {
 /* Indicador "digitando…" do chat (3 bolinhas pulando) */
 @keyframes chatTyping { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-4px); opacity: 1; } }
 .typing-dot { display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: rgb(var(--brand-bright)); animation: chatTyping 1.3s infinite; }
+
+/* Toque (sem hover): controles que no desktop aparecem no hover ficam sempre
+   visíveis — senão seriam inalcançáveis no celular. */
+@media (hover: none) {
+  .group-hover\:opacity-100 { opacity: 1; }
+}
+
+/* Celular: grades com 4+ colunas fixas (sem variante md:) estouram a tela —
+   caem pra 2 colunas. Grades responsivas (md:grid-cols-*) não são afetadas. */
+@media (max-width: 767px) {
+  .grid-cols-4, .grid-cols-5, .grid-cols-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

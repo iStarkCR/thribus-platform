@@ -8,11 +8,14 @@
  */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  // hover: só onde existe hover de verdade. No toque (iOS), um hover que revela
+  // controle (ex.: ⋮ da conversa) fazia o 1º toque virar "hover" e só o 2º clicar.
+  future: { hoverOnlyWhenSupported: true },
   theme: {
     extend: {
       screens: {
         // Viewport baixo (notebook 1366×768, Windows com zoom 125%) — compacta o hero
-        short: { raw: '(max-height: 760px)' },
+        short: { raw: '(max-height: 760px) and (min-width: 768px)' },
       },
       // Raios maiores e contínuos (HIG): tudo que já usa rounded-md/lg/xl/2xl
       // herda a nova escala sem tocar nos componentes.

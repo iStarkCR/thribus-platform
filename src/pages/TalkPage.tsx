@@ -250,6 +250,8 @@ export function TalkPage() {
   // Layout: tela cheia (imersivo) ou dividido (voz numa coluna, chat navegável ao lado).
   const [voiceLayout, setVoiceLayout] = useState<VoiceLayout>(loadVoiceLayout);
   const voiceSplit = voiceLayout === 'split' && !isMobile;
+  // Celular: em vez de dividir, a voz "entra no notch" — pílula no topo, chat livre embaixo.
+  const voiceMini = voiceMode && voiceLayout === 'split' && isMobile;
   const [voiceCaption, setVoiceCaption] = useState<{ user: string; assistant: string }>({ user: '', assistant: '' });
   const [voiceSessionId, setVoiceSessionId] = useState<string | null>(null);
   const voiceSessionIdRef = useRef<string | null>(null);
@@ -946,7 +948,9 @@ export function TalkPage() {
   // já em chatMode vai DIRETO pro chat (navegar entre chats não volta pro orbe).
   function selectConversation(id: string) {
     setConvDrawer(false); // mobile: fecha o drawer ao escolher
-    if (chatMode) { void enterConversation(id); return; } // já no chat → entra direto (pré-carrega, sem flash)
+    // Já no chat → entra direto (pré-carrega, sem flash). No celular também: o
+    // "prime + Abrir conversa" da landing parecia que o toque não fez nada.
+    if (chatMode || isMobile) { void enterConversation(id); return; }
     setActiveId(id);
     setMessages([]); // landing: orbe não mostra msgs, então limpa
     setHistOpen(false);
@@ -1313,12 +1317,13 @@ export function TalkPage() {
   const insertMention = (c: { name: string }) => { setInput((prev) => prev.replace(/(^|\s)@([\p{L}\d_-]*)$/u, `$1@${c.name} `)); setMenIdx(0); };
 
   return (
-    <div className="flex-1 min-h-0 flex overflow-hidden">
-      {/* Backdrop do drawer de conversas (mobile) */}
-      {convDrawer && <div className="md:hidden fixed inset-0 bg-black/55 z-[55]" onClick={() => setConvDrawer(false)} />}
+    <div className="relative flex-1 min-h-0 flex overflow-hidden">
+      {/* Backdrop do drawer de conversas (mobile). absolute (não fixed): fica dentro
+          da área do app, sem invadir a barra de status/notch no iOS. */}
+      {convDrawer && <div className="md:hidden absolute inset-0 bg-black/55 z-[55]" onClick={() => setConvDrawer(false)} />}
       {/* Sessões + pastas — inline no desktop (recolhível), drawer no mobile */}
       <div className={`glass-strong border-r border-default flex flex-col bg-surface-1 min-h-0
-        fixed inset-y-0 left-0 z-[60] w-[86vw] max-w-[320px] transition-transform duration-200 ${convDrawer ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+        absolute inset-y-0 left-0 z-[60] w-[86vw] max-w-[320px] transition-transform duration-200 ${convDrawer ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
         md:static md:z-auto md:translate-x-0 md:shadow-none md:w-[300px] md:shrink-0 ${navCollapsed ? 'md:hidden' : ''}`}>
         <div className="p-3.5 border-b border-default space-y-2.5">
           <div className="flex items-center justify-between">
@@ -1445,7 +1450,7 @@ export function TalkPage() {
       </div>
 
       {/* Thread */}
-      <div className="flex-1 flex flex-col bg-surface-0 min-w-0 min-h-0">
+      <div className={`flex-1 flex flex-col bg-surface-0 min-w-0 min-h-0 ${voiceMini ? 'pt-12' : ''}`}>
         <div className="glass-panel relative z-30 h-16 px-3 md:px-6 flex items-center justify-between gap-2 md:gap-3 border-b border-default shrink-0">
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
             {/* Mobile: abre a nav global e a lista de conversas */}
@@ -1763,9 +1768,9 @@ export function TalkPage() {
                   const sorted = [...visible].sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1));
                   const last = sorted[0];
                   return (
-                    <div className="mt-5 short:mt-3 relative">
-                      <div className="flex items-center gap-3 text-[13px] rounded-full bg-surface-1/80 backdrop-blur-md border border-default px-4 py-2 shadow-[0_10px_28px_-14px_rgba(0,0,0,0.65)]">
-                        <button onClick={() => setHistOpen((o) => !o)} className="flex items-center gap-1.5 text-creme-mute hover:text-creme transition-colors">
+                    <div className="mt-5 short:mt-3 relative max-w-[calc(100vw-2rem)]">
+                      <div className="flex items-center gap-3 max-w-full text-[13px] rounded-full bg-surface-1/80 backdrop-blur-md border border-default px-4 py-2 shadow-[0_10px_28px_-14px_rgba(0,0,0,0.65)]">
+                        <button onClick={() => setHistOpen((o) => !o)} className="flex items-center gap-1.5 shrink-0 text-creme-mute hover:text-creme transition-colors">
                           <Clock size={13} className="text-creme-faint" /> histórico <span className="text-creme font-bold">{visible.length}</span>
                           <ChevronDown size={12} className={`text-creme-faint transition-transform ${histOpen ? 'rotate-180' : ''}`} />
                         </button>
@@ -1976,8 +1981,10 @@ export function TalkPage() {
 
         {inChat && (
         <div className="px-3 md:px-6 py-3 md:py-4 border-t border-default shrink-0">
-          <div className="flex items-center justify-between mb-2 px-1 gap-2">
-            <div className="flex items-center gap-2 min-w-0">
+          {/* Celular: indicadores e medidor de contexto quebram linha em vez de se
+              espremer e sobrepor texto. */}
+          <div className="flex flex-wrap md:flex-nowrap items-center justify-between mb-2 px-1 gap-2 gap-y-1.5">
+            <div className="flex flex-wrap md:flex-nowrap items-center gap-2 gap-y-1.5 min-w-0 w-full md:w-auto [&>*]:shrink-0 md:[&>*]:shrink">
               <CortexBrainBar sessionId={activeId} />
               <CortexUsageBadge />
               <UsageLimitsBadge />
@@ -2276,7 +2283,36 @@ export function TalkPage() {
 
       {/* Modo voz — tela cheia imersiva (estilo CORTEX) ou coluna à direita
           (dividido: o chat continua navegável ao lado). */}
-      {voiceMode && (
+      {/* Modo voz minimizado (celular): pílula colada no notch, estilo Dynamic Island.
+          Toque abre a voz em tela cheia; mic e encerrar à mão. */}
+      {voiceMini && (() => {
+        const color = panelVoiceState === 'thinking' ? '244 194 103' : panelVoiceState === 'speaking' ? '127 176 245' : '124 217 154';
+        const label = panelVoiceState === 'speaking' ? 'Respondendo' : panelVoiceState === 'thinking' ? 'Pensando' : panelVoiceState === 'talking' ? 'Você falando' : panelMuted ? 'Mic pausado' : 'Ouvindo';
+        const lvl = panelVoiceState === 'speaking' ? panelPlayLevel : panelLevel;
+        return (
+          <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-[66] flex items-center gap-1 h-10 pl-1.5 pr-1 rounded-full bg-black border border-white/10 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.8)]">
+            <button onClick={toggleVoiceLayout} title="Abrir o modo voz" className="flex items-center gap-2 pr-1">
+              <span className="relative w-7 h-7 rounded-full flex items-center justify-center" style={{ background: `radial-gradient(circle, rgba(${color}/0.9) 0%, rgba(${color}/0.25) 70%)`, transform: `scale(${1 + lvl * 0.35})`, transition: 'transform 80ms linear' }}>
+                <span className="w-2 h-2 rounded-full bg-white/90" />
+              </span>
+              <span className="text-[12px] font-semibold whitespace-nowrap" style={{ color: `rgb(${color})` }}>{label}</span>
+              <span className="flex items-end gap-[2px] h-4">
+                {[0.55, 1, 0.7, 0.85].map((k, i) => (
+                  <span key={i} className="w-[3px] rounded-full" style={{ height: `${Math.max(3, Math.min(16, 3 + lvl * 16 * k))}px`, background: `rgb(${color})` }} />
+                ))}
+              </span>
+            </button>
+            <button onClick={togglePanelMute} title={panelMuted ? 'Religar o microfone' : 'Pausar o microfone'} className={`w-8 h-8 rounded-full flex items-center justify-center ${panelMuted ? 'text-semantic-red' : 'text-white/70'}`}>
+              {panelMuted ? <MicOff size={15} /> : <Mic size={15} />}
+            </button>
+            <button onClick={stopPanelVoice} title="Encerrar o modo voz" className="w-8 h-8 rounded-full flex items-center justify-center text-white/70">
+              <X size={15} />
+            </button>
+          </div>
+        );
+      })()}
+
+      {voiceMode && !voiceMini && (
         <div
           className={voiceSplit
             ? 'relative shrink-0 w-[min(420px,36vw)] min-h-0 border-l border-default flex flex-col items-center justify-start pt-24 overflow-hidden'
@@ -2289,15 +2325,13 @@ export function TalkPage() {
           <div className={`absolute top-0 inset-x-0 h-16 flex items-center justify-between gap-2 ${voiceSplit ? 'px-4' : 'px-7'}`}>
             <div className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint">Modo voz{voiceConnecting ? ' · conectando' : ''}{panelMuted ? ' · mic pausado' : ''}</div>
             <div className="flex items-center gap-2 shrink-0">
-              {!isMobile && (
-                <button
-                  onClick={toggleVoiceLayout}
-                  title={voiceSplit ? 'Tela cheia' : 'Dividir com o chat (voz ao lado, chat navegável)'}
-                  className="w-9 h-9 rounded-full border border-default bg-surface-1/60 backdrop-blur text-creme-mute hover:text-creme hover:bg-surface-hover flex items-center justify-center transition-colors"
-                >
-                  {voiceSplit ? <Maximize2 size={16} /> : <Columns2 size={16} />}
-                </button>
-              )}
+              <button
+                onClick={toggleVoiceLayout}
+                title={isMobile ? 'Minimizar pro topo (chat livre, voz segue ouvindo)' : voiceSplit ? 'Tela cheia' : 'Dividir com o chat (voz ao lado, chat navegável)'}
+                className="w-9 h-9 rounded-full border border-default bg-surface-1/60 backdrop-blur text-creme-mute hover:text-creme hover:bg-surface-hover flex items-center justify-center transition-colors"
+              >
+                {isMobile ? <Minimize2 size={16} /> : voiceSplit ? <Maximize2 size={16} /> : <Columns2 size={16} />}
+              </button>
               <button
                 onClick={switchVoiceEngine}
                 disabled={voiceConnecting}
