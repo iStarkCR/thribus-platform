@@ -1,240 +1,239 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Zap, Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck, AlertCircle,
-} from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { BrandLogo } from '@/components/shared/BrandLogo';
+import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { useAppStore } from '@/hooks/useAppStore';
-import { MarketingCarousel } from '@/components/shared/MarketingCarousel';
 import { useSession } from '@/hooks/useSession';
+import { supabase } from '@/lib/supabase';
 
-type Mode = 'signin' | 'signup';
+// Entrada: idle (login) → focus (form some, orb vem pro centro) → suck (orb é
+// sugada pra um ponto) → greet ("Bom dia, Fulano") → sistema.
+type Phase = 'idle' | 'focus' | 'suck' | 'greet';
+const FOCUS_MS = 650;
+const SUCK_MS = 750;
+const GREET_MS = 1700;
+
+function brasiliaGreeting(): string {
+  const s = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }).format(new Date());
+  const h = parseInt(s, 10) % 24;
+  return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+}
 
 export function LoginPage() {
-  const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [orbShift, setOrbShift] = useState({ x: 0, y: 0 });
+  const [greetName, setGreetName] = useState('');
+  const enteringRef = useRef(false);
+  const orbRef = useRef<HTMLDivElement>(null);
   const nav = useNavigate();
-  const { session, configured, signInWithPassword, signUpWithPassword, signInWithOAuth } = useSession();
+  const { session, user, configured, signInWithPassword, signInWithOAuth } = useSession();
 
-  // Já logado? Vai pro dashboard
+  // Já logado ao abrir a tela → direto pro sistema (sem animação).
   useEffect(() => {
-    if (session) nav('/');
+    if (session && !enteringRef.current) nav('/');
   }, [session, nav]);
+
+  const enter = (name: string) => {
+    setGreetName(name);
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { setPhase('greet'); setTimeout(() => nav('/'), GREET_MS); return; }
+    // Leva a orb do lugar dela até o centro da tela.
+    const r = orbRef.current?.getBoundingClientRect();
+    if (r) setOrbShift({ x: window.innerWidth / 2 - (r.left + r.width / 2), y: window.innerHeight / 2 - (r.top + r.height / 2) });
+    setPhase('focus');
+    setTimeout(() => setPhase('suck'), FOCUS_MS);
+    setTimeout(() => setPhase('greet'), FOCUS_MS + SUCK_MS);
+    setTimeout(() => nav('/'), FOCUS_MS + SUCK_MS + GREET_MS);
+  };
+
+  const firstNameOf = (meta: Record<string, unknown> | undefined, mail: string) => {
+    const raw = ((meta?.name as string | undefined) ?? mail.split('@')[0] ?? '').split(' ')[0];
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || phase !== 'idle') return;
     setError(null);
     setLoading(true);
+    enteringRef.current = true;
 
     if (!configured) {
-      // Sem Supabase = mock (qualquer credencial passa)
-      setTimeout(() => { setLoading(false); nav('/'); }, 600);
+      setLoading(false);
+      enter(firstNameOf(undefined, email));
       return;
     }
 
-    const action = mode === 'signin' ? signInWithPassword : signUpWithPassword;
-    const { error: err } = await action(email, password);
+    const { error: err } = await signInWithPassword(email, password);
     setLoading(false);
     if (err) {
-      setError(err.message);
-    } else if (mode === 'signin') {
-      nav('/');
-    } else {
-      setError(null);
-      useAppStore.getState().addToast('Conta criada! Confira seu email pra confirmar.', 'green');
+      enteringRef.current = false;
+      setError(err.message === 'Invalid login credentials' ? 'Email ou senha incorretos.' : err.message);
+      return;
     }
+    const { data } = await supabase!.auth.getUser();
+    enter(firstNameOf(data.user?.user_metadata ?? user?.user_metadata, email));
   };
 
   const oauth = async (provider: 'google' | 'apple') => {
     setError(null);
     setLoading(true);
-    if (!configured) {
-      setTimeout(() => { setLoading(false); nav('/'); }, 600);
-      return;
-    }
+    if (!configured) { setLoading(false); enteringRef.current = true; enter('Charles'); return; }
     const { error: err } = await signInWithOAuth(provider);
     setLoading(false);
     if (err) setError(err.message);
   };
 
+  const forgot = async () => {
+    setError(null);
+    if (!email.trim()) { setError('Digite seu email acima pra receber o link de redefinição.'); return; }
+    if (!supabase) return;
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + window.location.pathname + '#/login',
+    });
+    if (err) setError(err.message);
+    else useAppStore.getState().addToast('Enviamos um link de redefinição pro seu email.', 'green');
+  };
+
+  const leaving = phase !== 'idle';
+  const orbTransform =
+    phase === 'focus' ? `translate(${orbShift.x}px, ${orbShift.y}px) scale(1.12)`
+    : phase === 'suck' || phase === 'greet' ? `translate(${orbShift.x}px, ${orbShift.y}px) scale(0) rotate(540deg)`
+    : 'none';
+
   return (
-    <div className="fixed inset-0 grid grid-cols-1 lg:grid-cols-[1fr_460px] bg-surface-1 overflow-y-auto overflow-x-hidden">
-      {/* ESQUERDA — Brand panel */}
-      <div className="hidden lg:flex flex-col p-12 bg-gradient-to-br from-brand-dim/30 via-surface-1 to-surface-2 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-30" style={{
-          backgroundImage: 'radial-gradient(circle at 20% 30%, rgba(107,143,94,0.15) 0%, transparent 50%), radial-gradient(circle at 80% 70%, rgba(212,201,168,0.08) 0%, transparent 50%)',
-        }} />
+    <div className="fixed inset-0 bg-surface-0 overflow-y-auto overflow-x-hidden">
+      {/* Fundo: brilho sálvia sutil atrás da orb */}
+      <div
+        className="pointer-events-none absolute inset-0 transition-opacity duration-700"
+        style={{
+          opacity: phase === 'greet' ? 0.4 : 1,
+          background: 'radial-gradient(60% 45% at 50% 30%, rgba(46,125,91,0.16) 0%, transparent 70%), radial-gradient(40% 30% at 80% 85%, rgba(212,180,110,0.06) 0%, transparent 70%)',
+        }}
+      />
 
-        <div className="relative flex items-center gap-2.5 z-10">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center">
-            <Zap size={18} className="text-creme" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[19px] font-bold text-creme leading-tight tracking-tight">Thribus Platform</span>
-            <span className="text-[11.5px] font-semibold text-brand-bright uppercase tracking-wider leading-tight">Colaboradores Digitais B2B</span>
-          </div>
-        </div>
-
-        <div className="relative flex-1 flex flex-col justify-center z-10 max-w-[560px] py-8">
-          <h1 className="text-[36px] font-bold text-creme leading-[1.05] tracking-tight">
-            Sua operação ganha<br />
-            <span className="text-brand-bright">colaboradores que não dormem.</span>
-          </h1>
-          <p className="text-[15px] text-creme-mute mt-4 leading-relaxed">
-            Agentes que conversam, fecham vendas, consultam seu ERP, escalam pra humano
-            quando precisa. Governança LGPD, analytics que o CFO entende, motor proprietário Cortex Brain.
-          </p>
-
-          {/* Marketing carousel — mostra o que tem de novo antes mesmo de logar */}
-          <div className="mt-8">
-            <MarketingCarousel />
-          </div>
-
-          {/* Mini trust strip */}
-          <div className="flex items-center gap-4 mt-6 text-[11px] font-mono text-creme-faint">
-            <span className="inline-flex items-center gap-1"><ShieldCheck size={11} className="text-brand-bright" /> LGPD compliant</span>
-            <span>·</span>
-            <span>SOC 2 Type II</span>
-            <span>·</span>
-            <span>SSO Enterprise</span>
-            <span>·</span>
-            <span className="text-brand-bright">15k+ conversas/mês em produção</span>
-          </div>
-        </div>
-
-        <div className="relative z-10 flex items-center gap-4 text-[11.5px] font-mono text-creme-faint">
-          <span>© 2026 Thribus Tech</span>
-          <span>·</span>
-          <a href="#" className="hover:text-creme">Termos</a>
-          <a href="#" className="hover:text-creme">Privacidade</a>
-          <a href="#" className="hover:text-creme">Status</a>
-        </div>
-      </div>
-
-      {/* DIREITA — Form */}
-      <div className="flex flex-col justify-center p-8 sm:p-12 bg-surface-2 border-l border-default">
-        <div className="w-full max-w-[380px] mx-auto">
-          {/* Logo mobile-only */}
-          <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-dim to-brand flex items-center justify-center">
-              <Zap size={16} className="text-creme" />
+      <div className="relative min-h-full flex flex-col items-center px-6 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(1.75rem,env(safe-area-inset-bottom))]">
+        {/* Orb — a mesma do modo voz */}
+        <div className="flex-1 w-full flex items-center justify-center min-h-[240px] py-4">
+          <div
+            ref={orbRef}
+            className="relative aspect-square w-[min(74vw,40vh)] md:w-[min(46vh,440px)] will-change-transform"
+            style={{
+              transform: orbTransform,
+              filter: phase === 'suck' ? 'brightness(2.2)' : 'none',
+              transition: phase === 'focus'
+                ? `transform ${FOCUS_MS}ms cubic-bezier(.22,1,.36,1)`
+                : phase === 'suck'
+                  ? `transform ${SUCK_MS}ms cubic-bezier(.7,0,.84,0), filter ${SUCK_MS}ms ease-in`
+                  : undefined,
+            }}
+          >
+            <div
+              className="absolute inset-0 rounded-full overflow-hidden"
+              style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
+            >
+              <NeuralSphere className="absolute inset-0" intensity={leaving ? 1 : 0.35} pulseSpeed={leaving ? 1.6 : 0.9} />
             </div>
-            <span className="text-[16px] font-bold text-creme">Thribus Platform</span>
           </div>
+          {/* Clarão no ponto onde a orb some */}
+          {(phase === 'suck' || phase === 'greet') && (
+            <span
+              className="pointer-events-none fixed left-1/2 top-1/2 w-3 h-3 -ml-1.5 -mt-1.5 rounded-full bg-brand-bright login-implode"
+              style={{ animationDelay: `${SUCK_MS - 120}ms` }}
+            />
+          )}
+        </div>
 
-          <h2 className="text-[24px] font-bold text-creme">
-            {mode === 'signin' ? 'Entrar na sua conta' : 'Criar conta'}
-          </h2>
-          <p className="text-[13px] text-creme-mute mt-1.5">
-            {mode === 'signin' ? 'Acesse seu painel de colaboradores digitais.' : 'Comece com trial de 14 dias. Sem cartão.'}
-          </p>
+        {/* Formulário */}
+        <div
+          className="w-full max-w-[400px] transition-all duration-500 ease-out"
+          style={{ opacity: leaving ? 0 : 1, transform: leaving ? 'translateY(24px)' : 'none', pointerEvents: leaving ? 'none' : undefined }}
+        >
+          <h1 className="text-[26px] md:text-[28px] font-bold text-creme tracking-tight">Entrar</h1>
+          <p className="text-[14px] text-creme-mute mt-1">Acesse seu painel de colaboradores digitais.</p>
 
-          {/* OAuth */}
-          <div className="space-y-2.5 mt-6">
-            <OAuthBtn provider="google" label="Continuar com Google" onClick={() => oauth('google')} disabled={loading} />
-            <OAuthBtn provider="apple" label="Continuar com Apple" onClick={() => oauth('apple')} disabled={loading} />
-          </div>
-
-          {/* Divisor */}
-          <div className="relative my-5">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-default" /></div>
-            <div className="relative flex justify-center"><span className="px-3 bg-surface-2 text-[11px] font-mono uppercase tracking-wider text-creme-faint">ou com email</span></div>
-          </div>
-
-          {/* Email + senha */}
           {!configured && (
-            <div className="mb-3 p-2.5 rounded-md bg-semantic-amber/10 border border-semantic-amber/30 text-[11.5px] text-semantic-amber inline-flex items-center gap-1.5">
-              <AlertCircle size={12} /> Auth em modo demo · qualquer credencial entra
+            <div className="mt-4 p-2.5 rounded-lg bg-semantic-amber/10 border border-semantic-amber/30 text-[12px] text-semantic-amber flex items-center gap-1.5">
+              <AlertCircle size={13} /> Auth em modo demo · qualquer credencial entra
             </div>
           )}
           {error && (
-            <div className="mb-3 p-2.5 rounded-md bg-semantic-red/10 border border-semantic-red/30 text-[12px] text-semantic-red inline-flex items-start gap-1.5">
-              <AlertCircle size={13} className="shrink-0 mt-0.5" /> <span>{error}</span>
+            <div className="mt-4 p-2.5 rounded-lg bg-semantic-red/10 border border-semantic-red/30 text-[13px] text-semantic-red flex items-start gap-1.5">
+              <AlertCircle size={14} className="shrink-0 mt-0.5" /> <span>{error}</span>
             </div>
           )}
-          <form onSubmit={submit} className="space-y-3">
-            <Field label="Email">
-              <div className="relative">
-                <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-creme-faint" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu@empresa.com.br"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-surface-1 border border-default text-[13.5px] text-creme placeholder-creme-faint focus:outline-none focus:border-brand"
-                />
-              </div>
-            </Field>
 
-            <Field label="Senha" trailing={mode === 'signin' && <a href="#" className="text-[11px] font-semibold text-brand-bright hover:underline">esqueci minha senha</a>}>
-              <div className="relative">
-                <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-creme-faint" />
-                <input
-                  type={showPwd ? 'text' : 'password'}
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-10 py-2.5 rounded-lg bg-surface-1 border border-default text-[13.5px] text-creme placeholder-creme-faint focus:outline-none focus:border-brand"
-                />
-                <button type="button" onClick={() => setShowPwd(!showPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-creme-faint hover:text-creme">
-                  {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </Field>
+          <form onSubmit={submit} className="mt-5 space-y-3">
+            <div className="relative">
+              <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none text-creme-faint" />
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                inputMode="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="seu@empresa.com.br"
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-surface-1/80 backdrop-blur border border-default text-[16px] text-creme placeholder-creme-faint focus:outline-none focus:border-brand transition-colors"
+              />
+            </div>
+            <div className="relative">
+              <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none text-creme-faint" />
+              <input
+                type={showPwd ? 'text' : 'password'}
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Senha"
+                className="w-full h-12 pl-10 pr-11 rounded-xl bg-surface-1/80 backdrop-blur border border-default text-[16px] text-creme placeholder-creme-faint focus:outline-none focus:border-brand transition-colors"
+              />
+              <button type="button" onClick={() => setShowPwd(!showPwd)} aria-label={showPwd ? 'Esconder senha' : 'Mostrar senha'} className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-lg flex items-center justify-center text-creme-faint hover:text-creme">
+                {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <div className="flex justify-end">
+              <button type="button" onClick={forgot} className="text-[13px] font-semibold text-brand-bright hover:underline">Esqueci minha senha</button>
+            </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 rounded-lg bg-brand-dim border border-brand text-creme text-[13.5px] font-semibold hover:bg-brand transition-all disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 mt-2"
+              className="w-full h-12 rounded-xl bg-brand text-white text-[15px] font-semibold hover:bg-brand-bright active:scale-[0.99] transition-all disabled:opacity-60 inline-flex items-center justify-center gap-2"
             >
-              {loading ? 'Entrando…' : (
-                <>
-                  {mode === 'signin' ? 'Entrar' : 'Criar conta'}
-                  <ArrowRight size={14} />
-                </>
-              )}
+              {loading ? <Loader2 size={17} className="animate-spin" /> : <>Entrar <ArrowRight size={16} /></>}
             </button>
           </form>
 
-          {/* Toggle mode */}
-          <div className="text-center mt-5 text-[12.5px] text-creme-mute">
-            {mode === 'signin' ? (
-              <>Não tem conta? <button onClick={() => setMode('signup')} className="text-brand-bright font-semibold hover:underline">Criar grátis</button></>
-            ) : (
-              <>Já tem conta? <button onClick={() => setMode('signin')} className="text-brand-bright font-semibold hover:underline">Entrar</button></>
-            )}
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-default" /></div>
+            <div className="relative flex justify-center"><span className="px-3 bg-surface-0 text-[12px] text-creme-faint">ou continue com</span></div>
           </div>
 
-          {/* Trust badges */}
-          <div className="mt-8 pt-6 border-t border-default flex items-center justify-center gap-4 text-[10.5px] font-mono uppercase tracking-wider text-creme-faint">
-            <span className="inline-flex items-center gap-1"><ShieldCheck size={11} /> LGPD</span>
-            <span>·</span>
-            <span>SOC 2</span>
-            <span>·</span>
-            <span>SSO Enterprise</span>
+          <div className="grid grid-cols-2 gap-2.5">
+            <OAuthBtn provider="google" label="Google" onClick={() => oauth('google')} disabled={loading} />
+            <OAuthBtn provider="apple" label="Apple" onClick={() => oauth('apple')} disabled={loading} />
           </div>
+
+          <p className="mt-6 text-center text-[11.5px] text-creme-faint">© 2026 Thribus Tech · Dados protegidos conforme a LGPD</p>
         </div>
       </div>
-    </div>
-  );
-}
 
-function Field({ label, trailing, children }: { label: string; trailing?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="text-[11px] font-bold uppercase tracking-wider text-creme-dim">{label}</label>
-        {trailing}
-      </div>
-      {children}
+      {/* Saudação de entrada */}
+      {phase === 'greet' && (
+        <div className="fixed inset-0 flex items-center justify-center px-6 pointer-events-none">
+          <div className="greet-anim text-center text-[clamp(32px,7vw,56px)] font-extrabold tracking-tight leading-tight">
+            {brasiliaGreeting()}{greetName ? `, ${greetName}` : ''}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -246,10 +245,8 @@ function OAuthBtn({ provider, label, onClick, disabled }: { provider: 'google' |
       onClick={onClick}
       disabled={disabled}
       className={clsx(
-        'w-full py-2.5 rounded-lg border text-[13.5px] font-semibold inline-flex items-center justify-center gap-2.5 transition-all disabled:opacity-60 disabled:cursor-not-allowed',
-        isApple
-          ? 'bg-creme text-surface-1 border-creme hover:bg-creme-dim'
-          : 'bg-surface-1 border-default text-creme hover:border-hover',
+        'h-12 rounded-xl border text-[14px] font-semibold inline-flex items-center justify-center gap-2 transition-all disabled:opacity-60',
+        isApple ? 'bg-creme text-surface-1 border-creme hover:bg-creme-dim' : 'bg-surface-1/80 border-default text-creme hover:border-hover',
       )}
     >
       <BrandLogo slug={provider} size={18} />

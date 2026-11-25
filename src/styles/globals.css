@@ -396,3 +396,11 @@ html.light .greet-anim {
   textarea,
   select { font-size: 16px !important; }
 }
+
+/* Login: clarão no ponto onde a orb é sugada */
+@keyframes loginImplode {
+  0% { transform: scale(0); opacity: 0; }
+  35% { transform: scale(9); opacity: 0.9; }
+  100% { transform: scale(0); opacity: 0; }
+}
+.login-implode { opacity: 0; animation: loginImplode 520ms cubic-bezier(.7,0,.3,1) both; box-shadow: 0 0 24px 8px rgb(var(--brand-bright) / 0.6); }
