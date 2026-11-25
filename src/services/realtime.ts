@@ -19,6 +19,8 @@ export interface EphemeralSession {
 export async function createRealtimeSession(opts?: {
   voice?: string;
   instructions?: string;
+  /** Cliente decide resposta/interrupção após a transcrição (filtra ruído). */
+  clientTurns?: boolean;
 }): Promise<EphemeralSession> {
   if (!supabase) throw new Error('Supabase não configurado');
   const { data, error } = await supabase.functions.invoke('realtime-session', { body: opts ?? {} });

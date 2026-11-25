@@ -2,8 +2,9 @@
  * Modo voz em TEMPO REAL — OpenAI Realtime (gpt-realtime) via WebRTC como camada
  * de voz, Bukowiski (Claude na ponte) como cérebro.
  *
- * - Fala ↔ fala direto com a OpenAI: VAD semântico, interrupção nativa (falar por
- *   cima corta a resposta), resposta conversacional em < 1s.
+ * - Fala ↔ fala direto com a OpenAI: VAD semântico (eagerness low). A resposta e a
+ *   interrupção saem daqui, só depois da transcrição confirmar que houve fala —
+ *   ruído/eco não interrompe nem vira pergunta.
  * - Pedido que precisa de dado/ação/sistema → tool `perguntar_bukowiski`: vira
  *   mensagem is_voice na conversa ativa, a ponte roda o Claude, e o resultado
  *   volta como function_call_output pro modelo resumir em voz. Enquanto o Claude
@@ -50,6 +51,13 @@ function toolOutputText(s: string): string {
     .replace(/\s{3,}/g, '\n\n')
     .trim()
     .slice(0, MAX_TOOL_OUTPUT);
+}
+
+// Transcrição de ruído/eco: vazia, sem letras ou alucinação clássica de legenda.
+export function isNoiseTranscript(t: string): boolean {
+  const letters = t.replace(/[^\p{L}]/gu, '');
+  if (letters.length < 2) return true;
+  return /amara\.org|legendas? (pela|por)|inscreva-se|transcri[çc][ãa]o (de|por)/i.test(t);
 }
 
 export function buildRealtimeInstructions(p: {
@@ -126,7 +134,7 @@ export class RealtimeVoice {
       this.audioEl = new Audio();
       this.audioEl.autoplay = true;
 
-      const session = await createRealtimeSession({ voice: this.o.voice ?? 'ash', instructions: this.o.instructions });
+      const session = await createRealtimeSession({ voice: this.o.voice ?? 'ash', instructions: this.o.instructions, clientTurns: true });
       if (this.cancelled) return this._teardown();
 
       const pc = new RTCPeerConnection();
@@ -267,11 +275,21 @@ export class RealtimeVoice {
         this._flushResponse();
         break;
       case 'conversation.item.input_audio_transcription.completed': {
-        const t = String(evt.transcript ?? '');
-        if (t.trim()) this.o.onCaption?.({ role: 'user', text: t.trim() });
+        const t = String(evt.transcript ?? '').trim();
+        if (isNoiseTranscript(t)) {
+          // Ruído/eco virou "fala": tira do contexto pra o modelo não responder a isso.
+          if (evt.item_id) this._send({ type: 'conversation.item.delete', item_id: evt.item_id });
+          this._flushResponse();
+          break;
+        }
+        this.o.onCaption?.({ role: 'user', text: t });
         this._persist('user', t);
+        this._userTurn();
         break;
       }
+      case 'conversation.item.input_audio_transcription.failed':
+        this._userTurn(); // sem texto pra julgar — o áudio está no contexto, responde
+        break;
       case 'response.output_audio_transcript.delta':
       case 'response.audio_transcript.delta': {
         const rid = String(evt.response_id ?? '');
@@ -343,6 +361,15 @@ export class RealtimeVoice {
     this._toolOutput(callId, output);
   }
 
+  // Turno real do usuário: corta o que o assistente estiver falando e responde
+  // (se ele já voltou a falar, _flushResponse espera o próximo turno).
+  private _userTurn(): void {
+    if (this.responseActive) this._send({ type: 'response.cancel' });
+    if (this.playing) this._send({ type: 'output_audio_buffer.clear' });
+    this.responsePending = true;
+    this._flushResponse();
+  }
+
   private _toolOutput(callId: string, output: Record<string, unknown>): void {
     this._send({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: JSON.stringify(output) } });
     this.responsePending = true;
@@ -350,7 +377,7 @@ export class RealtimeVoice {
   }
 
   // Pede resposta só quando não há outra em curso e o usuário não está falando
-  // (aí o próprio VAD cria a resposta, já vendo o output da tool).
+  // (aí a resposta sai no fim do turno dele, já vendo o output da tool).
   private _flushResponse(): void {
     if (!this.responsePending || this.responseActive || this.userSpeaking) return;
     this.responsePending = false;

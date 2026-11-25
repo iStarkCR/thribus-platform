@@ -63,10 +63,11 @@ Deno.serve(async (req) => {
   if (!apiKey) return json({ error: 'OPENAI_REALTIME_API_KEY não configurada' }, 503);
   const projectId = Deno.env.get('OPENAI_REALTIME_PROJECT_ID') ?? '';
 
-  let body: { voice?: string; instructions?: string } = {};
+  let body: { voice?: string; instructions?: string; clientTurns?: boolean } = {};
   try { body = await req.json(); } catch { /* body opcional */ }
   const voice = body.voice && VOICES.has(body.voice) ? body.voice : 'ash';
   const model = Deno.env.get('REALTIME_MODEL') || 'gpt-realtime';
+  const clientTurns = body.clientTurns === true;
 
   const session = {
     type: 'realtime',
@@ -75,12 +76,12 @@ Deno.serve(async (req) => {
     audio: {
       input: {
         noise_reduction: { type: 'near_field' },
-        transcription: {
-          model: 'gpt-4o-transcribe',
-          language: 'pt',
-          prompt: 'Bukowiski. Thribus Tech. Charles Andrade. VPS, Coolify, Vercel, Supabase, Cloudflare, n8n, Evolution. Bianca, CORTEX, Talki, TexNet, Asaas.',
-        },
-        turn_detection: { type: 'semantic_vad', eagerness: 'auto', create_response: true, interrupt_response: true },
+        // Sem `prompt`: com lista de nomes, o transcribe "ouvia" esses nomes em ruído/silêncio.
+        transcription: { model: 'gpt-4o-transcribe', language: 'pt' },
+        // eagerness low: espera a pessoa terminar o raciocínio. Com clientTurns, resposta e
+        // interrupção ficam com o cliente, que só reage a turno com fala transcrita (ruído é
+        // descartado). Sem a flag (app iOS antigo), o servidor responde sozinho como antes.
+        turn_detection: { type: 'semantic_vad', eagerness: 'low', create_response: !clientTurns, interrupt_response: !clientTurns },
       },
       output: { voice },
     },

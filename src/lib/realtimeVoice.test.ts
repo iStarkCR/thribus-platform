@@ -10,7 +10,7 @@ vi.mock('@/services/collaboratorChat', () => ({
 }));
 vi.mock('@/services/realtime', () => ({ createRealtimeSession: vi.fn(), OPENAI_REALTIME_CALLS_URL: '' }));
 
-import { RealtimeVoice, buildRealtimeInstructions } from './realtimeVoice';
+import { RealtimeVoice, buildRealtimeInstructions, isNoiseTranscript } from './realtimeVoice';
 
 type Internals = { dc: { readyState: string; send: (s: string) => void }; _onEvent: (e: unknown) => void };
 
@@ -102,6 +102,36 @@ describe('RealtimeVoice', () => {
     expect(saveVoiceTranscript).toHaveBeenCalledWith('s1', 'a', 'u', 'assistant', 'fala, Charles');
   });
 
+  it('fala transcrita corta o assistente e pede resposta', () => {
+    const { i, sent } = setup();
+    i._onEvent({ type: 'response.created' });
+    i._onEvent({ type: 'output_audio_buffer.started' });
+    i._onEvent({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'u1', transcript: 'espera, muda isso' });
+    expect(sent.map((e) => e.type)).toEqual(['response.cancel', 'output_audio_buffer.clear']);
+    i._onEvent({ type: 'response.done', response: { status: 'cancelled', output: [] } });
+    expect(sent[sent.length - 1]).toEqual({ type: 'response.create' });
+  });
+
+  it('ruído transcrito é apagado do contexto e não gera resposta nem interrompe', async () => {
+    const { i, sent } = setup();
+    i._onEvent({ type: 'response.created' });
+    i._onEvent({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'u1', transcript: ' … ' });
+    i._onEvent({ type: 'response.done', response: { output: [] } });
+    await flush();
+    expect(sent).toEqual([{ type: 'conversation.item.delete', item_id: 'u1' }]);
+    expect(saveVoiceTranscript).not.toHaveBeenCalled();
+  });
+
+  it('não responde enquanto o usuário voltou a falar; responde no turno seguinte', () => {
+    const { i, sent } = setup();
+    i._onEvent({ type: 'input_audio_buffer.speech_started' });
+    i._onEvent({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'u1', transcript: 'então, sobre o contrato' });
+    expect(sent).toEqual([]);
+    i._onEvent({ type: 'input_audio_buffer.speech_stopped' });
+    i._onEvent({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'u2', transcript: 'manda pro jurídico' });
+    expect(sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
+  });
+
   it('legenda acumula os deltas da fala do assistente por resposta', () => {
     const { rv } = setup();
     const caps: { role: string; text: string }[] = [];
@@ -119,6 +149,16 @@ describe('RealtimeVoice', () => {
     i._onEvent({ type: 'output_audio_buffer.started' });
     i._onEvent({ type: 'output_audio_buffer.stopped' });
     expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isNoiseTranscript', () => {
+  it('descarta vazio, pontuação e alucinação de legenda; mantém fala curta real', () => {
+    expect(isNoiseTranscript('')).toBe(true);
+    expect(isNoiseTranscript('...')).toBe(true);
+    expect(isNoiseTranscript('Legendas pela comunidade Amara.org')).toBe(true);
+    expect(isNoiseTranscript('sim')).toBe(false);
+    expect(isNoiseTranscript('Obrigado.')).toBe(false);
   });
 });
 
