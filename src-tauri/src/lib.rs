@@ -321,8 +321,37 @@ end run
   }
 }
 
+// iOS: o WKWebView mostra uma barra (setas ↑↓ + ✓) acima do teclado em todo
+// campo de texto. Num app de chat ela só rouba espaço — trocamos o
+// `inputAccessoryView` do WKContentView por um que devolve nil.
+#[cfg(target_os = "ios")]
+fn hide_keyboard_accessory_bar() {
+  use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
+  use objc2::{ffi, sel};
+
+  extern "C-unwind" fn no_accessory(_this: *mut AnyObject, _cmd: Sel) -> *mut AnyObject {
+    std::ptr::null_mut()
+  }
+
+  let Some(cls) = AnyClass::get(c"WKContentView") else { return };
+  unsafe {
+    let imp: Imp = std::mem::transmute(
+      no_accessory as extern "C-unwind" fn(*mut AnyObject, Sel) -> *mut AnyObject,
+    );
+    ffi::class_replaceMethod(
+      cls as *const AnyClass as *mut AnyClass,
+      sel!(inputAccessoryView),
+      imp,
+      c"@@:".as_ptr(),
+    );
+  }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  #[cfg(target_os = "ios")]
+  hide_keyboard_accessory_bar();
+
   let builder = tauri::Builder::default()
     .plugin(tauri_plugin_notification::init())
     .plugin(tauri_plugin_deep_link::init())

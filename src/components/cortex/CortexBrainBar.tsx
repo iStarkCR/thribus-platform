@@ -23,27 +23,43 @@ interface BarState {
 
 const DEFAULT_BAR: BarState = { mode: 'auto', model: 'opus', effort: 'high' };
 
-export function CortexBrainBar({ className, sessionId, compact = false }: { className?: string; sessionId?: string | null; compact?: boolean }) {
+export interface BrainDraft { model: CortexModel; effort: CortexEffort }
+
+/** `onDraftChange`: chat novo (sem sessão) — a escolha fica como rascunho e o
+ *  pai aplica no createSession. Sem ele, chat novo fica travado em AUTO. */
+export function CortexBrainBar({ className, sessionId, compact = false, draft, onDraftChange }: {
+  className?: string; sessionId?: string | null; compact?: boolean;
+  draft?: BrainDraft | null; onDraftChange?: (d: BrainDraft | null) => void;
+}) {
   const [state, setState] = useState<BarState>(DEFAULT_BAR);
   const [open, setOpen] = useState(false);
   const isAuto = state.mode === 'auto';
   const brain = brainOf(state.model);
   const effortLabel = EFFORT_LEVELS[effortIndex(state.effort)].label;
-  const locked = !sessionId; // sem sessão criada (chat novo) → só AUTO, sem escolha manual
+  const drafting = !sessionId && !!onDraftChange;
+  const locked = !sessionId && !drafting; // chat novo sem rascunho → só AUTO
 
   const load = () => {
-    if (!sessionId) { setState(DEFAULT_BAR); return; }
+    if (!sessionId) {
+      setState(drafting && draft ? { mode: 'manual', model: draft.model, effort: draft.effort } : DEFAULT_BAR);
+      return;
+    }
     getSessionOverride(sessionId)
       .then((o) => setState({ mode: o.mode, model: o.model ?? DEFAULT_BAR.model, effort: o.effort ?? DEFAULT_BAR.effort }))
       .catch(() => {});
   };
-  useEffect(() => { if (cortexBrainConfigured) load(); }, [sessionId]);
+  useEffect(() => { if (cortexBrainConfigured) load(); }, [sessionId, draft?.model, draft?.effort]);
 
   if (!cortexBrainConfigured) return null;
 
   async function update(patch: Partial<BarState>) {
-    if (!sessionId) return; // chat novo sem sessão: ignora o clique, não trava a UI
     const next = { ...state, ...patch };
+    if (!sessionId) {
+      if (!drafting) return; // chat novo sem rascunho: ignora o clique
+      setState(next);
+      onDraftChange!(next.mode === 'manual' ? { model: next.model, effort: next.effort } : null);
+      return;
+    }
     setState(next);
     try {
       await saveSessionOverride(sessionId, next.mode === 'manual'

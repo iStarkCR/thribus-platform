@@ -16,7 +16,7 @@ import { VoiceController, type VoiceTurn } from '@/lib/voiceMode';
 import { RealtimeVoice, buildRealtimeInstructions } from '@/lib/realtimeVoice';
 import { AudioRecorderBar } from '@/components/voice/AudioRecorderBar';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
-import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
+import { CortexBrainBar, type BrainDraft } from '@/components/cortex/CortexBrainBar';
 import { CortexUsageBadge } from '@/components/cortex/CortexUsageBadge';
 import { UsageLimitsBadge } from '@/components/cortex/UsageLimitsBadge';
 import { ReasoningViewBadge } from '@/components/cortex/ReasoningViewBadge';
@@ -134,6 +134,10 @@ export function TalkPage() {
   // Pasta de trabalho escolhida na landing → vira o working_dir da 1ª conversa criada.
   const [pendingWorkingDir, setPendingWorkingDir] = useState<string | null>(null);
   const pendingWorkingDirRef = useRef<string | null>(null);
+  // Modelo escolhido na landing (chat novo) → vira o override da conversa criada.
+  const [pendingBrain, setPendingBrain] = useState<BrainDraft | null>(null);
+  const pendingBrainRef = useRef<BrainDraft | null>(null);
+  pendingBrainRef.current = pendingBrain;
   const [cmdIdx, setCmdIdx] = useState(0); // item selecionado no menu de comandos "/"
   const [menIdx, setMenIdx] = useState(0); // item selecionado no menu de @menção
   const [sending, setSending] = useState(false);
@@ -331,7 +335,7 @@ export function TalkPage() {
     if (voiceSessionIdRef.current) return voiceSessionIdRef.current;
     if (!agent || !userId) return null;
     if (!ensuringSessionRef.current) {
-      ensuringSessionRef.current = createSession(agent.id, userId, { workingDir: pendingWorkingDirRef.current })
+      ensuringSessionRef.current = createSession(agent.id, userId, { workingDir: pendingWorkingDirRef.current, modelOverride: pendingBrainRef.current?.model, effortOverride: pendingBrainRef.current?.effort })
         .then((s) => {
           bindVoiceSession(s.id);
           setSessions((prev) => [s, ...prev]);
@@ -966,6 +970,14 @@ export function TalkPage() {
     setView('orb');
   }
   // Entrar de fato no chat (Abrir conversa / retomar última): pré-carrega e vai pro chat.
+  function playBriefing() {
+    if (!agent) return;
+    setTtsOn(true);
+    send(agent.isSupervisor
+      ? 'Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'
+      : 'Me dá um briefing falado e curtinho de como está a sua área agora: o que precisa de atenção, pendências e próximos passos. Fala natural, como se estivesse me contando ao vivo.');
+  }
+
   async function enterConversation(id: string) {
     activeIdRef.current = id; // síncrono → guard confiável contra cliques rápidos
     setActiveId(id);
@@ -1160,7 +1172,7 @@ export function TalkPage() {
       let s: Awaited<ReturnType<typeof createSession>> | null = null;
       let createErr: unknown = null;
       try {
-        s = await createSession(agent.id, userId, { workingDir: pendingWorkingDir });
+        s = await createSession(agent.id, userId, { workingDir: pendingWorkingDir, modelOverride: pendingBrain?.model, effortOverride: pendingBrain?.effort });
       } catch (err) {
         createErr = err;
       }
@@ -1662,7 +1674,7 @@ export function TalkPage() {
             <div className="absolute inset-0 flex flex-col items-center justify-end md:justify-center overflow-hidden">
               {/* Esfera — mais acesa (opacidade alta). Celular: menor e no alto (a ação fica embaixo, no polegar). */}
               <div
-                className="absolute top-[19%] md:top-auto aspect-square w-[52vw] md:w-[min(82vmin,640px)] rounded-full overflow-hidden opacity-90"
+                className="absolute top-[26%] md:top-auto aspect-square w-[min(76vw,44vh)] md:w-[min(82vmin,640px)] rounded-full overflow-hidden opacity-90"
                 style={{ WebkitMaskImage: 'radial-gradient(circle, #000 86%, transparent 99%)', maskImage: 'radial-gradient(circle, #000 86%, transparent 99%)' }}
               >
                 <NeuralSphere className="absolute inset-0" intensity={sphereIntensity} pulseSpeed={0.9} />
@@ -1778,7 +1790,8 @@ export function TalkPage() {
                   )}
                   {/* Pasta de trabalho da 1ª mensagem — onde o colaborador vai rodar.
                       Se já houver sessão ativa (vazia), aplica nela; senão guarda pra criação. */}
-                  <div className="mt-2 flex justify-start px-1">
+                  <div className="mt-2 flex items-center justify-start gap-1.5 px-1">
+                    <CortexBrainBar sessionId={activeId} compact draft={pendingBrain} onDraftChange={setPendingBrain} />
                     <WorkFolderBar
                       workingDir={active ? active.workingDir : pendingWorkingDir}
                       onChange={(path) => {
@@ -1789,15 +1802,20 @@ export function TalkPage() {
                         }
                       }}
                     />
+                    <button
+                      onClick={playBriefing}
+                      className="md:hidden ml-auto h-[30px] flex items-center gap-1.5 px-2.5 rounded-full border border-gold/40 bg-gold/10 text-gold-bright text-[12px] font-semibold whitespace-nowrap active:bg-gold/20 transition-colors"
+                    >
+                      <Volume2 size={13} className="shrink-0" /> Briefing
+                    </button>
                   </div>
                 </div>
 
-                {/* Modo de fala — briefing falado, ABAIXO da barra. Texto adaptado ao colaborador. */}
+                {/* Modo de fala — briefing falado, ABAIXO da barra (desktop). No celular
+                    vira um chip ao lado do modelo/pasta. Texto adaptado ao colaborador. */}
                 <button
-                  onClick={() => { setTtsOn(true); send(agent.isSupervisor
-                    ? 'Me dá um briefing falado e curtinho do meu dia: caixa, infra, demandas em aberto e agenda. Fala de forma natural, como se estivesse me contando ao vivo.'
-                    : 'Me dá um briefing falado e curtinho de como está a sua área agora: o que precisa de atenção, pendências e próximos passos. Fala natural, como se estivesse me contando ao vivo.'); }}
-                  className="order-2 md:order-none w-full md:w-auto justify-center md:justify-start mt-2 md:mt-5 short:mt-3 flex items-center gap-2 pl-3.5 pr-4 py-3 md:py-2.5 short:py-2 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[14px] short:text-[13px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
+                  onClick={playBriefing}
+                  className="hidden md:flex w-full md:w-auto justify-center md:justify-start mt-2 md:mt-5 short:mt-3 items-center gap-2 pl-3.5 pr-4 py-3 md:py-2.5 short:py-2 rounded-2xl border border-gold/45 bg-gold/10 text-gold-bright text-[14px] short:text-[13px] font-semibold hover:bg-gold/20 transition-colors shadow-[0_12px_30px_-16px_rgba(0,0,0,0.7)]"
                 >
                   <Volume2 size={15} className="shrink-0" /> Ouvir briefing do dia
                 </button>
@@ -2561,7 +2579,8 @@ function Typewriter({ phrases, className, once = false, speed = 65 }: { phrases:
     }, delay);
     return () => clearTimeout(t);
   }, [txt, del, pi, phrases, once, speed]);
-  return <span className={className}>{txt}<span className="tw-caret">|</span></span>;
+  const done = once && txt === (phrases[pi % phrases.length] ?? '');
+  return <span className={className}>{txt}{!done && <span className="tw-caret">|</span>}</span>;
 }
 
 // Origem da conversa: 'claude_code' vem da coluna `source` (espelho cc-mirror); o

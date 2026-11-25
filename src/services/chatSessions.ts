@@ -106,7 +106,7 @@ export async function listSessions(agentId: string, userId: string): Promise<Cha
 export async function createSession(
   agentId: string,
   userId: string,
-  opts: { folderId?: string | null; title?: string; workingDir?: string | null } = {},
+  opts: { folderId?: string | null; title?: string; workingDir?: string | null; modelOverride?: string | null; effortOverride?: string | null } = {},
 ): Promise<ChatSession> {
   if (!supabase) throw new Error('Supabase não configurado');
   const { data, error } = await supabase
@@ -117,6 +117,8 @@ export async function createSession(
       folder_id: opts.folderId ?? null,
       title: opts.title ?? 'Nova conversa',
       working_dir: opts.workingDir ?? null,
+      model_override: opts.modelOverride ?? null,
+      effort_override: opts.modelOverride ? opts.effortOverride ?? null : null,
     })
     .select(SESSION_COLS)
     .single();
