@@ -15,11 +15,8 @@ Se o `gen/apple` for recriado (`tauri ios init`), reaplicar no `project.yml` e r
       - path: ../../ios/App
 # targets.app_iOS.settings.base (+)
         SWIFT_VERSION: "5.0"
-        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 356UVXF63A
-        CODE_SIGN_IDENTITY: "Apple Distribution: Charles Andrade (356UVXF63A)"
-        CODE_SIGN_IDENTITY[sdk=iphoneos*]: "Apple Distribution: Charles Andrade (356UVXF63A)"
-        PROVISIONING_PROFILE_SPECIFIER: "Thribus Platform App Store"
 # targets.app_iOS.dependencies (+, no topo)
       - target: VoiceIsland
         embed: true
@@ -57,5 +54,7 @@ Se o `gen/apple` for recriado (`tauri ios init`), reaplicar no `project.yml` e r
         name: Sync build number with app
         basedOnDependencyAnalysis: false
 ```
+
+App e extensão assinam no modo automático: o archive sai em desenvolvimento e o Organizer (Distribute → App Store Connect) re-assina pra App Store. Assinatura manual de distribuição no app quebra o build (a extensão teria certificado diferente).
 
 `NSSupportsLiveActivities` e `UIBackgroundModes: audio` vêm do `src-tauri/Info.plist` (o Tauri mescla no build).
