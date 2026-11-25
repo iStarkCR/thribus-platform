@@ -21,8 +21,16 @@ const INNER_POINT_OPACITY = 0.92;
 const INNER_LINE_OPACITY = 0.36;
 const INNER_CONNECT_DISTANCE = 0.95;
 
-const AUTO_ROTATE_SPEED_OUTER = 0.00028; // mais lento, contemplativo
-const AUTO_ROTATE_SPEED_INNER = -0.00052;
+const AUTO_ROTATE_SPEED_OUTER = 0.0004; // contemplativo, mas visivelmente vivo
+const AUTO_ROTATE_SPEED_INNER = -0.0007;
+
+// "Viva": a casca externa deixa de ser um círculo rígido e ondula como uma gota
+// (soma de senoides 3D na direção de cada nó). Parada: quase imperceptível;
+// com voz (intensity) a superfície respira e se deforma mais.
+const DEFORM_IDLE = 0.03;
+const DEFORM_ACTIVE = 0.13;
+const NOISE_SPEED_IDLE = 0.5;
+const NOISE_SPEED_ACTIVE = 1.6;
 const MOUSE_INFLUENCE = 1.4;
 const REPULSION_STRENGTH = 0.14;
 const DAMPING = 0.86; // mais líquido — os pontos seguem com lag suave
@@ -283,6 +291,23 @@ export function NeuralSphere({
     inner.pointsMaterial.needsUpdate = true;
     innerGroup.add(inner.points, inner.lines);
 
+    // Halo + núcleo luminoso (sprites aditivos) — dão a sensação de "energia" que
+    // pulsa com a voz. Ficam atrás da malha (adicionados primeiro no grupo).
+    const haloMat = new THREE.SpriteMaterial({ map: dotTex, color: baseColor.clone(), transparent: true, opacity: 0.1, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
+    const halo = new THREE.Sprite(haloMat);
+    halo.scale.setScalar(OUTER_RADIUS * 2.9);
+    const coreMat = new THREE.SpriteMaterial({ map: dotTex, color: baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.35), transparent: true, opacity: 0.14, depthWrite: false, blending: isLight ? THREE.NormalBlending : THREE.AdditiveBlending });
+    const core = new THREE.Sprite(coreMat);
+    core.scale.setScalar(INNER_RADIUS * 2.2);
+    parallaxGroup.add(halo, core);
+    parallaxGroup.children.unshift(parallaxGroup.children.pop()!); // core atrás
+    parallaxGroup.children.unshift(parallaxGroup.children.pop()!); // halo atrás de tudo
+
+    // direção unitária de cada nó da casca (pra deformação radial)
+    const outerDirs = outerShell.originals.map((o) => o.clone().normalize());
+    let noisePhase = 0;
+    let deformAmp = DEFORM_IDLE;
+
     const mouse = { x: 0, y: 0, active: false };
     const targetRot = { x: 0, y: 0 };
 
@@ -389,9 +414,17 @@ export function NeuralSphere({
         vel.multiplyScalar(DAMPING);
         pos.add(vel);
 
-        // Trava o raio → casca externa fica sempre no círculo perfeito (onda e
-        // mouse só deslizam os pontos pela superfície, nunca pra fora).
-        if (lockRadius != null) pos.setLength(lockRadius);
+        // Raio controlado: a onda e o mouse deslizam os pontos pela superfície, e a
+        // deformação orgânica (gota viva) define o raio de cada nó.
+        if (lockRadius != null) {
+          const n = outerDirs[i];
+          const np = noisePhase;
+          const d =
+            Math.sin(n.x * 2.1 + np * 0.9) * Math.sin(n.y * 2.6 + np * 1.13) * 0.55 +
+            Math.sin(n.z * 3.2 - np * 0.77 + n.x * 1.7) * 0.32 +
+            Math.sin((n.x + n.y - n.z) * 4.1 + np * 1.9) * 0.13;
+          pos.setLength(lockRadius * (1 + d * deformAmp));
+        }
 
         arr[i * 3] = pos.x;
         arr[i * 3 + 1] = pos.y;
@@ -443,9 +476,14 @@ export function NeuralSphere({
       smoothI += (target - smoothI) * (target > smoothI ? 0.3 : 0.08);
       const I = smoothI;
       const waveBoost = 1 + I * 1.6;
+      // Deformação e "pulsação" da superfície acompanham a intensidade (voz), com
+      // a fase acumulada → mudar de velocidade nunca dá salto.
+      noisePhase += (elapsed / 1000) * (NOISE_SPEED_IDLE + I * (NOISE_SPEED_ACTIVE - NOISE_SPEED_IDLE));
+      deformAmp += ((DEFORM_IDLE + I * (DEFORM_ACTIVE - DEFORM_IDLE)) - deformAmp) * 0.12;
 
-      const dynOuterConnect = OUTER_CONNECT_DISTANCE * connectScale * (1 + I * 0.2);
-      const dynInnerConnect = INNER_CONNECT_DISTANCE * connectScale * (1 + I * 0.24);
+      // Conexões quase estáveis: com voz a malha não vira um emaranhado denso.
+      const dynOuterConnect = OUTER_CONNECT_DISTANCE * connectScale * (1 + I * 0.06);
+      const dynInnerConnect = INNER_CONNECT_DISTANCE * connectScale * (1 + I * 0.1);
 
       updateShell(outerShell, outer.pointsGeometry, OUTER_COUNT, dynOuterConnect, outer.linePosArray, outer.linesGeometry, now, waveBoost, OUTER_RADIUS);
       updateShell(innerShell, inner.pointsGeometry, INNER_COUNT, dynInnerConnect, inner.linePosArray, inner.linesGeometry, now, waveBoost, null);
@@ -505,15 +543,23 @@ export function NeuralSphere({
       inner.lineMaterial.color.setHSL(h, Math.max(0, baseHSL.s - 0.06), Math.min(1, baseHSL.l + 0.06));
 
       const t = (performance.now() - startTime) * 0.00085;
-      const breath = 1 + Math.sin(t * 0.85) * 0.018;
+      // Respiração (mais funda com voz) + flutuação leve — sensação de algo vivo.
+      const breath = 1 + Math.sin(t * 0.85) * (0.022 + I * 0.03) + Math.sin(t * 2.3) * I * 0.012;
       parallaxGroup.scale.setScalar(breath);
+      parallaxGroup.position.y = Math.sin(t * 0.7) * 0.06;
+      parallaxGroup.position.x = Math.sin(t * 0.45) * 0.03;
+      haloMat.color.setHSL(((baseHSL.h + Math.sin(now * 0.22) * HUE_DRIFT) % 1 + 1) % 1, baseHSL.s, baseHSL.l);
+      haloMat.opacity = Math.min(1, (0.14 + Math.sin(t * 0.85) * 0.04 + I * 0.22) * (isLight ? 0.6 : 1));
+      halo.scale.setScalar(OUTER_RADIUS * (2.8 + I * 0.5));
+      coreMat.opacity = Math.min(1, (0.18 + Math.sin(t * 1.6) * 0.06 + I * 0.34) * (isLight ? 0.6 : 1));
+      core.scale.setScalar(INNER_RADIUS * (2.1 + I * 0.9 + Math.sin(t * 1.6) * 0.12));
 
       const innerPulse = 0.86 + Math.sin(t * 1.3) * 0.08 + I * 0.22;
       inner.pointsMaterial.opacity = Math.min(1, INNER_POINT_OPACITY * innerPulse * opBoost);
       inner.lineMaterial.opacity = Math.min(1, INNER_LINE_OPACITY * (innerPulse + I * 0.5) * opBoost);
       outer.lineMaterial.opacity = Math.min(1, OUTER_LINE_OPACITY * (1 + I * 1.2) * opBoost);
 
-      const speedBoost = 1 + I * 1.6;
+      const speedBoost = 1 + I * 2.2;
       const wobbleAmp = I * 0.1;
       const swingAmp = 0.025;
       const wobbleX = Math.sin(t * 1.7) * wobbleAmp + Math.sin(t * 0.6) * swingAmp;
@@ -549,6 +595,8 @@ export function NeuralSphere({
       inner.pointsMaterial.dispose();
       inner.linesGeometry.dispose();
       inner.lineMaterial.dispose();
+      haloMat.dispose();
+      coreMat.dispose();
       dotTex.dispose();
       renderer.dispose();
       // CRÍTICO: dispose() libera os recursos mas NÃO o contexto WebGL. Sem

@@ -358,14 +358,22 @@ pub fn run() {
       #[cfg(desktop)]
       app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
 
-      WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+      let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("Thribus Platform")
-        .inner_size(1280.0, 840.0)
-        .min_inner_size(960.0, 600.0)
-        .resizable(true)
         .initialization_script(PERF_OVERRIDES)
         .disable_drag_drop_handler()
-        .build()?;
+        // Fundo nativo = surface-0 do app: sem isso a barra de status e a área do
+        // home indicator ficam brancas no iOS (fora da área da WebView).
+        .background_color(tauri::window::Color(11, 12, 14, 255));
+      // Tamanho de janela só no desktop: no iOS o inner_size vira o frame da
+      // WebView (1280×840 num iPhone → layout de desktop cortado). No mobile a
+      // WebView ocupa a tela.
+      #[cfg(desktop)]
+      let builder = builder
+        .inner_size(1280.0, 840.0)
+        .min_inner_size(960.0, 600.0)
+        .resizable(true);
+      builder.build()?;
 
       Ok(())
     })
