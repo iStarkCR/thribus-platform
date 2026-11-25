@@ -13,6 +13,7 @@ import { useSession } from '@/hooks/useSession';
 import { useVoice } from '@/hooks/useVoice';
 import { isStopPhrase, isNoise, mapVoiceState, ORB_FOLDER_NAME, type VoiceState } from '@/hooks/useOrbConversation';
 import { VoiceController, type VoiceTurn } from '@/lib/voiceMode';
+import { RealtimeVoice, buildRealtimeInstructions } from '@/lib/realtimeVoice';
 import { AudioRecorderBar } from '@/components/voice/AudioRecorderBar';
 import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { CortexBrainBar } from '@/components/cortex/CortexBrainBar';
@@ -46,6 +47,15 @@ import { getVoiceConfig, ttsBlob, transcribeBlob, quickAck, greetLine, type Voic
 import { getCortexConfig, updateContextLimit, getRoutingForRefs, CONTEXT_LIMIT_MIN, CONTEXT_LIMIT_MAX, CONTEXT_LIMIT_STEP, type RoutingInfo } from '@/services/cortexBrain';
 
 const BUKOWISKI_ID = 'bukowiski-thribus';
+
+// Motor do modo voz do painel: 'realtime' (OpenAI Realtime + Claude via tool) ou
+// 'classic' (VoiceController: VAD local → Whisper → Claude → TTS). Preferência local.
+type VoiceEngine = 'realtime' | 'classic';
+type PanelVoiceEngine = Pick<VoiceController, 'stop' | 'setMuted' | 'editTurn' | 'removeTurn'>;
+const VOICE_ENGINE_KEY = 'thribus.voiceEngine';
+function loadVoiceEngine(): VoiceEngine {
+  try { return localStorage.getItem(VOICE_ENGINE_KEY) === 'classic' ? 'classic' : 'realtime'; } catch { return 'realtime'; }
+}
 
 /**
  * Chat com colaborador (estilo Claude): agente único no topo, lateral com
@@ -227,7 +237,10 @@ export function TalkPage() {
   const [expandedTurn, setExpandedTurn] = useState<string | null>(null); // item aberto na fila
   const [editingTurn, setEditingTurn] = useState<string | null>(null); // item em edição
   const [editTurnText, setEditTurnText] = useState('');
-  const panelVoiceRef = useRef<VoiceController | null>(null);
+  const panelVoiceRef = useRef<PanelVoiceEngine | null>(null);
+  const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>(loadVoiceEngine);
+  const [voiceConnecting, setVoiceConnecting] = useState(false);
+  const [runningEngine, setRunningEngine] = useState<VoiceEngine>('realtime'); // pode cair pro clássico
   const levelRef = useRef(0);
   const lastLevelAtRef = useRef(0);
   const pendingReplyRef = useRef<((s: string) => void) | null>(null);
@@ -291,18 +304,31 @@ export function TalkPage() {
   // ─── Modo voz do painel (VoiceController na sessão ativa) ────────────────────
   // Manda o texto falado p/ a conversa ATIVA (is_voice) e resolve com a resposta
   // do daemon via realtime. Cria sessão se não houver nenhuma aberta.
+  // Conversa ativa do modo voz — cria uma se não houver (promise compartilhada:
+  // falas simultâneas no realtime não criam duas sessões).
+  const ensuringSessionRef = useRef<Promise<string | null> | null>(null);
+  const ensureVoiceSession = useCallback(async (): Promise<string | null> => {
+    if (activeIdRef.current) return activeIdRef.current;
+    if (!agent || !userId) return null;
+    if (!ensuringSessionRef.current) {
+      ensuringSessionRef.current = createSession(agent.id, userId, { workingDir: pendingWorkingDirRef.current })
+        .then((s) => {
+          activeIdRef.current = s.id;
+          setActiveId(s.id);
+          setView('chat'); setChatMode(true);
+          setSessions((prev) => [s, ...prev]);
+          return s.id;
+        })
+        .catch(() => null)
+        .finally(() => { ensuringSessionRef.current = null; });
+    }
+    return ensuringSessionRef.current;
+  }, [agent, userId]);
+
   const panelSendAndAwait = useCallback(async (text: string): Promise<string> => {
     if (!agent || !userId) return '';
-    let sid = activeIdRef.current;
-    if (!sid) {
-      const s = await createSession(agent.id, userId, { workingDir: pendingWorkingDirRef.current }).catch(() => null);
-      if (!s) return '';
-      sid = s.id;
-      activeIdRef.current = sid;
-      setActiveId(sid);
-      setView('chat'); setChatMode(true);
-      setSessions((prev) => [s, ...prev]);
-    }
+    const sid = await ensureVoiceSession();
+    if (!sid) return '';
     try {
       const sent = await sendMessage(sid, agent.id, userId, text, undefined, true);
       panelInflightRef.current = sent.id; // pra cancelar na ponte se pedir parada
@@ -317,7 +343,7 @@ export function TalkPage() {
     });
     panelInflightRef.current = null;
     return reply;
-  }, [agent, userId]);
+  }, [agent, userId, ensureVoiceSession]);
 
   function togglePanelMute() {
     const next = !panelMuted;
@@ -325,9 +351,69 @@ export function TalkPage() {
     panelVoiceRef.current?.setMuted(next);
   }
 
-  function startPanelVoice() {
+  // Callbacks de nível/estado comuns aos dois motores (esfera reativa).
+  const onPanelLevel = (rms: number) => {
+    // Esfera reativa à voz (estilo CORTEX): suaviza e atualiza throttled (~12fps).
+    const norm = Math.min(1, rms / 0.25);
+    levelRef.current = levelRef.current * 0.7 + norm * 0.3;
+    const now = performance.now();
+    if (now - lastLevelAtRef.current > 80) { lastLevelAtRef.current = now; setPanelLevel(levelRef.current); }
+  };
+  const onPanelPlaybackLevel = (rms: number) => {
+    const norm = Math.min(1, rms / 0.18);
+    playLevelRef.current = playLevelRef.current * 0.6 + norm * 0.4;
+    const now = performance.now();
+    if (now - lastPlayAtRef.current > 70) { lastPlayAtRef.current = now; setPanelPlayLevel(playLevelRef.current); }
+  };
+
+  function startPanelVoice(engine: VoiceEngine = voiceEngine) {
+    if (panelVoiceRef.current || !agent) return;
+    if (engine === 'realtime') { void startRealtimeVoice(); return; }
+    startClassicVoice();
+  }
+
+  async function startRealtimeVoice() {
+    if (panelVoiceRef.current || !agent || !userId) return;
+    setVoiceMode(true); voiceModeRef.current = true; setVoiceModeActive(true); setPanelMuted(false);
+    setRunningEngine('realtime');
+    const ctrl = new RealtimeVoice({
+      agentId: agent.id,
+      userId,
+      instructions: buildRealtimeInstructions({ userName: rawName, context: messages }),
+      ensureSessionId: ensureVoiceSession,
+      onState: (s) => setPanelVoiceState(mapVoiceState(s)),
+      onLevel: onPanelLevel,
+      onPlaybackLevel: onPanelPlaybackLevel,
+      onTurns: (turns) => setPanelTurns(turns),
+      onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
+      onEnd: () => { if (panelVoiceRef.current === ctrl) stopPanelVoice(); },
+    });
+    panelVoiceRef.current = ctrl;
+    setVoiceConnecting(true);
+    try {
+      await ctrl.start();
+    } catch (e) {
+      if (panelVoiceRef.current !== ctrl) return; // usuário fechou durante a conexão
+      panelVoiceRef.current = null;
+      useAppStore.getState().addToast(`Voz em tempo real indisponível (${(e as Error).message}) — usando o modo clássico.`, 'amber');
+      startClassicVoice();
+    } finally {
+      setVoiceConnecting(false);
+    }
+  }
+
+  function switchVoiceEngine() {
+    const next: VoiceEngine = runningEngine === 'realtime' ? 'classic' : 'realtime';
+    setVoiceEngine(next);
+    try { localStorage.setItem(VOICE_ENGINE_KEY, next); } catch { /* noop */ }
+    stopPanelVoice();
+    startPanelVoice(next);
+  }
+
+  function startClassicVoice() {
     if (panelVoiceRef.current || !agent) return;
     setVoiceMode(true); voiceModeRef.current = true; setVoiceModeActive(true); setPanelMuted(false);
+    setRunningEngine('classic');
     const aid = agent.id;
     const ctrl = new VoiceController({
       transcribe: async (b) => (await transcribeBlob(aid, b)) ?? '',
@@ -344,19 +430,8 @@ export function TalkPage() {
         return () => { if (panelPartialCbRef.current === cb) panelPartialCbRef.current = null; };
       },
       onState: (s) => setPanelVoiceState(mapVoiceState(s)),
-      onLevel: (rms) => {
-        // Esfera reativa à voz (estilo CORTEX): suaviza e atualiza throttled (~12fps).
-        const norm = Math.min(1, rms / 0.25);
-        levelRef.current = levelRef.current * 0.7 + norm * 0.3;
-        const now = performance.now();
-        if (now - lastLevelAtRef.current > 80) { lastLevelAtRef.current = now; setPanelLevel(levelRef.current); }
-      },
-      onPlaybackLevel: (rms) => {
-        const norm = Math.min(1, rms / 0.18);
-        playLevelRef.current = playLevelRef.current * 0.6 + norm * 0.4;
-        const now = performance.now();
-        if (now - lastPlayAtRef.current > 70) { lastPlayAtRef.current = now; setPanelPlayLevel(playLevelRef.current); }
-      },
+      onLevel: onPanelLevel,
+      onPlaybackLevel: onPanelPlaybackLevel,
       onTurns: (turns) => setPanelTurns(turns),
       onTranscript: (t) => { if (isStopPhrase(t)) stopPanelVoice(); },
       onError: (e) => useAppStore.getState().addToast(e.message, 'red'),
@@ -2196,8 +2271,16 @@ export function TalkPage() {
 
           {/* Topo: rótulo + mutar mic + fechar */}
           <div className="absolute top-0 inset-x-0 h-16 px-7 flex items-center justify-between">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint">Modo voz{panelMuted ? ' · mic pausado' : ''}</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint">Modo voz{voiceConnecting ? ' · conectando' : ''}{panelMuted ? ' · mic pausado' : ''}</div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={switchVoiceEngine}
+                disabled={voiceConnecting}
+                title={runningEngine === 'realtime' ? 'Tempo real (OpenAI Realtime). Clique pra usar o modo clássico.' : 'Modo clássico (Whisper + TTS). Clique pra usar tempo real.'}
+                className="h-9 px-3 rounded-full border border-default bg-surface-1/60 backdrop-blur text-[11px] font-semibold uppercase tracking-[0.2em] text-creme-mute hover:text-creme hover:bg-surface-hover disabled:opacity-50 transition-colors"
+              >
+                {runningEngine === 'realtime' ? 'Tempo real' : 'Clássico'}
+              </button>
               <button
                 onClick={togglePanelMute}
                 title={panelMuted ? 'Religar o microfone' : 'Pausar o microfone (ele não escuta)'}

@@ -193,6 +193,69 @@ export async function cancelMessage(messageId: string): Promise<void> {
 }
 
 /**
+ * Grava uma fala do modo voz em tempo real (transcrição do usuário ou do
+ * assistente) já como 'done' — a ponte só pega 'pending', então não dispara o
+ * Claude; serve pra conversa falada ficar no histórico do chat.
+ */
+export async function saveVoiceTranscript(
+  sessionId: string,
+  agentId: string,
+  userId: string,
+  role: 'user' | 'assistant',
+  content: string,
+): Promise<void> {
+  if (!supabase || !content.trim()) return;
+  const { error } = await supabase.from('collaborator_messages').insert({
+    session_id: sessionId, agent_id: agentId, user_id: userId, role,
+    content: content.trim(), status: 'done', channel: 'thribus', is_voice: true,
+  });
+  if (error) throw error;
+}
+
+export type ReplyOutcome =
+  | { kind: 'done'; content: string }
+  | { kind: 'error'; error: string }
+  | { kind: 'cancelled' }
+  | { kind: 'timeout' };
+
+/**
+ * Espera a ponte terminar a mensagem `userMsg` e devolve a resposta DELA. A ponte
+ * marca a msg do usuário 'done' só depois de gravar a resposta, e a raia por
+ * conversa é serial — então a resposta é o último assistant (não-voz) criado
+ * depois da pergunta no instante em que ela vira 'done'.
+ */
+export async function waitForReply(
+  userMsg: ChatMessage,
+  opts: { timeoutMs: number; intervalMs?: number; signal?: AbortSignal },
+): Promise<ReplyOutcome> {
+  if (!supabase || !userMsg.sessionId) return { kind: 'error', error: 'sem sessão' };
+  const sb = supabase;
+  const deadline = Date.now() + opts.timeoutMs;
+  const interval = opts.intervalMs ?? 1500;
+  while (Date.now() < deadline) {
+    if (opts.signal?.aborted) return { kind: 'cancelled' };
+    const { data } = await sb.from('collaborator_messages').select('status,error').eq('id', userMsg.id).maybeSingle();
+    const st = (data as { status?: ChatStatus; error?: string | null } | null)?.status;
+    if (st === 'cancelled') return { kind: 'cancelled' };
+    if (st === 'error') return { kind: 'error', error: (data as { error?: string | null }).error ?? 'erro na ponte' };
+    if (st === 'done') {
+      const { data: rows } = await sb
+        .from('collaborator_messages')
+        .select('content')
+        .eq('session_id', userMsg.sessionId)
+        .eq('role', 'assistant')
+        .eq('is_voice', false) // ignora as transcrições da própria camada de voz
+        .gte('created_at', userMsg.createdAt)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      return { kind: 'done', content: (rows?.[0] as { content?: string } | undefined)?.content ?? '' };
+    }
+    await new Promise((r) => setTimeout(r, interval));
+  }
+  return { kind: 'timeout' };
+}
+
+/**
  * Realtime do thread do usuário. Chama onChange a cada insert/update, passando a
  * sessão afetada (pra quem quiser ignorar eventos de outras conversas). Reconecta
  * sozinho com backoff se o canal cair (Mac dorme, wifi oscila) — antes parava de

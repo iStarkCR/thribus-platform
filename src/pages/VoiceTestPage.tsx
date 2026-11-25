@@ -109,7 +109,7 @@ export function VoiceTestPage() {
       addLog('getUserMedia OK — mic capturando');
       startMeter(mic);
 
-      // 2) Token efêmero via relay (daemon Bukowiski).
+      // 2) Token efêmero via edge function realtime-session.
       setStatus('fetching-token');
       const session = await createRealtimeSession({ voice: 'verse' });
       addLog(`token efêmero OK (model=${session.model}, exp=${session.expires_at})`);
@@ -122,9 +122,10 @@ export function VoiceTestPage() {
       pc.oniceconnectionstatechange = () => addLog(`ICE: ${pc.iceConnectionState}`);
       pc.onconnectionstatechange = () => {
         addLog(`PC: ${pc.connectionState}`);
-        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        if (pc.connectionState === 'failed') {
           setStatus('error');
-          setError(`conexão ${pc.connectionState}`);
+          setError('conexão failed');
+          cleanup();
         }
       };
 
@@ -192,16 +193,16 @@ export function VoiceTestPage() {
         <Mic size={16} className="text-brand-bright" /> Voz real-time — teste (Fase 1)
       </div>
       <p className="text-[12.5px] text-creme-mute mb-4">
-        Prova de captura de mic + conexão WebRTC com a OpenAI Realtime API. Sem
-        function-calling ainda (Fase 2). Conta OpenAI isolada <code>thribus-interno</code>.
+        Diagnóstico de captura de mic + conexão WebRTC com a OpenAI Realtime API.
+        O modo voz real fica no chat (botão Voz → Tempo real).
       </p>
 
       {!realtimeConfigured && (
         <div className="flex items-start gap-2 rounded-lg bg-semantic-amber/10 text-semantic-amber p-3 mb-4 text-[12.5px]">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
           <span>
-            <code>VITE_REALTIME_RELAY_SECRET</code> não configurado. Defina no
-            <code> .env.local</code> pra habilitar o botão de conexão.
+            Supabase não configurado — o token efêmero vem da edge function
+            <code> realtime-session</code>.
           </span>
         </div>
       )}
