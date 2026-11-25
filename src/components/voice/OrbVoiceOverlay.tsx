@@ -25,13 +25,6 @@ export function OrbVoiceOverlay({ conv, onClose }: { conv: OrbConversation; onCl
       className="fixed inset-0 z-[62] flex flex-col items-center justify-center overflow-hidden"
       style={{ background: 'radial-gradient(ellipse at center, #142e1f 0%, #040805 76%)' }}
     >
-      {/* Rede de fundo — esfera grande bem esmaecida */}
-      <div className="absolute inset-0 opacity-[0.18] pointer-events-none">
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 aspect-square w-[140vmin]">
-          <NeuralSphere className="absolute inset-0" intensity={0.2} speedMultiplier={0.6} interactionMultiplier={0} parallaxMultiplier={0} ambient={false} connectScale={1} />
-        </div>
-      </div>
-
       {/* Topo: rótulo + fechar */}
       <div className="absolute top-0 inset-x-0 h-16 px-7 flex items-center justify-between">
         <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-creme-faint/80">Modo voz</div>
@@ -42,7 +35,7 @@ export function OrbVoiceOverlay({ conv, onClose }: { conv: OrbConversation; onCl
 
       {/* Esfera central + anel tracejado + status */}
       <div className="relative z-10 flex flex-col items-center gap-8">
-        <div className="relative aspect-square w-[min(44vmin,400px)]">
+        <div className="relative aspect-square w-[min(68vmin,640px)]">
           <div
             className="absolute inset-0 rounded-full overflow-hidden transition-[filter] duration-500"
             style={{ WebkitMaskImage: MASK, maskImage: MASK, filter: ui.hue ? `hue-rotate(${ui.hue}deg)` : undefined }}
