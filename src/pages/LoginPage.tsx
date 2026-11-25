@@ -7,6 +7,7 @@ import { NeuralSphere } from '@/components/visual/NeuralSphere';
 import { useAppStore } from '@/hooks/useAppStore';
 import { useSession } from '@/hooks/useSession';
 import { supabase } from '@/lib/supabase';
+import thribusMark from '@/assets/thribus-mark.svg';
 
 // Entrada: idle (login) → focus (form some, orb vem pro centro) → suck (orb é
 // sugada pra um ponto) → greet ("Bom dia, Fulano") → sistema.
@@ -120,6 +121,18 @@ export function LoginPage() {
       />
 
       <div className="relative min-h-full flex flex-col items-center px-6 pt-[max(0.75rem,env(safe-area-inset-top))] md:pt-10 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-8">
+        {/* Marca — mesma assinatura da sidebar */}
+        <div
+          className="flex items-center gap-2.5 transition-opacity duration-500"
+          style={{ opacity: leaving ? 0 : 1 }}
+        >
+          <img src={thribusMark} alt="" width={34} height={34} className="w-[34px] h-[34px] rounded-[10px]" />
+          <div className="flex flex-col leading-none">
+            <span className="font-brand text-[20px] font-bold tracking-[-0.03em] text-creme">thribus<span className="text-brand">.</span></span>
+            <span className="font-brand text-[9.5px] font-medium tracking-[0.32em] uppercase text-gold mt-[3px]">Platform</span>
+          </div>
+        </div>
+
         {/* Orb — a mesma do modo voz */}
         <div className="flex-1 w-full flex items-center justify-center min-h-[180px] py-2 md:py-4">
           <div
