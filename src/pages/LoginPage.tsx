@@ -63,7 +63,7 @@ export function LoginPage() {
   };
 
   return (
-    <div className="fixed inset-0 grid grid-cols-1 lg:grid-cols-[1fr_460px] bg-surface-1 overflow-y-auto">
+    <div className="fixed inset-0 grid grid-cols-1 lg:grid-cols-[1fr_460px] bg-surface-1 overflow-y-auto overflow-x-hidden">
       {/* ESQUERDA — Brand panel */}
       <div className="hidden lg:flex flex-col p-12 bg-gradient-to-br from-brand-dim/30 via-surface-1 to-surface-2 relative overflow-hidden">
         <div className="absolute inset-0 opacity-30" style={{

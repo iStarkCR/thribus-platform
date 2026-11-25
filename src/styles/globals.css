@@ -388,3 +388,11 @@ html.light .greet-anim {
 @media (max-width: 767px) {
   .grid-cols-4, .grid-cols-5, .grid-cols-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* iOS dá zoom na tela ao focar campo com fonte < 16px. Em toque, todo campo
+   de texto fica com 16px (o visual quase não muda e o zoom some). */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select { font-size: 16px !important; }
+}
