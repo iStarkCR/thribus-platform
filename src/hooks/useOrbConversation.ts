@@ -29,7 +29,8 @@ export function isStopPhrase(text: string): boolean {
 // Alucinações do Whisper sobre silêncio.
 export function isNoise(t: string): boolean {
   const s = t.toLowerCase().trim();
-  if (s.length < 2) return true;
+  // Ruído transcrito costuma sair em outro alfabeto ("能找到。").
+  if (s.replace(/[^\p{Script=Latin}]/gu, '').length < 2) return true;
   return /amara\.org|legendas?\s+(pela|by)|subtitles?\s+by|obrigad[oa] por (assistir|ver)|^muito obrigad|♪|\[(música|musica|aplausos|risos)\]/i.test(s);
 }
 

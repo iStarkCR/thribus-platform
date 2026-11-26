@@ -157,6 +157,9 @@ describe('isNoiseTranscript', () => {
     expect(isNoiseTranscript('')).toBe(true);
     expect(isNoiseTranscript('...')).toBe(true);
     expect(isNoiseTranscript('Legendas pela comunidade Amara.org')).toBe(true);
+    expect(isNoiseTranscript('能找到。')).toBe(true);
+    expect(isNoiseTranscript('Спасибо')).toBe(true);
+    expect(isNoiseTranscript('ciclo de monitoramento')).toBe(false);
     expect(isNoiseTranscript('sim')).toBe(false);
     expect(isNoiseTranscript('Obrigado.')).toBe(false);
   });

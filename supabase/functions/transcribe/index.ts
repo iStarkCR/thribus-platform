@@ -31,13 +31,15 @@ Deno.serve(async (req) => {
     return json({ error: 'transcrição Whisper requer provider OpenAI configurado' }, 400);
   }
 
+  // A OpenAI decide o formato pela extensão: o iPhone grava mp4, não webm.
+  const mime = file.type || '';
+  const ext = /mp4|m4a|aac/.test(mime) ? 'mp4' : /ogg/.test(mime) ? 'ogg' : /wav/.test(mime) ? 'wav' : /mpeg|mp3/.test(mime) ? 'mp3' : 'webm';
   const oa = new FormData();
-  oa.append('file', file, 'audio.webm');
-  oa.append('model', 'whisper-1');
+  oa.append('file', file, `audio.${ext}`);
+  oa.append('model', 'gpt-4o-transcribe');
   oa.append('language', 'pt');
-  // Glossário — ajuda o Whisper com nomes próprios da casa (senão "Bukowiski"
-  // vira "bucovis"). O prompt do Whisper viesa o vocabulário da transcrição.
-  oa.append('prompt', 'Bukowiski. Thribus Tech. Charles Andrade. VPS, Coolify, Vercel, Supabase, Cloudflare, n8n, Evolution. Bianca, CORTEX, Talki, TexNet, Asaas.');
+  // Sem `prompt`: a lista de nomes fazia o transcritor "ouvir" esses nomes em
+  // ruído e trechos curtos (mesmo problema que tiramos do modo tempo real).
   try {
     const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',

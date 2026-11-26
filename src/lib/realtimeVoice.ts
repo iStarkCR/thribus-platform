@@ -54,9 +54,10 @@ function toolOutputText(s: string): string {
     .slice(0, MAX_TOOL_OUTPUT);
 }
 
-// Transcrição de ruído/eco: vazia, sem letras ou alucinação clássica de legenda.
+// Transcrição de ruído/eco: vazia, sem letras latinas (ruído vira chinês/russo no
+// transcritor) ou alucinação clássica de legenda.
 export function isNoiseTranscript(t: string): boolean {
-  const letters = t.replace(/[^\p{L}]/gu, '');
+  const letters = t.replace(/[^\p{Script=Latin}]/gu, '');
   if (letters.length < 2) return true;
   return /amara\.org|legendas? (pela|por)|inscreva-se|transcri[çc][ãa]o (de|por)/i.test(t);
 }

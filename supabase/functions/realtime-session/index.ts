@@ -78,10 +78,10 @@ Deno.serve(async (req) => {
         noise_reduction: { type: 'near_field' },
         // Sem `prompt`: com lista de nomes, o transcribe "ouvia" esses nomes em ruído/silêncio.
         transcription: { model: 'gpt-4o-transcribe', language: 'pt' },
-        // eagerness medium: low esperava demais pra fechar o turno. Com clientTurns, resposta e
+        // eagerness low: espera a pessoa terminar o raciocínio (medium cortava no meio). Com clientTurns, resposta e
         // interrupção ficam com o cliente, que só reage a turno com fala transcrita (ruído é
         // descartado). Sem a flag (app iOS antigo), o servidor responde sozinho como antes.
-        turn_detection: { type: 'semantic_vad', eagerness: 'medium', create_response: !clientTurns, interrupt_response: !clientTurns },
+        turn_detection: { type: 'semantic_vad', eagerness: 'low', create_response: !clientTurns, interrupt_response: !clientTurns },
       },
       output: { voice },
     },
