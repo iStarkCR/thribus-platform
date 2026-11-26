@@ -50,6 +50,12 @@ let BRAIN = { model: DEFAULT_MODEL, effort: 'high', maxBudgetUsd: 0, contextLimi
 // Modo voz: modelo leve/rápido (conversa falada), independente do Brain global.
 const VOICE_MODEL = process.env.BRIDGE_VOICE_MODEL || 'sonnet';
 const VOICE_EFFORT = process.env.BRIDGE_VOICE_EFFORT || 'low';
+// Voz roda numa sessão claude PRÓPRIA e enxuta por conversa: retomar a sessão
+// principal (~140k tokens) deixava cada pergunta falada em 10–60s. Passou do
+// teto, reinicia semeada só com o histórico recente.
+const VOICE_CONTEXT_RESET = Number(process.env.BRIDGE_VOICE_CONTEXT_RESET || 60000);
+const voiceSessions = new Map(); // chat_session_id → { claudeId, ctx }
+const voiceBacklog = new Map(); // chat_session_id → [{ q, a }] que a sessão principal ainda não viu
 let brainLoadedAt = 0;
 let lastTeamIds = new Set(); // último time interno carregado (pra despacho de demandas no chat)
 // --effort só vale pra opus/fable (o CLI ignora em sonnet/haiku). Cobre tanto o
@@ -85,6 +91,21 @@ if (!URL || !KEY) {
 }
 
 const sb = createClient(URL, KEY, { auth: { persistSession: false } });
+
+// ── Rede pós-boot: NÃO derrubar o processo por blip transitório ──────────────
+// Logo após o Mac reiniciar, DNS/rede ainda instabiliza e chamadas assíncronas
+// (fetch ao Supabase, túnel ssh, pool pg) podem falhar em rajada. Sem estes
+// handlers, uma promise rejeitada sem .catch() OU um evento 'error' sem listener
+// (ex.: child ssh / pg.Pool) vira uncaughtException e mata o Node SEM logar
+// 'fatal:' — launchd respawna via KeepAlive → crash-loop (20+ boots/hora).
+// Mesma filosofia do try/catch do loop(): loga e segue. NÃO cobre o process.exit(1)
+// de config faltando acima — aquele é erro real e deve derrubar alto e claro.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandled]', reason?.stack || reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaught]', err?.stack || err?.message || err);
+});
 
 // ─── Cortex Router (Fase 3) ─────────────────────────────────────────────────
 // Roteamento por complexidade (perfil 'painel'): escolhe modelo/esforço por
@@ -717,7 +738,10 @@ async function processMessage(msg) {
   // Charles controla em /cortex-brain, 250k a 1M), NÃO resume — reinicia a sessão
   // limpa (re-seed persona + histórico recente) e zera o acúmulo.
   const ctxLimit = BRAIN.contextLimitTokens || CONTEXT_RESET_TOKENS;
-  if (resumeId && (sess?.context_tokens || 0) > ctxLimit) {
+  if (msg.is_voice) {
+    const vs = voiceSessions.get(msg.session_id);
+    resumeId = vs && vs.ctx < VOICE_CONTEXT_RESET ? vs.claudeId : null;
+  } else if (resumeId && (sess?.context_tokens || 0) > ctxLimit) {
     console.log(`[contexto ${sess.context_tokens} > teto ${ctxLimit} → reinicia sessão limpa]`);
     resumeId = null;
   }
@@ -730,7 +754,13 @@ async function processMessage(msg) {
     ? '\n\n[MODO VOZ — o usuário está falando com você e ESTA resposta será convertida em fala (TTS, voz OpenAI). Responda naturalmente pra ser OUVIDO: frases curtas, pontuação clara, PT-BR, sem markdown/código/listas. Você TEM voz — NUNCA diga que não pode falar/ler em voz alta; só responda normalmente que o sistema fala por você. Seja conciso.]'
     : '';
   // Reply/quote: injeta o contexto da mensagem citada (se houver marcador).
-  const content = applyReplyContext(msg.content) + attachNote(files) + voiceNote;
+  // O que foi resolvido por voz (sessão separada) entra como contexto na próxima
+  // mensagem de texto, pra sessão principal não perder o fio.
+  const backlog = !msg.is_voice ? voiceBacklog.get(msg.session_id) : null;
+  const voiceContext = backlog?.length
+    ? `[Enquanto isso, por voz:\n${backlog.map((t) => `Charles: ${t.q}\n${agent.name}: ${t.a}`).join('\n')}]\n\n`
+    : '';
+  const content = voiceContext + applyReplyContext(msg.content) + attachNote(files) + voiceNote;
 
   let evSeq = 0;
   const onEvent = (e) => {
@@ -877,17 +907,23 @@ async function processMessage(msg) {
     // grava a sessão do claude + a janela de contexto (pro painel mostrar X/1M).
     // Usa o uso da última mensagem do assistant (janela real do turno); só cai no
     // uso cumulativo do 'result' se a última mensagem não trouxe usage.
-    if (msg.session_id && r.sessionId) {
-      const ctx = r.contextTokens ?? (r.usage ? r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.outputTokens : null);
+    const ctx = r.contextTokens ?? (r.usage ? r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.outputTokens : null);
+    if (msg.is_voice && msg.session_id) {
+      if (r.sessionId) voiceSessions.set(msg.session_id, { claudeId: r.sessionId, ctx: ctx ?? 0 });
+      const list = [...(voiceBacklog.get(msg.session_id) ?? []), { q: msg.content.slice(0, 400), a: (reply || '').slice(0, 600) }];
+      voiceBacklog.set(msg.session_id, list.slice(-6));
+    } else if (msg.session_id && r.sessionId) {
       const patch = { claude_session_id: r.sessionId };
       if (ctx != null) patch.context_tokens = ctx;
       await sb.from('chat_sessions').update(patch).eq('id', msg.session_id);
+      voiceBacklog.delete(msg.session_id);
     }
 
     await recordUsage({ userId: msg.user_id, agentId: msg.agent_id, kind: 'chat', refId: msg.id, sessionId: msg.session_id, usage: r.usage, routing });
     console.log(
       `[ok] ${agent.name} respondeu (${reply.length} chars` +
-        `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'})`,
+        `${r.usage ? `, $${r.usage.costUsd.toFixed(4)}` : ''}${resumeId ? ' · resume' : ' · novo'}` +
+        `${msg.is_voice ? ` · voz ${ctx ?? '?'} tok` : ''})`,
     );
   } catch (e) {
     // Streaming parcial já gravado → finaliza como 'done' (mantém o que foi dito)
@@ -1372,6 +1408,9 @@ async function tickDemands(teamIds) {
     .from('team_demands')
     .select('*')
     .eq('status', 'todo')
+    // due_date é AGENDAMENTO: demanda com data futura só entra na fila quando
+    // chegar a hora. Sem data (null) = roda já. (Charles, 2026-08-24)
+    .or(`due_date.is.null,due_date.lte.${new Date().toISOString()}`)
     .order('priority', { ascending: false })
     .order('created_at', { ascending: true })
     .limit(10); // candidatas — a 1ª pode estar bloqueada por dependência (pipeline)

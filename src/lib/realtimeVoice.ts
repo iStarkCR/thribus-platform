@@ -237,7 +237,7 @@ export class RealtimeVoice {
       if (!sid) throw new Error('sem conversa ativa');
       const sent = await sendMessage(sid, this.o.agentId, this.o.userId, t.pedido);
       t.onSent?.(sid);
-      const res = await waitForReply(sent, { timeoutMs: TOOL_TIMEOUT_MS, signal: this.abort.signal });
+      const res = await waitForReply(sent, { timeoutMs: TOOL_TIMEOUT_MS, intervalMs: 700, signal: this.abort.signal });
       if (res.kind === 'done') note = `${t.speak}\n\n${toolOutputText(res.content)}`;
       else if (res.kind === 'error') note = `A tarefa "${t.label}" deu erro (${res.error.slice(0, 300)}). Diga isso com honestidade, em uma frase.`;
       else if (res.kind === 'cancelled') note = `A tarefa "${t.label}" foi cancelada. Avise em uma frase.`;
@@ -365,7 +365,7 @@ export class RealtimeVoice {
       const sid = await this.o.ensureSessionId();
       if (!sid) throw new Error('sem conversa ativa');
       const sent = await sendMessage(sid, this.o.agentId, this.o.userId, pedido, undefined, true);
-      const res = await waitForReply(sent, { timeoutMs: TOOL_TIMEOUT_MS, signal: this.abort.signal });
+      const res = await waitForReply(sent, { timeoutMs: TOOL_TIMEOUT_MS, intervalMs: 700, signal: this.abort.signal });
       if (res.kind === 'done') output = { resposta: toolOutputText(res.content) || '(resposta vazia)' };
       else if (res.kind === 'error') output = { erro: res.error.slice(0, 500) };
       else if (res.kind === 'cancelled') output = { erro: 'tarefa cancelada' };
