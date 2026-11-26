@@ -379,6 +379,50 @@ function attachNote(files) {
     `de análise de vídeo (ou Higgsfield). Arquivos:\n${lines}\n]`;
 }
 
+// ─── Anti-promessa ───────────────────────────────────────────────────────────
+// Detecta resposta que só PROMETE ação futura sem executar ("já te retorno", "vou
+// verificar", "deixa eu conferir"). Portado do worker da Bianca
+// (thribus-agents/worker/src/agent/loop.ts) — precedente testado em produção.
+// Usado só pro Bukowiski: se ele prometeu SEM usar tool nem despachar demanda, a
+// ponte força execução real (ver guarda em processMessage).
+const PROMISE_PATTERNS = [
+  /\bvou\s+(verificar|consultar|buscar|listar|realizar|fazer|chamar|acessar|pesquisar|conferir|cadastrar|criar|processar|enviar|abrir|gerar|providenciar|preparar|montar|analisar|checar|olhar|rodar|executar|levantar|puxar|apurar|investigar|resolver|tratar|cuidar|organizar|revisar|ajustar|configurar|implementar)\b/i,
+  /\bum\s+momento\b/i,
+  /\baguarde\b/i,
+  /\b(estou|vou\s+estar|ja\s+estou|já\s+estou)\s+(verificando|consultando|buscando|processando|listando|realizando|cadastrando|preparando|gerando|montando|analisando|apurando|investigando)\b/i,
+  /^\s*(verificando|consultando|buscando|processando|listando|realizando|cadastrando|preparando|gerando|montando|analisando|validando|conferindo|apurando|investigando)\s+\w+/im,
+  /\bj[aá]\s+(te\s+)?(retorno|volto|aviso|trago|respondo|dou\s+retorno|dou\s+um\s+retorno)\b/i,
+  /\b(te\s+)?(retorno|volto|aviso|trago\s+isso|dou\s+retorno)\s+(em\s+)?(breve|logo|já|ja|instantes?|minutos?|segundos?)\b/i,
+  /\b(s[oó]\s+um\s+(instante|segundo|minuto|momento|momentinho))\b/i,
+  /\b(deixa|deixe)[-\s]+(eu\s+|me\s+)?(conferir|verificar|consultar|checar|ver|olhar|buscar|pesquisar|analisar|validar|dar\s+uma\s+olhada|apurar|investigar|levantar|puxar)\b/i,
+  /\bum\s+(instante|instantinho|segund(o|inho)|minut(o|inho)|moment(o|inho|[aã]o))\b/i,
+  /\b(fico|vou\s+ficar)\s+(de\s+)?(olho|verificando|acompanhando)\b/i,
+  /\b(deixa|pode\s+deixar)\s+comigo\b/i,
+  /\bassim\s+que\s+(eu\s+)?(terminar|tiver|souber|descobrir|finalizar)\b.*\b(te\s+)?(aviso|retorno|falo|mando)\b/i,
+];
+
+// A mensagem está PEDINDO um dado ao Charles (precisa de input pra agir)? Então não
+// é promessa vazia — não force execução (ele legitimamente não tem como seguir ainda).
+const ASKS_FOR_INFO_PATTERNS = [
+  /\bpreciso\s+(do|da|de|dos|das|saber|que|confirmar)\b/i,
+  /\b(pode|poderia|consegue|voc[eê])\s+me\s+(passar|informar|confirmar|dizer|enviar|mandar|repetir|falar)\b/i,
+  /\b(me\s+(passa|passe|informa|informe|confirma|confirme|diz|diga|envia|envie|manda|mande))\b/i,
+  /\bqual\s+(o|a|seu|sua|[ée]|seria|dos|das)\b/i,
+  /\b(voc[eê]\s+)?(quer|prefere|autoriza|confirma)\s+que\s+eu\b/i,
+  /\?\s*$/,
+];
+
+function asksForInfo(text) {
+  return ASKS_FOR_INFO_PATTERNS.some((p) => p.test(text));
+}
+
+function looksLikePromise(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (asksForInfo(t)) return false; // pediu dado ao Charles → não é promessa vazia
+  return PROMISE_PATTERNS.some((p) => p.test(t));
+}
+
 const BUKOWISKI_ID = 'bukowiski-thribus';
 // Time interno: acesso total às skills, segue os próprios gates da persona.
 const GUARD =
@@ -637,6 +681,7 @@ function runClaude(prompt, opts = {}) {
     let result = null;
     let streamedText = ''; // texto acumulado dos deltas (streaming ao vivo)
     let pendingBreak = false; // houve tool entre rajadas de texto → quebra de parágrafo
+    let usedTools = false; // o turno executou ao menos uma tool? (guarda anti-promessa)
     // Uso da ÚLTIMA mensagem do assistant — reflete a janela de contexto real do
     // último turno (input+cache da chamada final), ao contrário do uso do evento
     // 'result', que SOMA todos os round-trips de tool calls e infla o número.
@@ -669,6 +714,7 @@ function runClaude(prompt, opts = {}) {
         for (const b of evt.message.content) {
           if (b && b.type === 'tool_use') {
             pendingBreak = true; // próxima rajada de texto começa em parágrafo novo
+            usedTools = true;
             if (opts.onEvent) {
               try { opts.onEvent({ kind: 'tool', toolUseId: b.id, label: b.name || 'tool', detail: summarizeToolInput(b.input), input: fullInput(b.input) }); }
               catch { /* nunca derruba o parse */ }
@@ -707,7 +753,7 @@ function runClaude(prompt, opts = {}) {
           const contextTokens = lu
             ? (lu.input_tokens || 0) + (lu.cache_creation_input_tokens || 0) + (lu.cache_read_input_tokens || 0) + (lu.output_tokens || 0)
             : null;
-          resolve({ text: result.text || streamedText, usage: result.usage, sessionId: result.sessionId, contextTokens });
+          resolve({ text: result.text || streamedText, usage: result.usage, sessionId: result.sessionId, contextTokens, usedTools });
         }
         return;
       }
@@ -888,15 +934,74 @@ async function processMessage(msg) {
     }
     // Despacho: o Bukowiski (supervisor) pode emitir ```demands no chat pra jogar
     // tarefas na fila do time — a ponte cria as demandas e remove o bloco do texto.
+    let demandsCreated = false;
     if (agent.id === BUKOWISKI_ID && /```demands/i.test(reply)) {
       const { demands: subs, clean } = extractDemandsBlock(reply);
       if (subs.length) {
         const n = await createSubDemands({ user_id: msg.user_id, agent_id: BUKOWISKI_ID }, subs, lastTeamIds).catch(() => 0);
         reply = (clean ? `${clean}\n\n` : '') + `_(${n} demanda(s) criada(s) na fila pro time.)_`;
+        demandsCreated = n > 0;
       } else if (clean) {
         reply = clean;
       }
     }
+
+    // ── Guarda anti-promessa (só Bukowiski) ────────────────────────────────────
+    // Causa raiz do "promete e some": o turno é single-shot; se ele só ESCREVE "já
+    // te retorno" sem executar tool nem despachar demanda, nada retoma e a sessão
+    // morre. Aqui forçamos a promessa a virar ação: re-executa 1x exigindo execução
+    // real (ou um bloco ```demands); se AINDA assim só prometer, auto-despacha o
+    // pedido original como demanda na fila (resultado volta no quadro de demandas).
+    if (
+      agent.id === BUKOWISKI_ID && !ctl.cancelled &&
+      !r.usedTools && !demandsCreated && looksLikePromise(reply)
+    ) {
+      console.log(`[anti-promessa] Bukowiski prometeu sem executar → re-forçando ("${reply.slice(0, 70).replace(/\n/g, ' ')}")`);
+      const forceInstr =
+        `${content}\n\n[SISTEMA — ANTI-PROMESSA] Sua resposta anterior apenas PROMETEU ação futura ` +
+        `("${reply.slice(0, 180).replace(/\n/g, ' ')}") sem executar nada. Isso é proibido no chat assíncrono: ` +
+        `não existe "depois" — quando esta resposta termina, o turno encerra e nada retoma. ` +
+        `Execute a ação AGORA, de ponta a ponta, usando suas tools, e devolva o RESULTADO concreto. ` +
+        `Se for trabalho longo/multi-etapa que não cabe neste turno, NÃO prometa: emita um bloco \`\`\`demands ` +
+        `(array JSON de sub-tarefas, cada uma com o colaborador certo) pra fila do time executar. ` +
+        `NUNCA diga "já te retorno", "vou verificar", "deixa comigo" ou similar.`;
+      try {
+        const r2 = await runClaude(forceInstr, { ...opts, resumeSessionId: r.sessionId || resumeId });
+        if (!ctl.cancelled && r2?.text) {
+          r = r2; // adota custo/sessão/usedTools da 2ª volta (recordUsage usa r.usage no fim)
+          reply = r2.text;
+          demandsCreated = false;
+          if (/```demands/i.test(reply)) {
+            const { demands: subs, clean } = extractDemandsBlock(reply);
+            if (subs.length) {
+              const n = await createSubDemands({ user_id: msg.user_id, agent_id: BUKOWISKI_ID }, subs, lastTeamIds).catch(() => 0);
+              reply = (clean ? `${clean}\n\n` : '') + `_(${n} demanda(s) criada(s) na fila pro time.)_`;
+              demandsCreated = n > 0;
+            } else if (clean) {
+              reply = clean;
+            }
+          }
+          // Passo B — ainda é promessa vazia: auto-despacha o pedido original.
+          if (!r2.usedTools && !demandsCreated && looksLikePromise(reply)) {
+            const n = await createSubDemands(
+              { user_id: msg.user_id, agent_id: BUKOWISKI_ID },
+              [{ title: msg.content.slice(0, 180), description: msg.content, agent: BUKOWISKI_ID }],
+              lastTeamIds,
+            ).catch(() => 0);
+            if (n) {
+              reply =
+                'Isso vai levar mais tempo pra fazer direito — despachei como demanda na fila do time ' +
+                'e o resultado aparece no quadro de demandas assim que terminar.';
+              demandsCreated = true;
+              console.log('[anti-promessa] re-execução ainda prometeu → auto-despacho de 1 demanda');
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`[anti-promessa] re-execução falhou: ${e.message} — mantendo resposta original`);
+      }
+    }
+
     if (!reply && !asstId) throw new Error('resposta vazia do claude');
 
     // Finaliza: insere (se nunca streamou) ou consolida o conteúdo com o texto

@@ -83,7 +83,8 @@ export function buildRealtimeInstructions(p: {
     '(criar, enviar, alterar, deployar). Nesses casos, avise em uma frase natural e específica ao pedido — nunca uma frase genérica',
     'repetida — e siga conversando enquanto a tarefa roda. NUNCA invente dados, números ou status.',
     'Quando o resultado chegar, conte em 2 a 4 frases o essencial, como numa conversa, e ofereça detalhar. Erro ou timeout: diga com honestidade.',
-    'Se ele pedir para parar, sair ou encerrar a conversa por voz, chame encerrar_voz.',
+    'NUNCA se despeça nem chame encerrar_voz enquanto um perguntar_bukowiski ainda estiver rodando: espere o resultado chegar e FALE ele primeiro. Você não "retorna depois" — nesta ligação só existe agora.',
+    'Se ele pedir para parar, sair ou encerrar a conversa por voz E não houver tarefa pendente, chame encerrar_voz.',
     'ÁUDIO RUIM: se a fala vier cortada, sem sentido ou fora do contexto, NÃO chute — diga que não entendeu e peça para repetir.',
     'Nunca chame perguntar_bukowiski com um pedido que você não entendeu com clareza.',
     ...(lines.length ? ['', 'Contexto recente da conversa no chat:', ...lines] : []),
@@ -109,6 +110,7 @@ export class RealtimeVoice {
   private responseActive = false;
   private responsePending = false;
   private endRequested = false;
+  private endGraceTimer: ReturnType<typeof setTimeout> | null = null;
   private handledCalls = new Set<string>();
   private abort = new AbortController();
   private turns: VoiceTurn[] = [];
@@ -253,6 +255,7 @@ export class RealtimeVoice {
     this.responsePending = true;
     this._flushResponse();
     this._refreshState();
+    this._maybeEndAfterTasks();
   }
 
   private _channelOpen(): Promise<void> {
@@ -361,6 +364,7 @@ export class RealtimeVoice {
     this.turns = [...this.turns, turn].slice(-12);
     this._emitTurns();
     this._refreshState();
+    const stopFillers = this._startFillers(); // evita minutos de silêncio enquanto a tarefa roda
     let output: Record<string, unknown>;
     try {
       const sid = await this.o.ensureSessionId();
@@ -370,14 +374,34 @@ export class RealtimeVoice {
       if (res.kind === 'done') output = { resposta: toolOutputText(res.content) || '(resposta vazia)' };
       else if (res.kind === 'error') output = { erro: res.error.slice(0, 500) };
       else if (res.kind === 'cancelled') output = { erro: 'tarefa cancelada' };
-      else output = { pendente: 'Ainda processando. O resultado vai aparecer no chat quando terminar.' };
+      else output = { pendente: 'Ainda estou processando. Me dê mais um instante que eu te falo o resultado.' };
     } catch (e) {
       output = { erro: (e as Error).message };
+    } finally {
+      stopFillers();
     }
     if (this.cancelled) return;
     turn.status = 'done';
     this._emitTurns();
-    this._toolOutput(callId, output);
+    this._toolOutput(callId, output); // dispara a fala do resultado (o modelo resume em voz)
+    this._maybeEndAfterTasks();       // se o fim foi pedido, encerra DEPOIS de falar
+  }
+
+  // Fala curta de espera quando a delegação demora — só quando o canal está ocioso
+  // (sem resposta/áudio em curso e sem o usuário falando), pra não atropelar nada.
+  private _startFillers(): () => void {
+    const msgs = [
+      'Ainda estou terminando isso, só mais um instante.',
+      'Continuo nisso, já te trago o resultado.',
+    ];
+    let i = 0;
+    const id = setInterval(() => {
+      if (this.cancelled || this.responseActive || this.playing || this.userSpeaking) return;
+      const text = msgs[Math.min(i, msgs.length - 1)];
+      i += 1;
+      this._send({ type: 'response.create', response: { instructions: `Diga em uma frase curta e natural, em PT-BR: "${text}"` } });
+    }, 35_000);
+    return () => clearInterval(id);
   }
 
   // Turno real do usuário: corta o que o assistente estiver falando e responde
@@ -450,8 +474,26 @@ export class RealtimeVoice {
     this.rafId = requestAnimationFrame(tick);
   }
 
+  private _hasPendingTask(): boolean {
+    return this.turns.some((t) => t.status === 'processing');
+  }
+
+  // Encerra quando a última delegação resolver. Deixa o modelo FALAR o resultado
+  // (o _end real dispara no handler output_audio_buffer.stopped); fallback encerra
+  // após a graça caso o modelo fique mudo.
+  private _maybeEndAfterTasks(): void {
+    if (!this.endRequested || this._hasPendingTask()) return;
+    if (this.endGraceTimer) clearTimeout(this.endGraceTimer);
+    this.endGraceTimer = setTimeout(() => { this.endGraceTimer = null; this._end(); }, 45_000);
+  }
+
   private _end(): void {
     if (this.cancelled) return;
+    // NÃO encerra com delegação em voo — fechar aqui era a causa do "diz que vai
+    // retornar e encerra a sessão": a resposta assíncrona nunca era falada. Marca o
+    // pedido de fim; _maybeEndAfterTasks + o handler de áudio parado encerram depois
+    // que o resultado for falado.
+    if (this._hasPendingTask()) { this.endRequested = true; return; }
     this.stop();
     this.o.onEnd?.();
   }
@@ -466,6 +508,7 @@ export class RealtimeVoice {
     this.abort.abort();
     if (this.rafId) cancelAnimationFrame(this.rafId);
     this.rafId = 0;
+    if (this.endGraceTimer) { clearTimeout(this.endGraceTimer); this.endGraceTimer = null; }
     if (this.disconnectTimer) { clearTimeout(this.disconnectTimer); this.disconnectTimer = null; }
     try { this.dc?.close(); } catch { /* noop */ }
     this.dc = null;
